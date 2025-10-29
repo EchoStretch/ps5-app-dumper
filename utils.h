@@ -25,11 +25,7 @@ typedef struct {
 int dir_exists(const char *path);
 int file_exists(const char *path);
 void mkdirs(const char *path);
-int copy_file(const char *src, const char *dst);
-void copy_dir_recursive(const char *src, const char *dst);
-size_t size_file(const char *path);
 int write_log(const char *log_file_path, const char *fmt, ...);
-char *getusbpath(void);
 void printf_notification(const char *fmt, ...);
 
 int sceKernelSendNotificationRequest(int device, SceNotificationRequest *req, size_t size, int blocking);

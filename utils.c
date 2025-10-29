@@ -1,13 +1,11 @@
 #include "utils.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdarg.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <dirent.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <errno.h>
+#include <stdarg.h>
 
 /* Check if directory exists */
 int dir_exists(const char *path)
@@ -62,70 +60,6 @@ int write_log(const char *log_file_path, const char *fmt, ...)
     return 0;
 }
 
-/* Return file size in bytes */
-size_t size_file(const char *path)
-{
-    struct stat st;
-    if (stat(path, &st) == 0) return (size_t)st.st_size;
-    return 0;
-}
-
-/* Copy a single file */
-int copy_file(const char *src, const char *dst)
-{
-    FILE *in = fopen(src, "rb");
-    if (!in) return -1;
-
-    char dst_dir[512];
-    strncpy(dst_dir, dst, sizeof(dst_dir)-1);
-    dst_dir[sizeof(dst_dir)-1] = '\0';
-    char *slash = strrchr(dst_dir, '/');
-    if (slash) { *slash = '\0'; mkdirs(dst_dir); }
-
-    FILE *out = fopen(dst, "wb");
-    if (!out) { fclose(in); return -1; }
-
-    char buf[8192];
-    size_t n;
-    while ((n = fread(buf, 1, sizeof(buf), in)) > 0)
-    {
-        if (fwrite(buf, 1, n, out) != n) { fclose(in); fclose(out); return -1; }
-    }
-
-    fflush(out); fsync(fileno(out));
-    fclose(in); fclose(out);
-    return 0;
-}
-
-/* Recursive directory copy */
-void copy_dir_recursive(const char *src, const char *dst)
-{
-    DIR *d = opendir(src);
-    if (!d) return;
-    mkdirs(dst);
-
-    struct dirent *dp;
-    struct stat st;
-    char src_path[1024], dst_path[1024];
-
-    while ((dp = readdir(d)) != NULL)
-    {
-        if (!strcmp(dp->d_name, ".") || !strcmp(dp->d_name, "..")) continue;
-
-        snprintf(src_path, sizeof(src_path), "%s/%s", src, dp->d_name);
-        snprintf(dst_path, sizeof(dst_path), "%s/%s", dst, dp->d_name);
-
-        if (stat(src_path, &st) == 0)
-        {
-            if (S_ISDIR(st.st_mode))
-                copy_dir_recursive(src_path, dst_path);
-            else if (S_ISREG(st.st_mode))
-                copy_file(src_path, dst_path);
-        }
-    }
-    closedir(d);
-}
-
 /* Minimal notification */
 void printf_notification(const char *fmt, ...)
 {
@@ -144,16 +78,4 @@ void printf_notification(const char *fmt, ...)
 
     sceKernelSendNotificationRequest(0, &noti, sizeof(noti), 0);
     printf("%s\n", noti.message);
-}
-
-/* Return USB path */
-char *getusbpath(void)
-{
-    const char *p = "/mnt/usb0/data";
-    if (!dir_exists(p)) mkdirs(p);
-
-    char *ret = malloc(strlen(p)+1);
-    if (!ret) return NULL;
-    strcpy(ret, p);
-    return ret;
 }
