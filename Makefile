@@ -9,11 +9,11 @@ endif
 
 ELF := ps5-app-dumper.elf
 
-CFLAGS := -Werror -pthread
+CFLAGS := -Werror -pthread -O2
 
 all: $(ELF)
 
-$(ELF): main.c utils.c
+$(ELF): main.c utils.c authmgr.c decrypt.c sbl.c
 	$(CC) $(CFLAGS) -o $@ $^
 
 clean:

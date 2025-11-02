@@ -9,6 +9,9 @@
 
 #include "utils.h"
 
+/* prototype for decrypt function in decrypt.c */
+int decrypt_all(const char *src_game, const char *dst_game);
+
 #define VERSION "1.0"
 #define SANDBOX_PATH "/mnt/sandbox/pfsmnt"
 #define USB_ROOT     "/mnt/usb0"
@@ -207,10 +210,21 @@ int main(void)
 
 #if ENABLE_LOGGING
     write_log(logpath, "Dump finished: %s", dst_game);
-    write_log(logpath, "=== PS5 App Dumper v%s finished ===", VERSION);
 #endif
+
     printf_notification("Dump complete: %s", dst_game);
     printf("Dump complete. Log: %s\n", logpath);
+	
+    printf_notification("Starting Decrypting: %s", src_game);
+#if ENABLE_LOGGING
+    write_log(logpath, "Starting Decrypting: %s", src_game);
+#endif
+    int decrypt_err = decrypt_all(src_game, dst_game);
+    printf_notification("Decryption Finished Successfully: %s", dst_game);
+#if ENABLE_LOGGING
+    write_log(logpath, "Decryption Finished Successfully: %s", dst_game);
+    write_log(logpath, "=== PS5 App Dumper v%s finished ===", VERSION);
+#endif
 
     return 0;
 }
