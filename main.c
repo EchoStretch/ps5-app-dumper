@@ -12,7 +12,7 @@
 /* prototype for decrypt function in decrypt.c */
 int decrypt_all(const char *src_game, const char *dst_game);
 
-#define VERSION "1.0"
+#define VERSION "1.02"
 #define SANDBOX_PATH "/mnt/sandbox/pfsmnt"
 #define USB_ROOT     "/mnt/usb0"
 #define USB_DATA     "/mnt/usb0/data"
@@ -227,4 +227,5 @@ int main(void)
 #endif
 
     return 0;
+
 }
