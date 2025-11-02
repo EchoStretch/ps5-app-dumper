@@ -8,6 +8,9 @@
 #include <unistd.h>
 #include <stdarg.h>
 #include <time.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <errno.h>
 
 size_t folder_size_current = 0;
 size_t total_bytes_copied = 0;
@@ -120,37 +123,139 @@ int read_npwr_id(const char *npbind_path, char *npwr_out, size_t out_size)
     return -1;
 }
 
-int copy_file_chunked(const char *src, const char *dst)
+#define BUF_SIZE 0x800000
+
+typedef struct async_result {
+    int64_t ret;
+    uint32_t state;
+} async_result_t;
+
+typedef struct async_request {
+    off_t   off;
+    size_t  len;
+    void   *buf;
+    async_result_t *res;
+    int     fd;
+} async_request_t;
+
+static int fs_nread(int fd, void *buf, size_t n)
 {
-    FILE *fs = fopen(src, "rb");
-    if (!fs) return -1;
+    ssize_t r = read(fd, buf, n);
+    if (r < 0) return -1;
+    if ((size_t)r != n) { errno = EIO; return -1; }
+    return 0;
+}
 
-    FILE *fd = fopen(dst, "wb");
-    if (!fd) { fclose(fs); return -1; }
+static int fs_nwrite(int fd, const void *buf, size_t n)
+{
+    ssize_t r = write(fd, buf, n);
+    if (r < 0) return -1;
+    if ((size_t)r != n) { errno = EIO; return -1; }
+    return 0;
+}
 
-    char buf[1024*1024];
-    size_t n;
-    while ((n = fread(buf, 1, sizeof(buf), fs)) > 0)
-    {
-        if (fwrite(buf, 1, n, fd) != n) { fclose(fs); fclose(fd); return -1; }
+static int fs_ncopy(int fd_in, int fd_out, size_t size)
+{
+    char buf[0x4000];
+    size_t copied = 0;
+
+    while (copied < size) {
+        size_t n = size - copied;
+        if (n > sizeof(buf)) n = sizeof(buf);
+
+        if (fs_nread(fd_in, buf, n)) return -1;
+        if (fs_nwrite(fd_out, buf, n)) return -1;
+
         total_bytes_copied += n;
+        copied += n;
+    }
+    return 0;
+}
+
+static int fs_ncopy_chunk(int fd_in, int fd_out, size_t n, off_t off)
+{
+    void *buf;
+    async_request_t req = {0};
+    async_result_t  res = {0};
+    int id, state;
+
+    buf = mmap(NULL, n, PROT_READ, MAP_PRIVATE, fd_in, off);
+    if (buf == MAP_FAILED) return -1;
+
+    req.fd  = fd_out;
+    req.off = off;
+    req.buf = buf;
+    req.len = n;
+    req.res = &res;
+
+    if (sceKernelAioSubmitWriteCommands(&req, 1, 1, &id)) {
+        munmap(buf, n);
+        return -1;
     }
 
-    fclose(fs);
-    fclose(fd);
+    if (sceKernelAioWaitRequest(id, &state, NULL)) {
+        sceKernelAioDeleteRequest(id, NULL);
+        munmap(buf, n);
+        return -1;
+    }
+
+    sceKernelAioDeleteRequest(id, NULL);
+    munmap(buf, n);
     return 0;
+}
+
+static int fs_ncopy_large(int fd_in, int fd_out, size_t size)
+{
+    size_t copied = 0;
+
+    while (copied < size) {
+        size_t n = size - copied;
+        if (n > BUF_SIZE) n = BUF_SIZE;
+
+        if (fs_ncopy_chunk(fd_in, fd_out, n, copied)) return -1;
+
+        total_bytes_copied += n;
+
+        copied += n;
+    }
+    return 0;
+}
+
+int fs_copy_file(const char *src, const char *dst)
+{
+    struct stat st;
+    int src_fd = -1, dst_fd = -1;
+    int ret = -1;
+
+    if (stat(src, &st) != 0 || !S_ISREG(st.st_mode))
+        goto cleanup;
+
+    src_fd = open(src, O_RDONLY);
+    if (src_fd < 0) goto cleanup;
+
+    dst_fd = open(dst, O_WRONLY | O_CREAT | O_TRUNC, st.st_mode | 0600);
+    if (dst_fd < 0) goto cleanup;
+
+    /* update UI string */
+    strncpy(current_copied, src, sizeof(current_copied)-1);
+    current_copied[sizeof(current_copied)-1] = '\0';
+
+    if (st.st_size < 0x100000) {
+        ret = fs_ncopy(src_fd, dst_fd, st.st_size);
+    } else {
+        ret = fs_ncopy_large(src_fd, dst_fd, st.st_size);
+    }
+
+cleanup:
+    if (dst_fd >= 0) close(dst_fd);
+    if (src_fd >= 0) close(src_fd);
+    return ret;
 }
 
 int copy_file_track(const char *src, const char *dst)
 {
-    if (!src || !dst) return -1;
-
-    strncpy(current_copied, src, sizeof(current_copied)-1);
-    current_copied[sizeof(current_copied)-1] = '\0';
-
     if (copy_start_time == 0) copy_start_time = time(NULL);
-
-    return copy_file_chunked(src, dst);
+    return fs_copy_file(src, dst);
 }
 
 void copy_dir_recursive_tracked(const char *src, const char *dst)
