@@ -20,6 +20,7 @@
 #include "authmgr.h"
 #include "self.h"
 #include "elf.h"
+#include "utils.h"
 
 #ifdef LOG_TO_SOCKET
 #define PC_IP   "10.0.0.35"
@@ -50,6 +51,9 @@ uint64_t g_bump_allocator_len;
 char *g_dump_queue_buf = NULL;
 int g_dump_queue_buf_pos = 0;
 #define G_DUMP_QUEUE_BUF_SIZE 1 * 1024 * 1024 // 1MB
+
+int g_total_files   = 0;
+int g_current_file  = 0;
 
 void *bump_alloc(uint64_t len)
 {
@@ -478,6 +482,8 @@ int dump_queue_reset()
     if (g_dump_queue_buf == NULL) return 0;
     g_dump_queue_buf_pos = 0;
     g_dump_queue_buf[0] = '\0';
+    g_total_files   = 0;
+    g_current_file  = 0;
     return 0;
 }
 
@@ -489,11 +495,6 @@ int dump_queue_add_file(int sock, char *path)
     static const int allowed_exts_count = sizeof(allowed_exts) / sizeof(allowed_exts[0]);
 
     int len = strlen(path);
-   /* if (len >= 35 && strncmp(path, "/mnt/sandbox/pfsmnt/", 20) == 0 &&
-        (strncmp(path + 29, "-app0/", 6) == 0 || strncmp(path + 29, "-patch0/", 8) == 0)) {
-        return -1;
-    } */
-
     char* dot = strrchr(path, '.');
     if (dot == NULL) return -2;
 
@@ -511,6 +512,8 @@ int dump_queue_add_file(int sock, char *path)
     close(fd);
 
     if (magic != SELF_PROSPERO_MAGIC) return -5;
+
+    g_total_files++;
 
     int new_pos = g_dump_queue_buf_pos + len + 1;
     if (new_pos >= G_DUMP_QUEUE_BUF_SIZE) {
@@ -576,21 +579,24 @@ int dump(int sock, uint64_t authmgr_handle, struct tailored_offsets *offsets, co
 
     entry = g_dump_queue_buf;
     while (*entry != '\0') {
+        g_current_file++;
+
+        char progress_msg[128];
+        char *fname = strrchr(entry, '/'); if (!fname) fname = entry; else fname++;
+        snprintf(progress_msg, sizeof(progress_msg), "Decrypting %d/%d: %s", g_current_file, g_total_files, fname);
+        printf_notification(progress_msg);
+
         SOCK_LOG(sock, "[+] processing %s\n", entry);
         int entry_len = strlen(entry);
 
-        /* map src_root -> out_dir_path if the entry starts with src_root */
         if (src_root != NULL && out_dir_path != NULL && strncmp(entry, src_root, strlen(src_root)) == 0) {
-            /* ensure proper concatenation */
             const char *relative = entry + strlen(src_root);
-            if (relative[0] == '/') relative++; /* drop leading slash */
+            if (relative[0] == '/') relative++;
             snprintf(out_file_path, sizeof(out_file_path), "%s/%s", out_dir_path, relative);
         } else {
-            /* fallback: prefix entry with out_dir_path (legacy behaviour) */
             snprintf(out_file_path, sizeof(out_file_path), "%s%s", out_dir_path, entry);
         }
 
-        /* Ensure parent directory exists */
         char parent_dir[PATH_MAX];
         char *last_slash_ptr = strrchr(out_file_path, '/');
         int last_slash = (last_slash_ptr != NULL) ? (last_slash_ptr - out_file_path) : -1;
@@ -619,7 +625,6 @@ int dump(int sock, uint64_t authmgr_handle, struct tailored_offsets *offsets, co
         err = decrypt_self(sock, authmgr_handle, entry, out_fd, offsets);
         if (err == -11) {
             for (int attempt = 0; attempt < 2; attempt++) {
-                /* reopen truncated for retry (decrypt_self closes the fd on return) */
                 out_fd = open(out_file_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
                 if (out_fd < 0) {
                     SOCK_LOG(sock, "[!] failed to reopen %s for retry, errno: %d\n", out_file_path, errno);
@@ -640,6 +645,7 @@ int dump(int sock, uint64_t authmgr_handle, struct tailored_offsets *offsets, co
         entry += entry_len + 1;
     }
 
+    printf_notification("Decryption complete!");
     SOCK_LOG(sock, "[+] done\n");
 
 out:

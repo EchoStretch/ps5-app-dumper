@@ -1,4 +1,3 @@
-/* main.c - PS5 App Dumper */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,7 +14,7 @@ int decrypt_all(const char *src_game, const char *dst_game);
 #define VERSION "1.02"
 #define SANDBOX_PATH "/mnt/sandbox/pfsmnt"
 #define USB_ROOT     "/mnt/usb0"
-#define USB_DATA     "/mnt/usb0/data"
+#define USB_DATA     "/mnt/usb0/homebrew"
 #define LOG_FILE_NAME "log.txt"
 
 int main(void)
