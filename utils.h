@@ -54,4 +54,8 @@ int sceKernelAioSubmitWriteCommands(void *reqs, uint32_t n, uint32_t prio, int *
 int sceKernelAioWaitRequest(int req_id, int *state, uint32_t *usec);
 int sceKernelAioDeleteRequest(int req_id, int *ret);
 
+int  find_usb_and_setup(void);
+int  read_decrypter_config(void);
+const char* get_usb_homebrew_path(void);
+
 #endif /* UTILS_H */

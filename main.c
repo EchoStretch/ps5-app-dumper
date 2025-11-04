@@ -13,28 +13,26 @@ int decrypt_all(const char *src_game, const char *dst_game);
 
 #define VERSION "1.02"
 #define SANDBOX_PATH "/mnt/sandbox/pfsmnt"
-#define USB_ROOT     "/mnt/usb0"
-#define USB_DATA     "/mnt/usb0/homebrew"
 #define LOG_FILE_NAME "log.txt"
 
 int main(void)
 {
     printf_notification("Welcome to PS5 App Dumper v%s", VERSION);
 
-    if (!dir_exists(USB_ROOT))
-    {
-        printf_notification("No USB plugged in! Aborting.");
-        return 1;
+    while (find_usb_and_setup() == -1) {
+        printf_notification("Please insert USB (exFAT) into any port...");
+        sleep(7);
     }
 
-    mkdirs(USB_DATA);
+    const char *usb_data = get_usb_homebrew_path();
+    int do_decrypt = read_decrypter_config();
+
     char logpath[512];
-    snprintf(logpath, sizeof(logpath), "%s/%s", USB_DATA, LOG_FILE_NAME);
+    snprintf(logpath, sizeof(logpath), "%s/%s", usb_data, LOG_FILE_NAME);
 #if ENABLE_LOGGING
     write_log(logpath, "=== PS5 App Dumper v%s started ===", VERSION);
 #endif
 
-    /* locate PPSA-app0 folder */
     DIR *d = opendir(SANDBOX_PATH);
     if (!d)
     {
@@ -75,7 +73,6 @@ int main(void)
 #endif
     printf_notification("Detected: %s", ppsa_foldername);
 
-    /* extract PPSA short name */
     char ppsa_short[32] = {0};
     char *dash = strchr(ppsa_foldername, '-');
     if (dash)
@@ -84,13 +81,13 @@ int main(void)
         if (n >= sizeof(ppsa_short)) n = sizeof(ppsa_short)-1;
         memcpy(ppsa_short, ppsa_foldername, n);
         ppsa_short[n] = '\0';
-    }
-    else
+    } else {
         strncpy(ppsa_short, ppsa_foldername, sizeof(ppsa_short)-1);
+    }
 
     char src_game[1024], dst_game[1024];
     snprintf(src_game, sizeof(src_game), "%s/%s", SANDBOX_PATH, ppsa_foldername);
-    snprintf(dst_game, sizeof(dst_game), "%s/%s", USB_DATA, ppsa_foldername);
+    snprintf(dst_game, sizeof(dst_game), "%s/%s", usb_data, ppsa_foldername);
 
     folder_size_current = 0;
     size_walker(src_game, &folder_size_current);
@@ -107,7 +104,6 @@ int main(void)
     write_log(logpath, "Main game copy complete.");
 #endif
 
-    /* copy user & system appmeta */
     char src_meta_user[512], src_meta_sys[512], dst_meta[512];
     snprintf(src_meta_user, sizeof(src_meta_user), "/user/appmeta/%s", ppsa_short);
     snprintf(src_meta_sys,  sizeof(src_meta_sys),  "/system_data/priv/appmeta/%s", ppsa_short);
@@ -128,7 +124,6 @@ int main(void)
         copy_dir_recursive_tracked(src_meta_sys, dst_meta);
     }
 
-    /* NPWR handling */
     char npbind_src1[1024], npbind_src2[1024];
     snprintf(npbind_src1, sizeof(npbind_src1),
              "/system_data/priv/appmeta/%s/trophy2/npbind.dat", ppsa_short);
@@ -155,7 +150,6 @@ int main(void)
         write_log(logpath, "Extracted NPWR ID: %s", npwr_id);
 #endif
 
-        /* UDS */
         char src_uds[512], dst_uds[512];
         snprintf(src_uds, sizeof(src_uds), "/user/np_uds/nobackup/conf/%s/uds.ucp", npwr_id);
         snprintf(dst_uds, sizeof(dst_uds), "%s/sce_sys/uds/uds00.ucp", dst_game);
@@ -175,7 +169,6 @@ int main(void)
 #endif
         }
 
-        /* TROPHY */
         char src_trophy[512], dst_trophy[512];
         snprintf(src_trophy, sizeof(src_trophy), "/user/trophy2/nobackup/conf/%s/TROPHY.UCP", npwr_id);
         snprintf(dst_trophy, sizeof(dst_trophy), "%s/sce_sys/trophy2/trophy00.ucp", dst_game);
@@ -203,7 +196,6 @@ int main(void)
 #endif
     }
 
-    /* stop progress thread */
     progress_thread_run = 0;
     pthread_join(progress_thread, NULL);
 
@@ -213,18 +205,30 @@ int main(void)
 
     printf_notification("Dump complete: %s", dst_game);
     printf("Dump complete. Log: %s\n", logpath);
-	
-    printf_notification("Starting Decrypting: %s", src_game);
+
+    if (do_decrypt) {
+        printf_notification("Decrypting to: %s", dst_game);
 #if ENABLE_LOGGING
-    write_log(logpath, "Starting Decrypting: %s", src_game);
+        write_log(logpath, "Decrypting to: %s", dst_game);
 #endif
-    int decrypt_err = decrypt_all(src_game, dst_game);
-    printf_notification("Decryption Finished Successfully: %s", dst_game);
+
+        int decrypt_err = decrypt_all(src_game, dst_game);
+        if (decrypt_err == 0) {
+            printf_notification("Decryption Finished: %s", dst_game);
 #if ENABLE_LOGGING
-    write_log(logpath, "Decryption Finished Successfully: %s", dst_game);
+            write_log(logpath, "Decryption Finished: %s", dst_game);
+#endif
+        }
+    } else {
+        printf_notification("Decryption Skipped (decrypter = 0)");
+#if ENABLE_LOGGING
+        write_log(logpath, "Decryption Skipped (decrypter = 0)");
+#endif
+    }
+
+#if ENABLE_LOGGING
     write_log(logpath, "=== PS5 App Dumper v%s finished ===", VERSION);
 #endif
 
     return 0;
-
 }

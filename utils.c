@@ -10,6 +10,7 @@
 #include <time.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/aio.h>
 #include <errno.h>
 
 size_t folder_size_current = 0;
@@ -17,6 +18,78 @@ size_t total_bytes_copied = 0;
 char current_copied[256] = {0};
 int progress_thread_run = 1;
 time_t copy_start_time = 0;
+
+static char g_usb_homebrew[128] = {0};
+
+int find_usb_and_setup(void) {
+    for (int i = 0; i < 8; i++) {
+        char root[32], homebrew[128], testfile[256];
+        snprintf(root, sizeof(root), "/mnt/usb%d", i);
+        snprintf(homebrew, sizeof(homebrew), "%s/homebrew", root);
+        snprintf(testfile, sizeof(testfile), "%s/.usb_test", homebrew);
+
+        if (!dir_exists(root)) continue;
+
+        int fd = open(testfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd == -1) continue;
+
+        if (write(fd, "USB_TEST", 8) != 8) {
+            close(fd);
+            continue;
+        }
+
+        close(fd);
+        unlink(testfile);
+
+        mkdirs(homebrew);
+
+        char config[256];
+        snprintf(config, sizeof(config), "%s/config.ini", homebrew);
+        if (!file_exists(config)) {
+            FILE *f = fopen(config, "w");
+            if (f) {
+                fprintf(f, "; PS5 App Dumper Config\n");
+                fprintf(f, "; decrypter = 1  -> decrypt after dump (default)\n");
+                fprintf(f, "; decrypter = 0  -> skip decryption\n");
+                fprintf(f, "decrypter = 1\n");
+                fclose(f);
+            }
+        }
+
+        strncpy(g_usb_homebrew, homebrew, sizeof(g_usb_homebrew) - 1);
+        g_usb_homebrew[sizeof(g_usb_homebrew) - 1] = '\0';
+        return i;
+    }
+    return -1;
+}
+
+const char* get_usb_homebrew_path(void) {
+    return g_usb_homebrew;
+}
+
+int read_decrypter_config(void) {
+    if (g_usb_homebrew[0] == '\0') return 1;
+
+    char config_path[256];
+    snprintf(config_path, sizeof(config_path), "%s/config.ini", g_usb_homebrew);
+
+    FILE *f = fopen(config_path, "r");
+    if (!f) return 1;
+
+    char line[128];
+    while (fgets(line, sizeof(line), f)) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (strncmp(p, "decrypter", 9) == 0) {
+            p += 9;
+            while (*p == ' ' || *p == '\t' || *p == '=') p++;
+            if (*p == '0') { fclose(f); return 0; }
+            if (*p == '1') { fclose(f); return 1; }
+        }
+    }
+    fclose(f);
+    return 1;
+}
 
 int dir_exists(const char *path)
 {
@@ -55,6 +128,12 @@ int write_log(const char *log_file_path, const char *fmt, ...)
 {
     FILE *f = fopen(log_file_path, "a");
     if (!f) return -1;
+
+    char timestamp[64];
+    time_t t = time(NULL);
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&t));
+
+    fprintf(f, "[%s] ", timestamp);
 
     va_list ap;
     va_start(ap, fmt);
@@ -204,21 +283,64 @@ static int fs_ncopy_chunk(int fd_in, int fd_out, size_t n, off_t off)
     return 0;
 }
 
-static int fs_ncopy_large(int fd_in, int fd_out, size_t size)
+static int fs_ncopy_large(int src, int dst, size_t size)
 {
-    size_t copied = 0;
+  struct aiocb aior = {
+    .aio_fildes = src,
+    .aio_nbytes = BUF_SIZE,
+    .aio_offset = 0
+  };
+  struct aiocb aiow = {
+    .aio_fildes = dst,
+    .aio_nbytes = BUF_SIZE,
+    .aio_offset = 0
+  };
+  void* buf;
+  ssize_t n;
 
-    while (copied < size) {
-        size_t n = size - copied;
-        if (n > BUF_SIZE) n = BUF_SIZE;
+  if(!(buf=malloc(BUF_SIZE))) {
+    return -1;
+  }
 
-        if (fs_ncopy_chunk(fd_in, fd_out, n, copied)) return -1;
+  aior.aio_buf = buf;
 
-        total_bytes_copied += n;
-
-        copied += n;
+  while(1) {
+    if(aio_read(&aior) < 0) {
+      free(buf);
+      return -1;
     }
-    return 0;
+
+    aio_suspend(&(const struct aiocb*){&aior}, 1, 0);
+    if((n=aio_return(&aior)) < 0) {
+      free(buf);
+      return -1;
+    }
+
+    if(!n) {
+      break;
+    }
+
+    aiow.aio_buf = aior.aio_buf;
+    aiow.aio_nbytes = n;
+
+    if(aio_write(&aiow) < 0) {
+      free(buf);
+      return -1;
+    }
+
+    aio_suspend(&(const struct aiocb*){&aiow}, 1, 0);
+    if(aio_return(&aiow) < 0) {
+      free(buf);
+      return -1;
+    }
+
+    aior.aio_offset += n;
+    aiow.aio_offset += n;
+    total_bytes_copied += n;
+  }
+
+  free(buf);
+  return 0;
 }
 
 int fs_copy_file(const char *src, const char *dst)

@@ -645,7 +645,6 @@ int dump(int sock, uint64_t authmgr_handle, struct tailored_offsets *offsets, co
         entry += entry_len + 1;
     }
 
-    printf_notification("Decryption complete!");
     SOCK_LOG(sock, "[+] done\n");
 
 out:
