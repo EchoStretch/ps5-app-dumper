@@ -6,10 +6,6 @@
 #include <time.h>
 #include <sys/types.h>
 
-#ifndef ENABLE_LOGGING
-#define ENABLE_LOGGING 1
-#endif
-
 /* Full PS5 notification struct */
 typedef struct {
     int type;                //0x00
@@ -56,6 +52,10 @@ int sceKernelAioDeleteRequest(int req_id, int *ret);
 
 int  find_usb_and_setup(void);
 int  read_decrypter_config(void);
+int  read_logging_config(void); 
 const char* get_usb_homebrew_path(void);
+
+extern int g_enable_logging;
+extern char g_log_path[512];
 
 #endif /* UTILS_H */

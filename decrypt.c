@@ -1,4 +1,3 @@
-// decrypt.c
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,7 +23,7 @@
 
 #ifdef LOG_TO_SOCKET
 #define PC_IP   "10.0.0.35"
-#define PC_PORT 9021
+#define PC_PORT 5655
 #endif
 
 struct tailored_offsets
@@ -59,6 +58,7 @@ void *bump_alloc(uint64_t len)
 {
     void *ptr;
     if (g_bump_allocator_cur + len >= (g_bump_allocator_base + g_bump_allocator_len)) {
+        printf("[!] bump allocator out of memory\n");
         return NULL;
     }
 
@@ -174,7 +174,7 @@ struct self_block_segment *self_decrypt_segment(
     for (int tries = 0; tries < 3; tries++) {
         err = _sceSblAuthMgrSmLoadSelfSegment(sock, authmgr_handle, service_id, chunk_table_pa, segment_idx);
         if (err == 0) break;
-        sleep(1);
+        usleep(100000);
     }
     if (err != 0) return NULL;
 
@@ -257,18 +257,37 @@ void *self_decrypt_block(
     uint64_t data_blob_pa = pmap_kextract(sock, data_blob_va);
     uint64_t input_addr = (uint64_t)(file_data + segment->offset + block_segment->extents[block_idx]->offset);
     void *out_block_data;
+    uint64_t input_size;
+    char temp_buf[0x4000];
 
-    for (int i = 0; i < 4; i++) {
-        kernel_copyin((void *)(input_addr + (i * 0x1000)), data_blob_va + (i * 0x1000), 0x1000);
+    input_size = block_segment->extents[block_idx]->len;
+    if (input_size > 0x4000) {
+        // shouldnt happen
+        SOCK_LOG(sock, "[!] self_decrypt_block: input_size > 0x4000\n");
+        return NULL;
     }
+    memcpy(temp_buf, (void *)input_addr, input_size);
+    memset(temp_buf + input_size, 0, 0x4000 - input_size);
+    
+    // Request segment decryption
+    const int max_tries = 10;
+    for (int tries = 0; tries < max_tries; tries++) {
 
-    for (int tries = 0; tries < 5; tries++) {
+        for (int i = 0; i < 0x4000; i += 0x1000) {
+            if (kernel_copyin(temp_buf + i, data_blob_va + i, 0x1000)) {
+                SOCK_LOG(sock, "[!] self_decrypt_block: kernel_copyin failed for block %d, chunk %d\n", block_idx, i / 0x1000);
+                return NULL;
+            }
+        }
         err = _sceSblAuthMgrSmLoadSelfBlock(
             sock, authmgr_handle, service_id, data_blob_pa, data_out_pa,
             segment, SELF_SEGMENT_ID(segment), block_segment, block_idx
         );
         if (err == 0) break;
         usleep(100000);
+        if (tries < max_tries - 1) {
+            SOCK_LOG(sock, "self_decrypt_block: failed to decrypt block %d, err: %d, retrying... (%d/%d)\n", block_idx, err, tries + 1, max_tries);
+        }
     }
 
     if (err != 0) {
@@ -409,11 +428,8 @@ int decrypt_self(int sock, uint64_t authmgr_handle, char *path, int out_fd, stru
         segment = (struct sce_self_segment_header *)(self_file_data + sizeof(struct sce_self_header) + (i * sizeof(struct sce_self_segment_header)));
         if (!SELF_SEGMENT_HAS_BLOCKS(segment) || SELF_SEGMENT_HAS_DIGESTS(segment)) continue;
 
-        cur_phdr = start_phdrs;
-        for (int phnum = 0; phnum < header->segment_count; phnum++) {
-            if (cur_phdr->p_filesz == segment->uncompressed_size) break;
-            cur_phdr++;
-        }
+        // Get accompanying ELF segment
+        cur_phdr = &start_phdrs[SELF_SEGMENT_ID(segment)];
 
         block_info = block_segments[i];
         if (block_info == NULL) {
@@ -452,9 +468,10 @@ int decrypt_self(int sock, uint64_t authmgr_handle, char *path, int out_fd, stru
     if (write(out_fd, out_file_data, final_file_size) != final_file_size) {
         SOCK_LOG(sock, "[!] failed to dump to file\n");
         err = -5;
-    } else {
-        SOCK_LOG(sock, "  [+] wrote 0x%08lx bytes...\n", final_file_size);
     }
+    fsync(out_fd);
+
+        SOCK_LOG(sock, "  [+] wrote 0x%08lx bytes...\n", final_file_size);
 
 cleanup_out_file_data:
     munmap(out_file_data, final_file_size);
@@ -557,6 +574,24 @@ int dump_queue_add_dir(int sock, char* path, int recursive)
     return 0;
 }
 
+#define SYS_THR_SELF 0x1B0
+static inline int gettid()
+{
+    long tid;
+    __syscall(SYS_THR_SELF, &tid);
+    return tid;
+}
+
+static uint64_t get_thread()
+{
+    uint64_t proc = kernel_get_proc(getpid());
+    int tid = gettid();
+    for(uint64_t thr = kernel_getlong(proc+16); thr; thr = kernel_getlong(thr+16))
+        if((int)kernel_getlong(thr+0x9c) == tid)
+            return thr;
+    return 0;
+}
+
 int dump(int sock, uint64_t authmgr_handle, struct tailored_offsets *offsets, const char *src_root, const char *out_dir_path)
 {
     if (g_dump_queue_buf == NULL) return -1;
@@ -566,14 +601,21 @@ int dump(int sock, uint64_t authmgr_handle, struct tailored_offsets *offsets, co
     char* entry;
     char out_file_path[PATH_MAX];
     struct stat out_file_stat;
-    uint64_t spinlock_lock = 0x13371337;
-    uint64_t spinlock_unlock = 0;
+    uint64_t spinlock_lock = get_thread();
+    uint64_t spinlock_unlock = 0x1;
 
     uintptr_t sbl_sxlock_addr = g_kernel_data_base + offsets->offset_sbl_sxlock + 0x18;
-    kernel_copyout(sbl_sxlock_addr, &spinlock_unlock, sizeof(spinlock_unlock));
 
-    for (int i = 0; i < 0x100; i++) {
-        kernel_copyin(&spinlock_lock, sbl_sxlock_addr, sizeof(spinlock_lock));
+    while (1) {
+        uint64_t lock_val = 0;
+        kernel_copyout(sbl_sxlock_addr, &lock_val, sizeof(lock_val));
+        if (lock_val == 0x1) {
+            kernel_copyin(&spinlock_lock, sbl_sxlock_addr, sizeof(spinlock_lock));
+            kernel_copyout(sbl_sxlock_addr, &lock_val, sizeof(lock_val));
+            if ((lock_val & ~0xFULL) == spinlock_lock) {
+                break;
+            }
+        }
         usleep(1000);
     }
 
@@ -647,9 +689,24 @@ int dump(int sock, uint64_t authmgr_handle, struct tailored_offsets *offsets, co
 
     SOCK_LOG(sock, "[+] done\n");
 
-out:
+out: {
+    uint64_t spinlock_after = 0;
+    kernel_copyout(sbl_sxlock_addr, &spinlock_after, sizeof(spinlock_after));
+    
+    // if 0x4 is set (and/or 0x2?) then there are waiters and since we cant wake them the console is probably frozen
+    // and would require a hard shutdown anyway, so just panic instead
+    // sometimes it can recover from waiters, i guess lock normally spins for some time before going to sleep and if we complete before that we can recover? idk, idc
+    // if (spinlock_after & 0x6) {
+    //     SOCK_LOG(sock, "[!] lock has waiters, panicking to avoid hang...\n");
+    //     sleep(2);
+    //     kernel_setchar(KERNEL_ADDRESS_TEXT_BASE, 0); // panic
+    // }
+
+    spinlock_unlock = 0x1 | (spinlock_after & 0xF);
     kernel_copyin(&spinlock_unlock, sbl_sxlock_addr, sizeof(spinlock_unlock));
+
     return err;
+    }
 }
 
 int decrypt_all(const char *src_game, const char *dst_game)
@@ -676,7 +733,7 @@ int decrypt_all(const char *src_game, const char *dst_game)
     }
 #endif
 
-    g_bump_allocator_len = 0x100000;
+    g_bump_allocator_len = 16 * 1024 * 1024;
     g_bump_allocator_base = mmap(NULL, g_bump_allocator_len, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     if (g_bump_allocator_base == NULL) {
         printf("[!] failed to allocate backing space for bump allocator\n");

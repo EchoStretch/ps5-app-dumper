@@ -11,7 +11,7 @@
 /* prototype for decrypt function in decrypt.c */
 int decrypt_all(const char *src_game, const char *dst_game);
 
-#define VERSION "1.02"
+#define VERSION "1.03"
 #define SANDBOX_PATH "/mnt/sandbox/pfsmnt"
 #define LOG_FILE_NAME "log.txt"
 
@@ -26,25 +26,31 @@ int main(void)
 
     const char *usb_data = get_usb_homebrew_path();
     int do_decrypt = read_decrypter_config();
+    int do_logging = read_logging_config();
 
     char logpath[512];
     snprintf(logpath, sizeof(logpath), "%s/%s", usb_data, LOG_FILE_NAME);
-#if ENABLE_LOGGING
-    write_log(logpath, "=== PS5 App Dumper v%s started ===", VERSION);
-#endif
+
+    strncpy(g_log_path, logpath, sizeof(g_log_path) - 1);
+    g_log_path[sizeof(g_log_path) - 1] = '\0';
+
+    if (do_logging) {
+        write_log(logpath, "=== PS5 App Dumper v%s started ===", VERSION);
+    }
 
     DIR *d = opendir(SANDBOX_PATH);
     if (!d)
     {
-#if ENABLE_LOGGING
-        write_log(logpath, "ERROR: Failed to open %s", SANDBOX_PATH);
-#endif
+        if (do_logging) {
+            write_log(logpath, "ERROR: Failed to open %s", SANDBOX_PATH);
+        }
         printf_notification("Failed to open %s", SANDBOX_PATH);
         return 1;
     }
 
     struct dirent *dp;
     char ppsa_foldername[128] = {0};
+
     while ((dp = readdir(d)) != NULL)
     {
         if (dp->d_type == DT_DIR && strncmp(dp->d_name, "PPSA", 4) == 0)
@@ -61,16 +67,16 @@ int main(void)
 
     if (ppsa_foldername[0] == '\0')
     {
-        printf_notification("No PPSA-app0 folder found!");
-#if ENABLE_LOGGING
-        write_log(logpath, "No PPSA-app0 folder found.");
-#endif
+        printf_notification("Please start the App before running the payload...");
+        if (do_logging) {
+            write_log(logpath, "Please start the App before running the payload...");
+        }
         return 1;
     }
 
-#if ENABLE_LOGGING
-    write_log(logpath, "Detected game: %s", ppsa_foldername);
-#endif
+    if (do_logging) {
+        write_log(logpath, "Detected game: %s", ppsa_foldername);
+    }
     printf_notification("Detected: %s", ppsa_foldername);
 
     char ppsa_short[32] = {0};
@@ -96,13 +102,13 @@ int main(void)
     progress_thread_run = 1;
     pthread_create(&progress_thread, NULL, progress_status_func, NULL);
 
-#if ENABLE_LOGGING
-    write_log(logpath, "Copying game: %s -> %s", src_game, dst_game);
-#endif
+    if (do_logging) {
+        write_log(logpath, "Copying game: %s -> %s", src_game, dst_game);
+    }
     copy_dir_recursive_tracked(src_game, dst_game);
-#if ENABLE_LOGGING
-    write_log(logpath, "Main game copy complete.");
-#endif
+    if (do_logging) {
+        write_log(logpath, "Main game copy complete.");
+    }
 
     char src_meta_user[512], src_meta_sys[512], dst_meta[512];
     snprintf(src_meta_user, sizeof(src_meta_user), "/user/appmeta/%s", ppsa_short);
@@ -111,16 +117,16 @@ int main(void)
 
     if (dir_exists(src_meta_user))
     {
-#if ENABLE_LOGGING
-        write_log(logpath, "Copying user appmeta...");
-#endif
+        if (do_logging) {
+            write_log(logpath, "Copying user appmeta...");
+        }
         copy_dir_recursive_tracked(src_meta_user, dst_meta);
     }
     if (dir_exists(src_meta_sys))
     {
-#if ENABLE_LOGGING
-        write_log(logpath, "Copying system appmeta...");
-#endif
+        if (do_logging) {
+            write_log(logpath, "Copying system appmeta...");
+        }
         copy_dir_recursive_tracked(src_meta_sys, dst_meta);
     }
 
@@ -133,11 +139,11 @@ int main(void)
     char npwr_id[32] = {0};
     const char *npbind_path = NULL;
 
-#if ENABLE_LOGGING
-    write_log(logpath, "Searching for npbind.dat...");
-    write_log(logpath, "Checking: %s", npbind_src1);
-    write_log(logpath, "Checking: %s", npbind_src2);
-#endif
+    if (do_logging) {
+        write_log(logpath, "Searching for npbind.dat...");
+        write_log(logpath, "Checking: %s", npbind_src1);
+        write_log(logpath, "Checking: %s", npbind_src2);
+    }
 
     if (file_exists(npbind_src1))
         npbind_path = npbind_src1;
@@ -146,9 +152,9 @@ int main(void)
 
     if (npbind_path && read_npwr_id(npbind_path, npwr_id, sizeof(npwr_id)) == 0 && npwr_id[0] != '\0')
     {
-#if ENABLE_LOGGING
-        write_log(logpath, "Extracted NPWR ID: %s", npwr_id);
-#endif
+        if (do_logging) {
+            write_log(logpath, "Extracted NPWR ID: %s", npwr_id);
+        }
 
         char src_uds[512], dst_uds[512];
         snprintf(src_uds, sizeof(src_uds), "/user/np_uds/nobackup/conf/%s/uds.ucp", npwr_id);
@@ -157,16 +163,16 @@ int main(void)
 
         if (file_exists(src_uds))
         {
-#if ENABLE_LOGGING
-            write_log(logpath, "Copying UDS: %s -> %s", src_uds, dst_uds);
-#endif
+            if (do_logging) {
+                write_log(logpath, "Copying UDS: %s -> %s", src_uds, dst_uds);
+            }
             copy_file_track(src_uds, dst_uds);
         }
         else
         {
-#if ENABLE_LOGGING
-            write_log(logpath, "UDS not found: %s", src_uds);
-#endif
+            if (do_logging) {
+                write_log(logpath, "UDS not found: %s", src_uds);
+            }
         }
 
         char src_trophy[512], dst_trophy[512];
@@ -175,60 +181,60 @@ int main(void)
 
         if (file_exists(src_trophy))
         {
-#if ENABLE_LOGGING
-            write_log(logpath, "Copying TROPHY: %s -> %s", src_trophy, dst_trophy);
-#endif
+            if (do_logging) {
+                write_log(logpath, "Copying TROPHY: %s -> %s", src_trophy, dst_trophy);
+            }
             copy_file_track(src_trophy, dst_trophy);
         }
         else
         {
-#if ENABLE_LOGGING
-            write_log(logpath, "TROPHY not found: %s", src_trophy);
-#endif
+            if (do_logging) {
+                write_log(logpath, "TROPHY not found: %s", src_trophy);
+            }
         }
     }
     else
     {
-#if ENABLE_LOGGING
-        write_log(logpath,
-                  "npbind.dat not found or NPWR ID not extracted.\nChecked:\n  %s\n  %s",
-                  npbind_src1, npbind_src2);
-#endif
+        if (do_logging) {
+            write_log(logpath,
+                      "npbind.dat not found or NPWR ID not extracted.\nChecked:\n  %s\n  %s",
+                      npbind_src1, npbind_src2);
+        }
     }
 
     progress_thread_run = 0;
     pthread_join(progress_thread, NULL);
 
-#if ENABLE_LOGGING
-    write_log(logpath, "Dump finished: %s", dst_game);
-#endif
+    if (do_logging) {
+        write_log(logpath, "Dump finished: %s", dst_game);
+    }
 
     printf_notification("Dump complete: %s", dst_game);
     printf("Dump complete. Log: %s\n", logpath);
 
     if (do_decrypt) {
         printf_notification("Decrypting to: %s", dst_game);
-#if ENABLE_LOGGING
-        write_log(logpath, "Decrypting to: %s", dst_game);
-#endif
+        if (do_logging) {
+            write_log(logpath, "Decrypting to: %s", dst_game);
+        }
 
         int decrypt_err = decrypt_all(src_game, dst_game);
         if (decrypt_err == 0) {
             printf_notification("Decryption Finished: %s", dst_game);
-#if ENABLE_LOGGING
-            write_log(logpath, "Decryption Finished: %s", dst_game);
-#endif
+            if (do_logging) {
+                write_log(logpath, "Decryption Finished: %s", dst_game);
+            }
         }
     } else {
         printf_notification("Decryption Skipped (decrypter = 0)");
-#if ENABLE_LOGGING
-        write_log(logpath, "Decryption Skipped (decrypter = 0)");
-#endif
+        if (do_logging) {
+            write_log(logpath, "Decryption Skipped (decrypter = 0)");
+        }
     }
 
-#if ENABLE_LOGGING
-    write_log(logpath, "=== PS5 App Dumper v%s finished ===", VERSION);
-#endif
+    if (do_logging) {
+        write_log(logpath, "=== PS5 App Dumper v%s finished ===", VERSION);
+    }
 
     return 0;
 }

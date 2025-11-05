@@ -21,6 +21,9 @@ time_t copy_start_time = 0;
 
 static char g_usb_homebrew[128] = {0};
 
+int g_enable_logging = 1;
+char g_log_path[512] = {0};
+
 int find_usb_and_setup(void) {
     for (int i = 0; i < 8; i++) {
         char root[32], homebrew[128], testfile[256];
@@ -51,13 +54,20 @@ int find_usb_and_setup(void) {
                 fprintf(f, "; PS5 App Dumper Config\n");
                 fprintf(f, "; decrypter = 1  -> decrypt after dump (default)\n");
                 fprintf(f, "; decrypter = 0  -> skip decryption\n");
+                fprintf(f, "; enable_logging = 1 -> write log.txt (default)\n");
+                fprintf(f, "; enable_logging = 0 -> disable logging\n");
                 fprintf(f, "decrypter = 1\n");
+                fprintf(f, "enable_logging = 1\n");
                 fclose(f);
             }
         }
 
         strncpy(g_usb_homebrew, homebrew, sizeof(g_usb_homebrew) - 1);
         g_usb_homebrew[sizeof(g_usb_homebrew) - 1] = '\0';
+
+        // Set default log path
+        snprintf(g_log_path, sizeof(g_log_path), "%s/log.txt", homebrew);
+
         return i;
     }
     return -1;
@@ -89,6 +99,31 @@ int read_decrypter_config(void) {
     }
     fclose(f);
     return 1;
+}
+
+int read_logging_config(void) {
+    if (g_usb_homebrew[0] == '\0') return 1;
+
+    char config_path[256];
+    snprintf(config_path, sizeof(config_path), "%s/config.ini", g_usb_homebrew);
+
+    FILE *f = fopen(config_path, "r");
+    if (!f) return 1;
+
+    char line[128];
+    int found = 0;
+    while (fgets(line, sizeof(line), f)) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (strncmp(p, "enable_logging", 14) == 0) {
+            p += 14;
+            while (*p == ' ' || *p == '\t' || *p == '=') p++;
+            if (*p == '0') { g_enable_logging = 0; found = 1; }
+            else if (*p == '1') { g_enable_logging = 1; found = 1; }
+        }
+    }
+    fclose(f);
+    return found ? g_enable_logging : 1;
 }
 
 int dir_exists(const char *path)
@@ -123,9 +158,10 @@ void mkdirs(const char *path)
     mkdir(tmp, 0777);
 }
 
-#if ENABLE_LOGGING
 int write_log(const char *log_file_path, const char *fmt, ...)
 {
+    if (!g_enable_logging || !log_file_path || !log_file_path[0]) return 0;
+
     FILE *f = fopen(log_file_path, "a");
     if (!f) return -1;
 
@@ -146,9 +182,6 @@ int write_log(const char *log_file_path, const char *fmt, ...)
     fclose(f);
     return 0;
 }
-#else
-static inline int write_log(const char *log_file_path, const char *fmt, ...) { return 0; }
-#endif
 
 void printf_notification(const char *fmt, ...)
 {
@@ -433,9 +466,6 @@ void size_walker(const char *path, size_t *acc)
 
 void *progress_status_func(void *arg)
 {
-    char logpath[512];
-    snprintf(logpath, sizeof(logpath), "%s/%s", "/mnt/usb0/data", "log.txt");
-
     while (progress_thread_run)
     {
         sleep(1);
@@ -463,13 +493,14 @@ void *progress_status_func(void *arg)
             current_copied, pct, copied_gb, total_gb, avg_speed_mb_s, est_h, est_m, est_s
         );
 
-#if ENABLE_LOGGING
-        write_log(logpath,
-                  "Progress: %d%% Copied: %.2f/%.2f GB Remaining: %.2f GB "
-                  "Average speed: %.2f MB/s ETA: %02d:%02d:%02d",
-                  pct, copied_gb, total_gb, (double)remaining_bytes/(1024.0*1024.0*1024.0),
-                  avg_speed_mb_s, est_h, est_m, est_s);
-#endif
+        // Only log if enabled and path is set
+        if (g_enable_logging && g_log_path[0]) {
+            write_log(g_log_path,
+                      "Progress: %d%% Copied: %.2f/%.2f GB Remaining: %.2f GB "
+                      "Average speed: %.2f MB/s ETA: %02d:%02d:%02d",
+                      pct, copied_gb, total_gb, (double)remaining_bytes/(1024.0*1024.0*1024.0),
+                      avg_speed_mb_s, est_h, est_m, est_s);
+        }
     }
     return NULL;
 }
