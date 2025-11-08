@@ -25,52 +25,102 @@ int g_enable_logging = 1;
 char g_log_path[512] = {0};
 
 int find_usb_and_setup(void) {
-    for (int i = 0; i < 8; i++) {
-        char root[32], homebrew[128], testfile[256];
-        snprintf(root, sizeof(root), "/mnt/usb%d", i);
+    const char *possible_mounts[] = {
+        "/mnt/usb0", "/mnt/usb1", "/mnt/usb2", "/mnt/usb3",
+        "/mnt/usb4", "/mnt/usb5", "/mnt/usb6", "/mnt/usb7"
+    };
+    const int num_mounts = sizeof(possible_mounts) / sizeof(possible_mounts[0]);
+
+    for (int i = 0; i < num_mounts; ++i) {
+        const char *root = possible_mounts[i];
+        char homebrew[128], testfile[256], config[256];
+
         snprintf(homebrew, sizeof(homebrew), "%s/homebrew", root);
-        snprintf(testfile, sizeof(testfile), "%s/.usb_test", homebrew);
+        snprintf(testfile, sizeof(testfile), "%s/.probe_usb", homebrew);
+        snprintf(config,   sizeof(config),   "%s/config.ini", homebrew);
 
         if (!dir_exists(root)) continue;
 
-        int fd = open(testfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-        if (fd == -1) continue;
-
-        if (write(fd, "USB_TEST", 8) != 8) {
-            close(fd);
-            continue;
-        }
-
-        close(fd);
-        unlink(testfile);
-
         mkdirs(homebrew);
 
-        char config[256];
-        snprintf(config, sizeof(config), "%s/config.ini", homebrew);
-        if (!file_exists(config)) {
-            FILE *f = fopen(config, "w");
-            if (f) {
-                fprintf(f, "; PS5 App Dumper Config\n");
-                fprintf(f, "; decrypter = 1  -> decrypt after dump (default)\n");
-                fprintf(f, "; decrypter = 0  -> skip decryption\n");
-                fprintf(f, "; enable_logging = 1 -> write log.txt (default)\n");
-                fprintf(f, "; enable_logging = 0 -> disable logging\n");
-                fprintf(f, "decrypter = 1\n");
-                fprintf(f, "enable_logging = 1\n");
-                fclose(f);
+        int fd = open(testfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd != -1) {
+            if (write(fd, "PROBE", 5) == 5) {
+                close(fd);
+                unlink(testfile);
+
+                strncpy(g_usb_homebrew, homebrew, sizeof(g_usb_homebrew) - 1);
+                g_usb_homebrew[sizeof(g_usb_homebrew) - 1] = '\0';
+
+                if (!file_exists(config)) {
+                    FILE *f = fopen(config, "w");
+                    if (f) {
+                        fprintf(f, "; PS5 App Dumper Config\n");
+                        fprintf(f, "; decrypter = 1  -> decrypt after dump (default)\n");
+                        fprintf(f, "; decrypter = 0  -> skip decryption\n");
+                        fprintf(f, "; enable_logging = 1 -> write log.txt (default)\n");
+                        fprintf(f, "; enable_logging = 0 -> disable logging\n");
+                        fprintf(f, "decrypter = 1\n");
+                        fprintf(f, "enable_logging = 1\n");
+                        fclose(f);
+                    }
+                }
+
+                snprintf(g_log_path, sizeof(g_log_path), "%s/log.txt", homebrew);
+
+                if (g_enable_logging && g_log_path[0]) {
+                    write_log(g_log_path,
+                              "USB detected (writable) at %s – %s",
+                              root, detect_fs_type(root));
+                }
+
+                return i;
             }
+            close(fd);
+            unlink(testfile);
         }
 
-        strncpy(g_usb_homebrew, homebrew, sizeof(g_usb_homebrew) - 1);
-        g_usb_homebrew[sizeof(g_usb_homebrew) - 1] = '\0';
+        if (file_exists(config)) {
+            printf_notification("USB (read-only fallback): %s", root);
+            strncpy(g_usb_homebrew, homebrew, sizeof(g_usb_homebrew) - 1);
+            g_usb_homebrew[sizeof(g_usb_homebrew) - 1] = '\0';
+            snprintf(g_log_path, sizeof(g_log_path), "%s/log.txt", homebrew);
 
-        // Set default log path
-        snprintf(g_log_path, sizeof(g_log_path), "%s/log.txt", homebrew);
-
-        return i;
+            if (g_enable_logging && g_log_path[0]) {
+                write_log(g_log_path,
+                          "USB detected (read-only) at %s – %s",
+                          root, detect_fs_type(root));
+            }
+            return i;
+        }
     }
+
     return -1;
+}
+
+const char* detect_fs_type(const char *mountpoint) {
+    char cmd[256], line[256];
+    snprintf(cmd, sizeof(cmd), "mount | grep \"%s \"", mountpoint);
+    FILE *fp = popen(cmd, "r");
+    if (!fp) return "unknown";
+
+    if (fgets(line, sizeof(line), fp)) {
+        if (strstr(line, "exfat")) { pclose(fp); return "exFAT"; }
+        if (strstr(line, "vfat"))  { pclose(fp); return "FAT32"; }
+        if (strstr(line, "ntfs"))  { pclose(fp); return "NTFS"; }
+    }
+    pclose(fp);
+    return "unknown";
+}
+
+void debug_list_usbs(void) {
+    FILE *fp = popen("mount | grep usb", "r");
+    if (!fp) return;
+    char line[256];
+    while (fgets(line, sizeof(line), fp)) {
+        printf_notification("Mounted USB: %s", line);
+    }
+    pclose(fp);
 }
 
 const char* get_usb_homebrew_path(void) {
@@ -284,38 +334,6 @@ static int fs_ncopy(int fd_in, int fd_out, size_t size)
     return 0;
 }
 
-static int fs_ncopy_chunk(int fd_in, int fd_out, size_t n, off_t off)
-{
-    void *buf;
-    async_request_t req = {0};
-    async_result_t  res = {0};
-    int id, state;
-
-    buf = mmap(NULL, n, PROT_READ, MAP_PRIVATE, fd_in, off);
-    if (buf == MAP_FAILED) return -1;
-
-    req.fd  = fd_out;
-    req.off = off;
-    req.buf = buf;
-    req.len = n;
-    req.res = &res;
-
-    if (sceKernelAioSubmitWriteCommands(&req, 1, 1, &id)) {
-        munmap(buf, n);
-        return -1;
-    }
-
-    if (sceKernelAioWaitRequest(id, &state, NULL)) {
-        sceKernelAioDeleteRequest(id, NULL);
-        munmap(buf, n);
-        return -1;
-    }
-
-    sceKernelAioDeleteRequest(id, NULL);
-    munmap(buf, n);
-    return 0;
-}
-
 static int fs_ncopy_large(int src, int dst, size_t size)
 {
   struct aiocb aior = {
@@ -328,6 +346,7 @@ static int fs_ncopy_large(int src, int dst, size_t size)
     .aio_nbytes = BUF_SIZE,
     .aio_offset = 0
   };
+  size_t copied = 0;
   void* buf;
   ssize_t n;
 
@@ -337,7 +356,11 @@ static int fs_ncopy_large(int src, int dst, size_t size)
 
   aior.aio_buf = buf;
 
-  while(1) {
+  while(copied < size) {
+    if(copied + aior.aio_nbytes > size) {
+      aior.aio_nbytes = size - copied;
+    }
+
     if(aio_read(&aior) < 0) {
       free(buf);
       return -1;
@@ -349,8 +372,9 @@ static int fs_ncopy_large(int src, int dst, size_t size)
       return -1;
     }
 
-    if(!n) {
-      break;
+    if(n != aior.aio_nbytes) {
+      free(buf);
+      return -1;
     }
 
     aiow.aio_buf = aior.aio_buf;
@@ -369,6 +393,7 @@ static int fs_ncopy_large(int src, int dst, size_t size)
 
     aior.aio_offset += n;
     aiow.aio_offset += n;
+	copied += n;
     total_bytes_copied += n;
   }
 
@@ -468,7 +493,7 @@ void *progress_status_func(void *arg)
 {
     while (progress_thread_run)
     {
-        sleep(1);
+        sleep(7);
         if (folder_size_current == 0 || copy_start_time == 0) continue;
 
         size_t remaining_bytes = folder_size_current > total_bytes_copied ? folder_size_current - total_bytes_copied : 0;
@@ -493,7 +518,6 @@ void *progress_status_func(void *arg)
             current_copied, pct, copied_gb, total_gb, avg_speed_mb_s, est_h, est_m, est_s
         );
 
-        // Only log if enabled and path is set
         if (g_enable_logging && g_log_path[0]) {
             write_log(g_log_path,
                       "Progress: %d%% Copied: %.2f/%.2f GB Remaining: %.2f GB "

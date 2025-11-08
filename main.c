@@ -11,7 +11,7 @@
 /* prototype for decrypt function in decrypt.c */
 int decrypt_all(const char *src_game, const char *dst_game);
 
-#define VERSION "1.03"
+#define VERSION "1.04"
 #define SANDBOX_PATH "/mnt/sandbox/pfsmnt"
 #define LOG_FILE_NAME "log.txt"
 
@@ -206,11 +206,11 @@ int main(void)
     pthread_join(progress_thread, NULL);
 
     if (do_logging) {
-        write_log(logpath, "Dump finished: %s", dst_game);
+        write_log(logpath, "Dump Complete: %s", dst_game);
     }
 
-    printf_notification("Dump complete: %s", dst_game);
-    printf("Dump complete. Log: %s\n", logpath);
+    printf_notification("Dump Complete: %s", dst_game);
+    printf("Dump Complete. Log: %s\n", logpath);
 
     if (do_decrypt) {
         printf_notification("Decrypting to: %s", dst_game);
@@ -224,17 +224,19 @@ int main(void)
             if (do_logging) {
                 write_log(logpath, "Decryption Finished: %s", dst_game);
             }
-        }
-    } else {
-        printf_notification("Decryption Skipped (decrypter = 0)");
-        if (do_logging) {
-            write_log(logpath, "Decryption Skipped (decrypter = 0)");
+        } else {
+            printf_notification("Decryption Failed: %d", decrypt_err);
+            if (do_logging) {
+                write_log(logpath, "Decryption Failed: %d", decrypt_err);
+            }	 
         }
     }
 
     if (do_logging) {
         write_log(logpath, "=== PS5 App Dumper v%s finished ===", VERSION);
     }
+
+    printf_notification("PS5 App Dumper v%s Finished", VERSION);
 
     return 0;
 }

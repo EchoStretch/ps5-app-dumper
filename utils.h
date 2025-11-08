@@ -45,15 +45,13 @@ extern char current_copied[256];
 extern int progress_thread_run;
 extern time_t copy_start_time;
 
-int sceKernelAioSubmitReadCommands(void *reqs, uint32_t n, uint32_t prio, int *id);
-int sceKernelAioSubmitWriteCommands(void *reqs, uint32_t n, uint32_t prio, int *id);
-int sceKernelAioWaitRequest(int req_id, int *state, uint32_t *usec);
-int sceKernelAioDeleteRequest(int req_id, int *ret);
-
 int  find_usb_and_setup(void);
 int  read_decrypter_config(void);
 int  read_logging_config(void); 
 const char* get_usb_homebrew_path(void);
+
+const char* detect_fs_type(const char *mountpoint);
+void debug_list_usbs(void);
 
 extern int g_enable_logging;
 extern char g_log_path[512];
