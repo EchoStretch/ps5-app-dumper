@@ -203,8 +203,8 @@ int elf2fself(const char *elf_path, const char *fself_path)
     exinfo.authid = 0x3100000000000002;
     exinfo.type   = 1;
 
-    write_log(g_log_path, "Building FSELF %s", fself_path);
-    printf_notification("Building FSELF %s", fself_path);
+    write_log(g_log_path, "Creating fself: %s", fself_path);
+    printf_notification("Creating fself: %s", fself_path);
 
     /* --- Open input ELF --- */
     elf_fd = open(elf_path, O_RDONLY, 0);
@@ -226,9 +226,9 @@ int elf2fself(const char *elf_path, const char *fself_path)
         return -1;
     }
 
-    ehdr.e_shnum     = 0;
-    ehdr.e_shentsize = 0;
-    ehdr.e_shstrndx  = 0;
+    //ehdr.e_shnum     = 0;
+    //ehdr.e_shentsize = 0;
+    //ehdr.e_shstrndx  = 0;
 
     /* --- Count relevant program headers --- */
     if (lseek(elf_fd, ehdr.e_phoff, SEEK_SET) < 0) {
@@ -446,8 +446,8 @@ int elf2fself(const char *elf_path, const char *fself_path)
     close(self_fd);
     close(elf_fd);
 
-    write_log(g_log_path, "Finished FSELF: %s", fself_path);
-    printf_notification("Finished FSELF: %s", fself_path);
+    write_log(g_log_path, "fself created: %s", fself_path);
+    printf_notification("fself created: %s", fself_path);
 
     return 0;
 

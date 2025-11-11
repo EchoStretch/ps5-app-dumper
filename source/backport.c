@@ -57,14 +57,14 @@ static const sdk_pair_t sdk_version_pairs[] = {
 #define SDK_PAIRS_COUNT    10
 #define SDK_PAIRS_MIN      1
 #define SDK_PAIRS_MAX      10
-#define DEFAULT_BACKPORT_LEVEL 4
+#define DEFAULT_BACKPORT_LEVEL 1
 
 /* --------------------------------------------------------------------- */
 /*  Global SDK values                                                    */
 /* --------------------------------------------------------------------- */
 static uint32_t g_target_ps5_sdk = 0;
 static uint32_t g_target_ps4_sdk = 0;
-static int      g_backport_enabled = 1;   // default: enabled
+static int      g_backport_enabled = 0;   // default: disabled
 
 /* --------------------------------------------------------------------- */
 /*  Helper: read a uint32 value from config.ini                          */
@@ -267,7 +267,7 @@ static int patch_elf(const char *path)
             (p_type == PT_SCE_MODULE_PARAM && magic != SCE_MODULE_PARAM_MAGIC))
             continue;
 
-        /* Patch PS5 SDK - only downgrade */
+        /* Patch PS5 SDK */
         if (g_backport_enabled && p_offset + SCE_PARAM_PS5_SDK_OFFSET + 4 <= (uint64_t)st.st_size) {
             uint32_t old = *(uint32_t *)(param + SCE_PARAM_PS5_SDK_OFFSET);
             if (old > g_target_ps5_sdk) {
@@ -284,7 +284,7 @@ static int patch_elf(const char *path)
             }
         }
 
-        /* Patch PS4 SDK - only downgrade */
+        /* Patch PS4 SDK */
         if (g_backport_enabled && p_offset + SCE_PARAM_PS4_SDK_OFFSET + 4 <= (uint64_t)st.st_size) {
             uint32_t old = *(uint32_t *)(param + SCE_PARAM_PS4_SDK_OFFSET);
             if (old > g_target_ps4_sdk) {
@@ -310,11 +310,11 @@ static int patch_elf(const char *path)
         if (patched) {
             printf_notification("Finished Backport: %s", fname);
             if (g_enable_logging && g_log_path[0])
-                write_log(g_log_path, "backport: PATCHED %s", path);
+                write_log(g_log_path, "Backport: PATCHED %s", path);
         } else {
             printf_notification("Skipped Backport: %s", fname);
             if (g_enable_logging && g_log_path[0])
-                write_log(g_log_path, "backport: SKIPPED %s – SDK already compatible (no downgrade needed)", path);
+                write_log(g_log_path, "Backport: SKIPPED %s – SDK already compatible (no backport needed)", path);
         }
     }
     /* ------------------------------------------------ */

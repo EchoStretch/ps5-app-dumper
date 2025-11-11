@@ -393,12 +393,6 @@ int decrypt_self(int sock, uint64_t authmgr_handle, char *path, int out_fd, stru
     memcpy(out_file_data, elf_header, sizeof(struct elf64_hdr));
     memcpy(out_file_data + sizeof(struct elf64_hdr), start_phdrs, elf_header->e_phnum * sizeof(struct elf64_phdr));
 
-    memcpy(
-        out_file_data + sizeof(struct elf64_hdr) + (elf_header->e_phnum * sizeof(struct elf64_phdr)),
-        (char *) (start_phdrs) + (elf_header->e_phnum * sizeof(struct elf64_phdr)),
-        0x40
-    );
-
     block_segments = bump_calloc(header->segment_count, sizeof(struct self_block_segment *));
     if (block_segments == NULL) {
         err = -12;
@@ -680,11 +674,7 @@ int dump(int sock, uint64_t authmgr_handle, struct tailored_offsets *offsets, co
 
         if (err == -5) goto out;
 
-        if (do_backport) {
-            backport_sdk_file(out_file_path);
-        }
-
-        if (do_elf2fself) {
+        if (do_elf2fself || do_backport) {
             if (src_root != NULL && out_dir_path != NULL) {
                 const char *relative = entry + strlen(src_root);
                 if (*relative == '/') relative++;
@@ -735,13 +725,19 @@ int dump(int sock, uint64_t authmgr_handle, struct tailored_offsets *offsets, co
                     close(src_fd);
                 }
             }
+		    }
 
+            if (do_backport) {
+                backport_sdk_file(out_file_path);
+            }
+			
+            if (do_elf2fself) {
             char out_file_path_elf[1024];
             sprintf(out_file_path_elf, "%s.decrypted", out_file_path);
             if (rename(out_file_path, out_file_path_elf) == 0) {
                 if (elf2fself(out_file_path_elf, out_file_path) == 0) {
                     unlink(out_file_path_elf);
-                    SOCK_LOG(sock, "[+] FSELF created: %s\n", out_file_path);
+                    SOCK_LOG(sock, "[+] fself created: %s\n", out_file_path);
                 } else {
                     SOCK_LOG(sock, "[!] elf2fself failed on %s\n", out_file_path_elf);
                     rename(out_file_path_elf, out_file_path);

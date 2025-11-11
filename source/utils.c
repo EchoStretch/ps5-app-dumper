@@ -67,9 +67,9 @@ int find_usb_and_setup(void) {
                         fprintf(f, "; === Backport Options ===\n");
                         fprintf(f, "; enable_backport = 1 -> enable SDK patching (default)\n");
                         fprintf(f, "; enable_backport = 0 -> disable SDK patching\n");
-                        fprintf(f, "; backport_level = 1-10 -> predefined SDK pair (default: 4 (4.00) )\n");
-                        fprintf(f, "enable_backport = 1\n");
-                        fprintf(f, "backport_level = 4\n");
+                        fprintf(f, "; backport_level = 1-10 -> predefined SDK pair (default: 1 (1.00) )\n");
+                        fprintf(f, "enable_backport = 0\n");
+                        fprintf(f, "backport_level = 1\n");
                         fprintf(f, "; === FSELF Files ===\n");
                         fprintf(f, "; enable_elf2fself = 1 -> enable fself ELF files (default)\n");
                         fprintf(f, "; enable_elf2fself = 0 -> disable fself\n");
