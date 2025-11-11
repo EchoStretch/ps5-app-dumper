@@ -9,12 +9,15 @@ endif
 
 ELF := ps5-app-dumper.elf
 
-CFLAGS := -Werror -pthread -O2
+CFLAGS := -Werror -pthread -O2 -Wall -Iinclude
 
 all: $(ELF)
 
-$(ELF): main.c utils.c authmgr.c decrypt.c sbl.c
+CFILES := $(wildcard source/*.c)
+
+$(ELF): $(CFILES)
 	$(CC) $(CFLAGS) -o $@ $^
+	strip $@
 
 clean:
 	rm -f $(ELF)

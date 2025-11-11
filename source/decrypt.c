@@ -680,79 +680,77 @@ int dump(int sock, uint64_t authmgr_handle, struct tailored_offsets *offsets, co
 
         if (err == -5) goto out;
 
-	if (do_backport) {
-            printf_notification("Starting Backport: %s", fname);
+        if (do_backport) {
             backport_sdk_file(out_file_path);
-            printf_notification("Finished Backport: %s", fname);
         }
 
-	if (do_elf2fself) {
-        if (src_root != NULL && out_dir_path != NULL) {
-            const char *relative = entry + strlen(src_root);
-            if (*relative == '/') relative++;
+        if (do_elf2fself) {
+            if (src_root != NULL && out_dir_path != NULL) {
+                const char *relative = entry + strlen(src_root);
+                if (*relative == '/') relative++;
+                
+                char rel_path[PATH_MAX];
+                snprintf(rel_path, sizeof(rel_path), "%s", relative);
             
-            char rel_path[PATH_MAX];
-            snprintf(rel_path, sizeof(rel_path), "%s", relative);
-        
-            char decrypted_root[PATH_MAX];
-            snprintf(decrypted_root, sizeof(decrypted_root), "%s/decrypted", out_dir_path);
-        
-            char full_dest_path[PATH_MAX];
-            snprintf(full_dest_path, sizeof(full_dest_path), "%s/%s", decrypted_root, rel_path);
-        
-            char *last_slash = strrchr(full_dest_path, '/');
-            if (last_slash) {
-                *last_slash = '\0';
-                _mkdir(full_dest_path);
-                *last_slash = '/';
-            } else {
-                _mkdir(decrypted_root);
-            }
-        
-            int src_fd = open(out_file_path, O_RDONLY, 0);
-            if (src_fd < 0) {
-                SOCK_LOG(sock, "[!] Failed to open decrypted source for copy: %s\n", out_file_path);
-            } else {
-                int dst_fd = open(full_dest_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-                if (dst_fd < 0) {
-                    SOCK_LOG(sock, "[!] Failed to open decrypted copy target: %s\n", full_dest_path);
+                char decrypted_root[PATH_MAX];
+                snprintf(decrypted_root, sizeof(decrypted_root), "%s/decrypted", out_dir_path);
+            
+                char full_dest_path[PATH_MAX];
+                snprintf(full_dest_path, sizeof(full_dest_path), "%s/%s", decrypted_root, rel_path);
+            
+                char *last_slash = strrchr(full_dest_path, '/');
+                if (last_slash) {
+                    *last_slash = '\0';
+                    _mkdir(full_dest_path);
+                    *last_slash = '/';
                 } else {
-                    char buf[8192];
-                    ssize_t n;
-                    int copy_ok = 1;
-                    while ((n = read(src_fd, buf, sizeof(buf))) > 0) {
-                        if (write(dst_fd, buf, n) != n) {
-                            SOCK_LOG(sock, "[!] Write error during copy to %s\n", full_dest_path);
-                            copy_ok = 0;
-                            break;
+                    _mkdir(decrypted_root);
+                }
+            
+                int src_fd = open(out_file_path, O_RDONLY, 0);
+                if (src_fd < 0) {
+                    SOCK_LOG(sock, "[!] Failed to open decrypted source for copy: %s\n", out_file_path);
+                } else {
+                    int dst_fd = open(full_dest_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                    if (dst_fd < 0) {
+                        SOCK_LOG(sock, "[!] Failed to open decrypted copy target: %s\n", full_dest_path);
+                    } else {
+                        char buf[8192];
+                        ssize_t n;
+                        int copy_ok = 1;
+                        while ((n = read(src_fd, buf, sizeof(buf))) > 0) {
+                            if (write(dst_fd, buf, n) != n) {
+                                SOCK_LOG(sock, "[!] Write error during copy to %s\n", full_dest_path);
+                                copy_ok = 0;
+                                break;
+                            }
+                        }
+                        fsync(dst_fd);
+                        close(dst_fd);
+
+                        if (copy_ok) {
+                            SOCK_LOG(sock, "[+] Copied decrypted: %s → %s\n", out_file_path, full_dest_path);
                         }
                     }
-                    fsync(dst_fd);
-                    close(dst_fd);
-
-                    if (copy_ok) {
-                        SOCK_LOG(sock, "[+] Copied decrypted: %s → %s\n", out_file_path, full_dest_path);
-                    }
+                    close(src_fd);
                 }
-                close(src_fd);
             }
-        }
 
-        char out_file_path_elf[1024];
-        sprintf(out_file_path_elf, "%s.decrypted", out_file_path);
-        if (rename(out_file_path, out_file_path_elf) == 0) {
-            if (elf2fself(out_file_path_elf, out_file_path) == 0) {
-                unlink(out_file_path_elf);
-                SOCK_LOG(sock, "[+] FSELF created: %s\n", out_file_path);
+            char out_file_path_elf[1024];
+            sprintf(out_file_path_elf, "%s.decrypted", out_file_path);
+            if (rename(out_file_path, out_file_path_elf) == 0) {
+                if (elf2fself(out_file_path_elf, out_file_path) == 0) {
+                    unlink(out_file_path_elf);
+                    SOCK_LOG(sock, "[+] FSELF created: %s\n", out_file_path);
+                } else {
+                    SOCK_LOG(sock, "[!] elf2fself failed on %s\n", out_file_path_elf);
+                    rename(out_file_path_elf, out_file_path);
+                }
             } else {
-                SOCK_LOG(sock, "[!] elf2fself failed on %s\n", out_file_path_elf);
-                rename(out_file_path_elf, out_file_path);
+                SOCK_LOG(sock, "[!] Failed to rename %s → %s\n", out_file_path, out_file_path_elf);
             }
-        } else {
-            SOCK_LOG(sock, "[!] Failed to rename %s → %s\n", out_file_path, out_file_path_elf);
         }
-		}
-		
+        
         entry += entry_len + 1;
     }
 

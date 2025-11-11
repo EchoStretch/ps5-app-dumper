@@ -431,7 +431,6 @@ int elf2fself(const char *elf_path, const char *fself_path)
     }
 
     if (version_seg.p_filesz > 0) {
-        write_log(g_log_path, "elf2fself: writing PT_SCE_VERSION segment (size=0x%lx)", version_seg.p_filesz);
         if (lseek(elf_fd, version_seg.p_offset, SEEK_SET) < 0) {
             write_log(g_log_path, "elf2fself: seek PT_SCE_VERSION failed: %s", strerror(errno));
             goto fail;

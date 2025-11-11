@@ -218,6 +218,13 @@ static int patch_elf(const char *path)
         return -1;
     }
 
+    /* Notify start of backport */
+    if (g_backport_enabled) {
+        char *fname = strrchr(path, '/');
+        fname = fname ? fname + 1 : (char*)path;
+        printf_notification("Starting Backport: %s", fname);
+    }
+
     if (fstat(fd, &st) < 0) goto cleanup;
     if (st.st_size < 0x40) goto cleanup;
 
@@ -260,28 +267,57 @@ static int patch_elf(const char *path)
             (p_type == PT_SCE_MODULE_PARAM && magic != SCE_MODULE_PARAM_MAGIC))
             continue;
 
-        /* Patch PS5 SDK */
+        /* Patch PS5 SDK - only downgrade */
         if (g_backport_enabled && p_offset + SCE_PARAM_PS5_SDK_OFFSET + 4 <= (uint64_t)st.st_size) {
             uint32_t old = *(uint32_t *)(param + SCE_PARAM_PS5_SDK_OFFSET);
-            if (old != g_target_ps5_sdk) {
+            if (old > g_target_ps5_sdk) {
                 *(uint32_t *)(param + SCE_PARAM_PS5_SDK_OFFSET) = g_target_ps5_sdk;
                 if (g_enable_logging && g_log_path[0])
-                    write_log(g_log_path, "Patched PS5 SDK 0x%08X -> 0x%08X in %s", old, g_target_ps5_sdk, path);
+                    write_log(g_log_path, "Backported PS5 SDK 0x%08X -> 0x%08X in %s", old, g_target_ps5_sdk, path);
                 patched = 1;
+            } else if (old < g_target_ps5_sdk) {
+                if (g_enable_logging && g_log_path[0])
+                    write_log(g_log_path, "Preserved PS5 SDK 0x%08X (already lower than target 0x%08X) in %s", old, g_target_ps5_sdk, path);
+            } else {
+                if (g_enable_logging && g_log_path[0])
+                    write_log(g_log_path, "PS5 SDK already at target 0x%08X in %s", old, path);
             }
         }
 
-        /* Patch PS4 SDK */
+        /* Patch PS4 SDK - only downgrade */
         if (g_backport_enabled && p_offset + SCE_PARAM_PS4_SDK_OFFSET + 4 <= (uint64_t)st.st_size) {
             uint32_t old = *(uint32_t *)(param + SCE_PARAM_PS4_SDK_OFFSET);
-            if (old != g_target_ps4_sdk) {
+            if (old > g_target_ps4_sdk) {
                 *(uint32_t *)(param + SCE_PARAM_PS4_SDK_OFFSET) = g_target_ps4_sdk;
                 if (g_enable_logging && g_log_path[0])
-                    write_log(g_log_path, "Patched PS4 SDK 0x%08X -> 0x%08X in %s", old, g_target_ps4_sdk, path);
+                    write_log(g_log_path, "Backported PS4 SDK 0x%08X -> 0x%08X in %s", old, g_target_ps4_sdk, path);
                 patched = 1;
+            } else if (old < g_target_ps4_sdk) {
+                if (g_enable_logging && g_log_path[0])
+                    write_log(g_log_path, "Preserved PS4 SDK 0x%08X (already lower than target 0x%08X) in %s", old, g_target_ps4_sdk, path);
+            } else {
+                if (g_enable_logging && g_log_path[0])
+                    write_log(g_log_path, "PS4 SDK already at target 0x%08X in %s", old, path);
             }
         }
     }
+
+    /* ---------- BACKPORT RESULT NOTIFICATION ---------- */
+    if (g_backport_enabled) {
+        char *fname = strrchr(path, '/');
+        fname = fname ? fname + 1 : (char*)path;
+
+        if (patched) {
+            printf_notification("Finished Backport: %s", fname);
+            if (g_enable_logging && g_log_path[0])
+                write_log(g_log_path, "backport: PATCHED %s", path);
+        } else {
+            printf_notification("Skipped Backport: %s", fname);
+            if (g_enable_logging && g_log_path[0])
+                write_log(g_log_path, "backport: SKIPPED %s – SDK already compatible (no downgrade needed)", path);
+        }
+    }
+    /* ------------------------------------------------ */
 
 cleanup:
     if (map && map != MAP_FAILED) munmap(map, st.st_size);
@@ -324,8 +360,7 @@ int backport_recursive(const char *root)
             strcmp(ext, ".prx")  && strcmp(ext, ".sprx")) continue;
 
         if (patch_elf(fullpath) == 0) {
-            if (g_enable_logging && g_log_path[0])
-                write_log(g_log_path, "backport: patched %s", fullpath);
+            // Success already logged inside patch_elf
         }
     }
 
