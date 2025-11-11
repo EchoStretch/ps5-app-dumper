@@ -20,6 +20,8 @@
 #include "self.h"
 #include "elf.h"
 #include "utils.h"
+#include "backport.h"
+#include "elf2fself.h"
 
 #ifdef LOG_TO_SOCKET
 #define PC_IP   "10.0.0.35"
@@ -262,17 +264,14 @@ void *self_decrypt_block(
 
     input_size = block_segment->extents[block_idx]->len;
     if (input_size > 0x4000) {
-        // shouldnt happen
         SOCK_LOG(sock, "[!] self_decrypt_block: input_size > 0x4000\n");
         return NULL;
     }
     memcpy(temp_buf, (void *)input_addr, input_size);
     memset(temp_buf + input_size, 0, 0x4000 - input_size);
     
-    // Request segment decryption
     const int max_tries = 10;
     for (int tries = 0; tries < max_tries; tries++) {
-
         for (int i = 0; i < 0x4000; i += 0x1000) {
             if (kernel_copyin(temp_buf + i, data_blob_va + i, 0x1000)) {
                 SOCK_LOG(sock, "[!] self_decrypt_block: kernel_copyin failed for block %d, chunk %d\n", block_idx, i / 0x1000);
@@ -368,19 +367,15 @@ int decrypt_self(int sock, uint64_t authmgr_handle, char *path, int out_fd, stru
     cur_phdr = start_phdrs;
     final_file_size = 0;
     for (int i = 0; i < elf_header->e_phnum; i++) {
-        if (cur_phdr->p_type == PT_NOTE)
+        if (cur_phdr->p_offset + cur_phdr->p_filesz > final_file_size)
             final_file_size = cur_phdr->p_offset + cur_phdr->p_filesz;
         cur_phdr++;
     }
 
     if (final_file_size == 0) {
-        SOCK_LOG(sock, "  [?] file segments are irregular, falling back on last LOAD segment\n");
-        cur_phdr = start_phdrs;
-        for (int i = 0; i < elf_header->e_phnum; i++) {
-            if (cur_phdr->p_type == PT_LOAD)
-                final_file_size = cur_phdr->p_offset + cur_phdr->p_filesz;
-            cur_phdr++;
-        }
+        SOCK_LOG(sock, "  [?] failed to get final file size\n");
+        err = -12;
+        goto cleanup_in_file_data;      
     }
 
     out_file_data = mmap(NULL, final_file_size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
@@ -428,7 +423,6 @@ int decrypt_self(int sock, uint64_t authmgr_handle, char *path, int out_fd, stru
         segment = (struct sce_self_segment_header *)(self_file_data + sizeof(struct sce_self_header) + (i * sizeof(struct sce_self_segment_header)));
         if (!SELF_SEGMENT_HAS_BLOCKS(segment) || SELF_SEGMENT_HAS_DIGESTS(segment)) continue;
 
-        // Get accompanying ELF segment
         cur_phdr = &start_phdrs[SELF_SEGMENT_ID(segment)];
 
         block_info = block_segments[i];
@@ -471,7 +465,7 @@ int decrypt_self(int sock, uint64_t authmgr_handle, char *path, int out_fd, stru
     }
     fsync(out_fd);
 
-        SOCK_LOG(sock, "  [+] wrote 0x%08lx bytes...\n", final_file_size);
+    SOCK_LOG(sock, "  [+] wrote 0x%08lx bytes...\n", final_file_size);
 
 cleanup_out_file_data:
     munmap(out_file_data, final_file_size);
@@ -592,7 +586,7 @@ static uint64_t get_thread()
     return 0;
 }
 
-int dump(int sock, uint64_t authmgr_handle, struct tailored_offsets *offsets, const char *src_root, const char *out_dir_path)
+int dump(int sock, uint64_t authmgr_handle, struct tailored_offsets *offsets, const char *src_root, const char *out_dir_path, int do_elf2fself, int do_backport)
 {
     if (g_dump_queue_buf == NULL) return -1;
 
@@ -680,36 +674,110 @@ int dump(int sock, uint64_t authmgr_handle, struct tailored_offsets *offsets, co
         if (err != 0) {
             unlink(out_file_path);
             SOCK_LOG(sock, "[!] failed to dump %s\n", entry);
+            entry += entry_len + 1;
+            continue;
         }
 
         if (err == -5) goto out;
 
+	if (do_backport) {
+            printf_notification("Starting Backport: %s", fname);
+            backport_sdk_file(out_file_path);
+            printf_notification("Finished Backport: %s", fname);
+        }
+
+	if (do_elf2fself) {
+        if (src_root != NULL && out_dir_path != NULL) {
+            const char *relative = entry + strlen(src_root);
+            if (*relative == '/') relative++;
+            
+            char rel_path[PATH_MAX];
+            snprintf(rel_path, sizeof(rel_path), "%s", relative);
+        
+            char decrypted_root[PATH_MAX];
+            snprintf(decrypted_root, sizeof(decrypted_root), "%s/decrypted", out_dir_path);
+        
+            char full_dest_path[PATH_MAX];
+            snprintf(full_dest_path, sizeof(full_dest_path), "%s/%s", decrypted_root, rel_path);
+        
+            char *last_slash = strrchr(full_dest_path, '/');
+            if (last_slash) {
+                *last_slash = '\0';
+                _mkdir(full_dest_path);
+                *last_slash = '/';
+            } else {
+                _mkdir(decrypted_root);
+            }
+        
+            int src_fd = open(out_file_path, O_RDONLY, 0);
+            if (src_fd < 0) {
+                SOCK_LOG(sock, "[!] Failed to open decrypted source for copy: %s\n", out_file_path);
+            } else {
+                int dst_fd = open(full_dest_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                if (dst_fd < 0) {
+                    SOCK_LOG(sock, "[!] Failed to open decrypted copy target: %s\n", full_dest_path);
+                } else {
+                    char buf[8192];
+                    ssize_t n;
+                    int copy_ok = 1;
+                    while ((n = read(src_fd, buf, sizeof(buf))) > 0) {
+                        if (write(dst_fd, buf, n) != n) {
+                            SOCK_LOG(sock, "[!] Write error during copy to %s\n", full_dest_path);
+                            copy_ok = 0;
+                            break;
+                        }
+                    }
+                    fsync(dst_fd);
+                    close(dst_fd);
+
+                    if (copy_ok) {
+                        SOCK_LOG(sock, "[+] Copied decrypted: %s → %s\n", out_file_path, full_dest_path);
+                    }
+                }
+                close(src_fd);
+            }
+        }
+
+        char out_file_path_elf[1024];
+        sprintf(out_file_path_elf, "%s.decrypted", out_file_path);
+        if (rename(out_file_path, out_file_path_elf) == 0) {
+            if (elf2fself(out_file_path_elf, out_file_path) == 0) {
+                unlink(out_file_path_elf);
+                SOCK_LOG(sock, "[+] FSELF created: %s\n", out_file_path);
+            } else {
+                SOCK_LOG(sock, "[!] elf2fself failed on %s\n", out_file_path_elf);
+                rename(out_file_path_elf, out_file_path);
+            }
+        } else {
+            SOCK_LOG(sock, "[!] Failed to rename %s → %s\n", out_file_path, out_file_path_elf);
+        }
+		}
+		
         entry += entry_len + 1;
     }
 
     SOCK_LOG(sock, "[+] done\n");
 
-out: {
-    uint64_t spinlock_after = 0;
-    kernel_copyout(sbl_sxlock_addr, &spinlock_after, sizeof(spinlock_after));
-    
-    // if 0x4 is set (and/or 0x2?) then there are waiters and since we cant wake them the console is probably frozen
-    // and would require a hard shutdown anyway, so just panic instead
-    // sometimes it can recover from waiters, i guess lock normally spins for some time before going to sleep and if we complete before that we can recover? idk, idc
-    // if (spinlock_after & 0x6) {
-    //     SOCK_LOG(sock, "[!] lock has waiters, panicking to avoid hang...\n");
-    //     sleep(2);
-    //     kernel_setchar(KERNEL_ADDRESS_TEXT_BASE, 0); // panic
-    // }
+out:
+    {
+        uint64_t spinlock_after = 0;
+        kernel_copyout(sbl_sxlock_addr, &spinlock_after, sizeof(spinlock_after));
 
-    spinlock_unlock = 0x1 | (spinlock_after & 0xF);
-    kernel_copyin(&spinlock_unlock, sbl_sxlock_addr, sizeof(spinlock_unlock));
+        // Optional panic logic (commented out in original)
+        // if (spinlock_after & 0x6) {
+        //     SOCK_LOG(sock, "[!] lock has waiters, panicking to avoid hang...\n");
+        //     sleep(2);
+        //     kernel_setchar(KERNEL_ADDRESS_TEXT_BASE, 0); // panic
+        // }
 
-    return err;
+        spinlock_unlock = 0x1 | (spinlock_after & 0xF);
+        kernel_copyin(&spinlock_unlock, sbl_sxlock_addr, sizeof(spinlock_unlock));
+
+        return err;
     }
 }
 
-int decrypt_all(const char *src_game, const char *dst_game)
+int decrypt_all(const char *src_game, const char *dst_game, int do_elf2fself, int do_backport)
 {
     int sock = -1;
     uint64_t authmgr_handle;
@@ -819,7 +887,7 @@ int decrypt_all(const char *src_game, const char *dst_game)
     dump_queue_reset();
     dump_queue_add_dir(sock, (char *)src_game, 1);
 
-    err = dump(sock, authmgr_handle, &offsets, src_game, dst_game);
+    err = dump(sock, authmgr_handle, &offsets, src_game, dst_game, do_elf2fself, do_backport);
 
 out:
 #ifdef LOG_TO_SOCKET

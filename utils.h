@@ -48,6 +48,8 @@ extern time_t copy_start_time;
 int  find_usb_and_setup(void);
 int  read_decrypter_config(void);
 int  read_logging_config(void); 
+int  read_elf2fself_config(void);
+int  read_backport_config(void);
 const char* get_usb_homebrew_path(void);
 
 const char* detect_fs_type(const char *mountpoint);

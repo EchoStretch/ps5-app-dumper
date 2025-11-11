@@ -1,4 +1,3 @@
-#include "utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +11,8 @@
 #include <sys/mman.h>
 #include <sys/aio.h>
 #include <errno.h>
+
+#include "utils.h"
 
 size_t folder_size_current = 0;
 size_t total_bytes_copied = 0;
@@ -39,6 +40,8 @@ int find_usb_and_setup(void) {
         snprintf(testfile, sizeof(testfile), "%s/.probe_usb", homebrew);
         snprintf(config,   sizeof(config),   "%s/config.ini", homebrew);
 
+        g_enable_logging = read_logging_config();
+		
         if (!dir_exists(root)) continue;
 
         mkdirs(homebrew);
@@ -56,11 +59,24 @@ int find_usb_and_setup(void) {
                     FILE *f = fopen(config, "w");
                     if (f) {
                         fprintf(f, "; PS5 App Dumper Config\n");
-                        fprintf(f, "; decrypter = 1  -> decrypt after dump (default)\n");
-                        fprintf(f, "; decrypter = 0  -> skip decryption\n");
+                        fprintf(f, "\n");
+                        fprintf(f, "; === Decrypt App ===\n");
+                        fprintf(f, "; enable_decrypter = 1  -> decrypt ELF files (default)\n");
+                        fprintf(f, "; enable_decrypter = 0  -> disable decryption\n");
+                        fprintf(f, "enable_decrypter = 1\n");
+                        fprintf(f, "; === Backport Options ===\n");
+                        fprintf(f, "; enable_backport = 1 -> enable SDK patching (default)\n");
+                        fprintf(f, "; enable_backport = 0 -> disable SDK patching\n");
+                        fprintf(f, "; backport_level = 1-10 -> predefined SDK pair (default: 4 (4.00) )\n");
+                        fprintf(f, "enable_backport = 1\n");
+                        fprintf(f, "backport_level = 4\n");
+                        fprintf(f, "; === FSELF Files ===\n");
+                        fprintf(f, "; enable_elf2fself = 1 -> enable fself ELF files (default)\n");
+                        fprintf(f, "; enable_elf2fself = 0 -> disable fself\n");
+                        fprintf(f, "enable_elf2fself = 1\n");
+                        fprintf(f, "; === Logging ===\n");
                         fprintf(f, "; enable_logging = 1 -> write log.txt (default)\n");
                         fprintf(f, "; enable_logging = 0 -> disable logging\n");
-                        fprintf(f, "decrypter = 1\n");
                         fprintf(f, "enable_logging = 1\n");
                         fclose(f);
                     }
@@ -140,7 +156,7 @@ int read_decrypter_config(void) {
     while (fgets(line, sizeof(line), f)) {
         char *p = line;
         while (*p == ' ' || *p == '\t') p++;
-        if (strncmp(p, "decrypter", 9) == 0) {
+        if (strncmp(p, "enable_decrypter", 9) == 0) {
             p += 9;
             while (*p == ' ' || *p == '\t' || *p == '=') p++;
             if (*p == '0') { fclose(f); return 0; }
@@ -174,6 +190,58 @@ int read_logging_config(void) {
     }
     fclose(f);
     return found ? g_enable_logging : 1;
+}
+
+int read_backport_config(void)
+{
+    if (g_usb_homebrew[0] == '\0') return 1; 
+
+    char cfg_path[512];
+    snprintf(cfg_path, sizeof(cfg_path), "%s/config.ini", g_usb_homebrew);
+
+    FILE *f = fopen(cfg_path, "r");
+    if (!f) return 1;
+
+    char line[256];
+    int  value = 1;
+    while (fgets(line, sizeof(line), f)) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (strncmp(p, "enable_backport", 15) == 0) {
+            p += 15;
+            while (*p == ' ' || *p == '\t' || *p == '=') p++;
+            if (*p == '0') value = 0;
+            else if (*p == '1') value = 1;
+        }
+    }
+    fclose(f);
+    return value;
+}
+
+int read_elf2fself_config(void)
+{
+    if (g_usb_homebrew[0] == '\0') return 1;
+
+    char config_path[256];
+    snprintf(config_path, sizeof(config_path), "%s/config.ini", g_usb_homebrew);
+
+    FILE *f = fopen(config_path, "r");
+    if (!f) return 1;
+
+    char line[128];
+    int value = 1;  // default: enabled
+    while (fgets(line, sizeof(line), f)) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (strncmp(p, "enable_elf2fself", 16) == 0) {
+            p += 16;
+            while (*p == ' ' || *p == '\t' || *p == '=') p++;
+            if (*p == '0') value = 0;
+            else if (*p == '1') value = 1;
+        }
+    }
+    fclose(f);
+    return value;  // 1 = enable, 0 = disable
 }
 
 int dir_exists(const char *path)
