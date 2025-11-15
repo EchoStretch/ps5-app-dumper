@@ -93,6 +93,12 @@ extern int  g_enable_logging;
 
 /* ====================== Helper Functions ====================== */
 
+static const char *get_fname(const char *path)
+{
+    const char *fname = strrchr(path, '/');
+    return fname ? fname + 1 : path;
+}
+
 static int fs_nread(int fd, void *buf, size_t n)
 {
     int r;
@@ -202,9 +208,6 @@ int elf2fself(const char *elf_path, const char *fself_path)
     npdrm.type = 3;
     exinfo.authid = 0x3100000000000002;
     exinfo.type   = 1;
-
-    write_log(g_log_path, "Creating fself: %s", fself_path);
-    printf_notification("Creating fself: %s", fself_path);
 
     /* --- Open input ELF --- */
     elf_fd = open(elf_path, O_RDONLY, 0);
@@ -445,9 +448,11 @@ int elf2fself(const char *elf_path, const char *fself_path)
     free(entry_map);
     close(self_fd);
     close(elf_fd);
+	
+	const char *fname = get_fname(fself_path);
 
-    write_log(g_log_path, "fself created: %s", fself_path);
-    printf_notification("fself created: %s", fself_path);
+    write_log(g_log_path, "fself created: %s", fname);
+    printf_notification("fself created: %s", fname);
 
     return 0;
 

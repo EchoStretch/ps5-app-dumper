@@ -1,14 +1,7 @@
 #ifndef DECRYPT_H
 #define DECRYPT_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+int decrypt_all(const char *src_game, const char *dst_game,
+                int do_elf2fself, int do_backport);
 
-void decrypt_all(const char *src_game, const char *dst_game);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif // DECRYPT_H
+#endif /* DECRYPT_H */

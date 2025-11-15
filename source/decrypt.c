@@ -1,891 +1,226 @@
+/*=====================================================================
+ *  decrypt.c  –  PER-FILE FLOW: decrypt → copy → backport → fself
+ *               Handles subdirs, skips decrypted/, perfect order
+ *====================================================================*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <fcntl.h>
 #include <dirent.h>
 #include <sys/stat.h>
-#include <sys/mman.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <limits.h>
-#include <math.h>
+#include <sys/mman.h>
+#include <sys/elf64.h>
 
-#include <ps5/kernel.h>
-
-#include "sbl.h"
-#include "authmgr.h"
-#include "self.h"
-#include "elf.h"
 #include "utils.h"
+#include "decrypt.h"
 #include "backport.h"
 #include "elf2fself.h"
+#include "selfpager.h"
 
-#ifdef LOG_TO_SOCKET
-#define PC_IP   "10.0.0.35"
-#define PC_PORT 5655
-#endif
+/*=====================================================================
+ *  Global progress
+ *====================================================================*/
+int g_total_files  = 0;
+int g_current_file = 0;
 
-struct tailored_offsets
+/*=====================================================================
+ *  Forward declarations
+ *====================================================================*/
+static int count_files_recursive(const char *dir_path);
+static int process_file(const char *input_path, const char *output_path,
+                        const char *root_dst, int do_elf2fself, int do_backport);
+static int decrypt_and_process_all(const char *input_dir, const char *output_dir,
+                                   const char *root_dst, int do_elf2fself, int do_backport);
+
+/*=====================================================================
+ *  Public entry point
+ *====================================================================*/
+int decrypt_all(const char *src_game, const char *dst_game,
+                int do_elf2fself, int do_backport)
 {
-    uint64_t offset_dmpml4i;
-    uint64_t offset_dmpdpi;
-    uint64_t offset_pml4pml4i;
-    uint64_t offset_mailbox_base;
-    uint64_t offset_mailbox_flags;
-    uint64_t offset_mailbox_meta;
-    uint64_t offset_authmgr_handle;
-    uint64_t offset_sbl_sxlock;
-    uint64_t offset_sbl_mb_mtx;
-    uint64_t offset_g_message_id;
-    uint64_t offset_datacave_1;
-    uint64_t offset_datacave_2;
-};
+    g_total_files = count_files_recursive(src_game);
+    g_current_file = 0;
 
-uint64_t g_kernel_data_base;
-char *g_bump_allocator_base;
-char *g_bump_allocator_cur;
-uint64_t g_bump_allocator_len;
-
-char *g_dump_queue_buf = NULL;
-int g_dump_queue_buf_pos = 0;
-#define G_DUMP_QUEUE_BUF_SIZE 1 * 1024 * 1024 // 1MB
-
-int g_total_files   = 0;
-int g_current_file  = 0;
-
-void *bump_alloc(uint64_t len)
-{
-    void *ptr;
-    if (g_bump_allocator_cur + len >= (g_bump_allocator_base + g_bump_allocator_len)) {
-        printf("[!] bump allocator out of memory\n");
-        return NULL;
-    }
-
-    ptr = (void *) g_bump_allocator_cur;
-    g_bump_allocator_cur += len;
-
-    (void)memset(ptr, 0, len);
-    return ptr;
+    int res = decrypt_and_process_all(src_game, dst_game, dst_game,
+                                      do_elf2fself, do_backport);
+    return res;
 }
 
-void *bump_calloc(uint64_t count, uint64_t len)
+/*=====================================================================
+ *  Count ELF files
+ *====================================================================*/
+static int count_files_recursive(const char *dir_path)
 {
-    uint64_t total_len = count * len;
-    return bump_alloc(total_len);
-}
+    int total = 0;
+    DIR *dir = opendir(dir_path);
+    if (!dir) return 0;
 
-void bump_reset()
-{
-    g_bump_allocator_cur = g_bump_allocator_base;
-}
+    struct dirent *ent;
+    char full[PATH_MAX];
 
-static void _mkdir(const char *dir) {
-    char tmp[PATH_MAX];
-    char *p = NULL;
-    size_t len;
-
-    snprintf(tmp, sizeof(tmp), "%s", dir);
-    len = strlen(tmp);
-    if (tmp[len - 1] == '/')
-        tmp[len - 1] = 0;
-    for (p = tmp + 1; *p; p++)
-        if (*p == '/') {
-            *p = 0;
-            mkdir(tmp, 0777);
-            *p = '/';
-        }
-    mkdir(tmp, 0777);
-}
-
-uint64_t get_authmgr_sm(int sock, struct tailored_offsets *offsets)
-{
-    uint64_t authmgr_sm_handle;
-    kernel_copyout(g_kernel_data_base + offsets->offset_authmgr_handle, &authmgr_sm_handle, sizeof(authmgr_sm_handle));
-    return authmgr_sm_handle;
-}
-
-int self_verify_header(int sock, uint64_t authmgr_handle, char *data, uint64_t size, struct tailored_offsets *offsets)
-{
-    int err;
-    uint64_t data_blob_va = g_kernel_data_base + offsets->offset_datacave_2;
-    uint64_t data_blob_pa = pmap_kextract(sock, data_blob_va);
-
-    kernel_copyin(data, data_blob_va, size);
-
-    err = _sceSblAuthMgrSmFinalize(sock, authmgr_handle, 0);
-    if (err != 0)
-        return err;
-
-    return _sceSblAuthMgrVerifyHeader(sock, authmgr_handle, data_blob_pa, size);
-}
-
-struct self_block_segment *self_decrypt_segment(
-    int sock,
-    int authmgr_handle,
-    int service_id,
-    char *file_data,
-    struct sce_self_segment_header *segment,
-    int segment_idx,
-    struct tailored_offsets *offsets)
-{
-    int err;
-    void *out_segment_data;
-    void **digests;
-    char *cur_digest;
-    struct self_block_segment *segment_info;
-    struct sce_self_block_info *cur_block_info;
-    struct sce_self_block_info **block_infos;
-    struct sbl_chunk_table_header *chunk_table;
-    struct sbl_chunk_table_entry *chunk_entry;
-    uint64_t chunk_table_va = g_kernel_data_base + offsets->offset_datacave_1;
-    uint64_t data_blob_va   = g_kernel_data_base + offsets->offset_datacave_2;
-    uint64_t chunk_table_pa = pmap_kextract(sock, chunk_table_va);
-    uint64_t data_blob_pa   = pmap_kextract(sock, data_blob_va);
-    char chunk_table_buf[0x1000] = {};
-
-    struct sce_self_segment_header *target_segment;
-    target_segment = (struct sce_self_segment_header *) (file_data +
-                        sizeof(struct sce_self_header) + (SELF_SEGMENT_ID(segment) * sizeof(struct sce_self_segment_header)));
-
-    if (segment->compressed_size < 0x1000)
-        kernel_copyin(file_data + segment->offset, data_blob_va, segment->compressed_size);
-    else {
-        for (int bytes = 0; bytes < segment->compressed_size; bytes += 0x1000) {
-            if (segment->compressed_size - bytes < 0x1000)
-                kernel_copyin(file_data + segment->offset + bytes, data_blob_va + bytes, (segment->compressed_size - bytes));
-            else
-                kernel_copyin(file_data + segment->offset + bytes, data_blob_va + bytes, 0x1000);
-        }
-    }
-
-    chunk_table = (struct sbl_chunk_table_header *) chunk_table_buf;
-    chunk_entry = (struct sbl_chunk_table_entry *) (chunk_table_buf + sizeof(struct sbl_chunk_table_header));
-
-    chunk_table->first_pa = data_blob_pa;
-    chunk_table->used_entries = 1;
-    chunk_table->data_size = segment->compressed_size;
-
-    chunk_entry->pa = data_blob_pa;
-    chunk_entry->size = segment->compressed_size;
-
-    kernel_copyin(chunk_table, chunk_table_va, 0x30);
-
-    for (int tries = 0; tries < 3; tries++) {
-        err = _sceSblAuthMgrSmLoadSelfSegment(sock, authmgr_handle, service_id, chunk_table_pa, segment_idx);
-        if (err == 0) break;
-        usleep(100000);
-    }
-    if (err != 0) return NULL;
-
-    out_segment_data = mmap(NULL, segment->uncompressed_size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-    if (out_segment_data == NULL) return NULL;
-
-    kernel_copyout(data_blob_va, out_segment_data, segment->uncompressed_size);
-
-    segment_info = bump_alloc(sizeof(struct self_block_segment));
-    if (segment_info == NULL) return NULL;
-
-    segment_info->data = out_segment_data;
-    segment_info->size = segment->uncompressed_size;
-
-    if (SELF_SEGMENT_HAS_BLOCKINFO(segment)){
-        if (SELF_SEGMENT_HAS_DIGESTS(segment)){
-            segment_info->block_count = segment_info->size / (0x20 + 0x8);
-        } else {
-            segment_info->block_count = segment_info->size / 0x8;
-        }
-    } else {
-        segment_info->block_count = ceil((double)target_segment->uncompressed_size / SELF_SEGMENT_BLOCK_SIZE(target_segment));
-    }
-
-    digests = bump_calloc(segment_info->block_count, sizeof(void *));
-    if (digests == NULL) return NULL;
-
-    if (SELF_SEGMENT_HAS_DIGESTS(segment)) {
-        cur_digest = (char *) out_segment_data;
-        for (int i = 0; i < segment_info->block_count; i++) {
-            digests[i] = (void *) cur_digest;
-            cur_digest += 0x20;
-        }
-    }
-    segment_info->digests = digests;
-
-    block_infos = bump_calloc(segment_info->block_count, sizeof(struct sce_self_block_info *));
-    if (block_infos == NULL) return NULL;
-
-    if (SELF_SEGMENT_HAS_BLOCKINFO(segment)) {
-        cur_block_info = (struct sce_self_block_info *)out_segment_data;
-        if (SELF_SEGMENT_HAS_DIGESTS(segment)) {
-            cur_block_info = (struct sce_self_block_info *) (out_segment_data + (0x20 * segment_info->block_count));
-        }
-        for (int i = 0; i < segment_info->block_count; i++) {
-            block_infos[i] = cur_block_info++;
-        }
-    } else {
-        for (int i = 0; i < segment_info->block_count; i++) {
-            block_infos[i] = bump_alloc(sizeof(struct sce_self_block_info));
-            if (block_infos[i] == NULL) return NULL;
-            block_infos[i]->offset = i * SELF_SEGMENT_BLOCK_SIZE(target_segment);
-            if (i == segment_info->block_count - 1) {
-                block_infos[i]->len = target_segment->uncompressed_size % SELF_SEGMENT_BLOCK_SIZE(target_segment);
-            } else {
-                block_infos[i]->len = SELF_SEGMENT_BLOCK_SIZE(target_segment);
-            }
-        }
-    }
-
-    segment_info->extents = block_infos;
-    return segment_info;
-}
-
-void *self_decrypt_block(
-    int sock,
-    int authmgr_handle,
-    int service_id,
-    char *file_data,
-    struct sce_self_segment_header *segment,
-    int segment_idx,
-    struct self_block_segment *block_segment,
-    int block_idx,
-    struct tailored_offsets *offsets)
-{
-    int err;
-    uint64_t data_out_va  = g_kernel_data_base + offsets->offset_datacave_1;
-    uint64_t data_blob_va = g_kernel_data_base + offsets->offset_datacave_2;
-    uint64_t data_out_pa  = pmap_kextract(sock, data_out_va);
-    uint64_t data_blob_pa = pmap_kextract(sock, data_blob_va);
-    uint64_t input_addr = (uint64_t)(file_data + segment->offset + block_segment->extents[block_idx]->offset);
-    void *out_block_data;
-    uint64_t input_size;
-    char temp_buf[0x4000];
-
-    input_size = block_segment->extents[block_idx]->len;
-    if (input_size > 0x4000) {
-        SOCK_LOG(sock, "[!] self_decrypt_block: input_size > 0x4000\n");
-        return NULL;
-    }
-    memcpy(temp_buf, (void *)input_addr, input_size);
-    memset(temp_buf + input_size, 0, 0x4000 - input_size);
-    
-    const int max_tries = 10;
-    for (int tries = 0; tries < max_tries; tries++) {
-        for (int i = 0; i < 0x4000; i += 0x1000) {
-            if (kernel_copyin(temp_buf + i, data_blob_va + i, 0x1000)) {
-                SOCK_LOG(sock, "[!] self_decrypt_block: kernel_copyin failed for block %d, chunk %d\n", block_idx, i / 0x1000);
-                return NULL;
-            }
-        }
-        err = _sceSblAuthMgrSmLoadSelfBlock(
-            sock, authmgr_handle, service_id, data_blob_pa, data_out_pa,
-            segment, SELF_SEGMENT_ID(segment), block_segment, block_idx
-        );
-        if (err == 0) break;
-        usleep(100000);
-        if (tries < max_tries - 1) {
-            SOCK_LOG(sock, "self_decrypt_block: failed to decrypt block %d, err: %d, retrying... (%d/%d)\n", block_idx, err, tries + 1, max_tries);
-        }
-    }
-
-    if (err != 0) {
-        SOCK_LOG(sock, "[!] failed to decrypt block %d, err: %d\n", block_idx, err);
-        return NULL;
-    }
-
-    out_block_data = mmap(NULL, 0x4000, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-    if (out_block_data == NULL) return NULL;
-
-    for (int i = 0; i < 4; i++) {
-        kernel_copyout(data_out_va + (i * 0x1000), out_block_data + (i * 0x1000), 0x1000);
-    }
-
-    return out_block_data;
-}
-
-int decrypt_self(int sock, uint64_t authmgr_handle, char *path, int out_fd, struct tailored_offsets *offsets)
-{
-    int err = 0;
-    int service_id;
-    int self_file_fd;
-    struct stat self_file_stat;
-    void *self_file_data;
-    void *out_file_data;
-    struct elf64_hdr *elf_header;
-    struct elf64_phdr *start_phdrs;
-    struct elf64_phdr *cur_phdr;
-    struct sce_self_header *header;
-    struct sce_self_segment_header *segment;
-    struct sce_self_segment_header *target_segment;
-    struct self_block_segment **block_segments;
-    struct self_block_segment *block_info;
-    void **block_data;
-    uint64_t tail_block_size;
-    uint64_t final_file_size;
-
-    self_file_fd = open(path, 0, 0);
-    if (self_file_fd < 0) {
-        SOCK_LOG(sock, "[!] failed to open %s\n", path);
-        close(out_fd);
-        return self_file_fd;
-    }
-
-    fstat(self_file_fd, &self_file_stat);
-    self_file_data = mmap(NULL, self_file_stat.st_size, PROT_READ, MAP_SHARED, self_file_fd, 0);
-    if (self_file_data == NULL || self_file_data == MAP_FAILED) {
-        SOCK_LOG(sock, "[!] file mmap failed, falling back to reading the file\n");
-        self_file_data = mmap(NULL, self_file_stat.st_size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-        size_t total_read = 0;
-        while (total_read < self_file_stat.st_size) {
-            size_t read_bytes = read(self_file_fd, self_file_data + total_read, self_file_stat.st_size - total_read);
-            if (read_bytes <= 0) break;
-            total_read += read_bytes;
-        }
-        SOCK_LOG(sock, "[+] read file into memory\n");
-    }
-
-    if (*(uint32_t *)self_file_data != SELF_PROSPERO_MAGIC) {
-        SOCK_LOG(sock, "[!] %s is not a PS5 SELF file\n", path);
-        err = -22;
-        goto cleanup_in_file_data;
-    }
-
-    SOCK_LOG(sock, "[+] decrypting %s...\n", path);
-
-    header = (struct sce_self_header *)self_file_data;
-    service_id = self_verify_header(sock, authmgr_handle, self_file_data, header->header_size + header->metadata_size, offsets);
-    if (service_id < 0) {
-        SOCK_LOG(sock, "[!] failed to acquire a service ID\n");
-        err = -1;
-        goto cleanup_in_file_data;
-    }
-
-    elf_header  = (struct elf64_hdr *)(self_file_data + sizeof(struct sce_self_header) + (sizeof(struct sce_self_segment_header) * header->segment_count));
-    start_phdrs = (struct elf64_phdr *)((char *)elf_header + sizeof(struct elf64_hdr));
-
-    cur_phdr = start_phdrs;
-    final_file_size = 0;
-    for (int i = 0; i < elf_header->e_phnum; i++) {
-        if (cur_phdr->p_offset + cur_phdr->p_filesz > final_file_size)
-            final_file_size = cur_phdr->p_offset + cur_phdr->p_filesz;
-        cur_phdr++;
-    }
-
-    if (final_file_size == 0) {
-        SOCK_LOG(sock, "  [?] failed to get final file size\n");
-        err = -12;
-        goto cleanup_in_file_data;      
-    }
-
-    out_file_data = mmap(NULL, final_file_size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-    if (out_file_data == NULL || (intptr_t)out_file_data == -1) {
-        err = -12;
-        goto cleanup_in_file_data;
-    }
-
-    memcpy(
-        out_file_data + sizeof(struct elf64_hdr) + (elf_header->e_phnum * sizeof(struct elf64_phdr)),
-        (char *) (start_phdrs) + (elf_header->e_phnum * sizeof(struct elf64_phdr)),
-        0x40
-    );
-
-    memcpy(out_file_data, elf_header, sizeof(struct elf64_hdr));
-    memcpy(out_file_data + sizeof(struct elf64_hdr), start_phdrs, elf_header->e_phnum * sizeof(struct elf64_phdr));
-
-    block_segments = bump_calloc(header->segment_count, sizeof(struct self_block_segment *));
-    if (block_segments == NULL) {
-        err = -12;
-        goto cleanup_out_file_data;
-    }
-
-    for (int i = 0; i < header->segment_count; i++) {
-        segment = (struct sce_self_segment_header *)(self_file_data + sizeof(struct sce_self_header) + (i * sizeof(struct sce_self_segment_header)));
-        if (SELF_SEGMENT_HAS_DIGESTS(segment)) {
-            target_segment = (struct sce_self_segment_header *)(self_file_data + sizeof(struct sce_self_header) + (SELF_SEGMENT_ID(segment) * sizeof(struct sce_self_segment_header)));
-            SOCK_LOG(sock, "  [?] decrypting block info segment for %lu\n", SELF_SEGMENT_ID(target_segment));
-            block_segments[SELF_SEGMENT_ID(segment)] = self_decrypt_segment(sock, authmgr_handle, service_id, self_file_data, segment, SELF_SEGMENT_ID(target_segment), offsets);
-            if (block_segments[SELF_SEGMENT_ID(segment)] == NULL) {
-                SOCK_LOG(sock, "[!] failed to decrypt segment info for segment %lu\n", SELF_SEGMENT_ID(segment));
-                err = -11;
-                goto cleanup_out_file_data;
-            }
-        }
-    }
-
-    for (int i = 0; i < header->segment_count; i++) {
-        segment = (struct sce_self_segment_header *)(self_file_data + sizeof(struct sce_self_header) + (i * sizeof(struct sce_self_segment_header)));
-        if (!SELF_SEGMENT_HAS_BLOCKS(segment) || SELF_SEGMENT_HAS_DIGESTS(segment)) continue;
-
-        cur_phdr = &start_phdrs[SELF_SEGMENT_ID(segment)];
-
-        block_info = block_segments[i];
-        if (block_info == NULL) {
-            SOCK_LOG(sock, "[!] we don't have block info for segment %d\n", i);
+    while ((ent = readdir(dir)) != NULL) {
+        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0)
             continue;
-        }
 
-        block_data = bump_calloc(block_info->block_count, sizeof(void *));
-        if (block_data == NULL) {
-            err = -12;
-            goto cleanup_out_file_data;
-        }
+        snprintf(full, sizeof(full), "%s/%s", dir_path, ent->d_name);
 
-        tail_block_size = segment->uncompressed_size % SELF_SEGMENT_BLOCK_SIZE(segment);
-
-        for (int block = 0; block < block_info->block_count; block++) {
-            SOCK_LOG(sock, "  [?] %s: decrypting segment=%d, block=%d/%lu\n", path, i, block + 1, block_info->block_count);
-            block_data[block] = self_decrypt_block(sock, authmgr_handle, service_id, self_file_data, segment, i, block_info, block, offsets);
-            if (block_data[block] == NULL) {
-                SOCK_LOG(sock, "[!] failed to decrypt block %d\n", block);
-                err = -11;
-                goto cleanup_out_file_data;
+        if (ent->d_type == DT_DIR) {
+            total += count_files_recursive(full);
+        } else if (ent->d_type == DT_REG) {
+            const char *ext = strrchr(ent->d_name, '.');
+            if (ext && (!strcasecmp(ext, ".elf") || !strcasecmp(ext, ".self") ||
+                        !strcasecmp(ext, ".prx") || !strcasecmp(ext, ".sprx") ||
+                        !strcasecmp(ext, ".bin"))) {
+                total++;
             }
-
-            void *out_addr = out_file_data + cur_phdr->p_offset + (block * SELF_SEGMENT_BLOCK_SIZE(segment));
-            if (block == block_info->block_count - 1) {
-                memcpy(out_addr, block_data[block], tail_block_size);
-            } else {
-                memcpy(out_addr, block_data[block], SELF_SEGMENT_BLOCK_SIZE(segment));
-            }
-            munmap(block_data[block], SELF_SEGMENT_BLOCK_SIZE(segment));
         }
     }
-
-    SOCK_LOG(sock, "[?] writing decrypted SELF to file...\n");
-    if (write(out_fd, out_file_data, final_file_size) != final_file_size) {
-        SOCK_LOG(sock, "[!] failed to dump to file\n");
-        err = -5;
-    }
-    fsync(out_fd);
-
-    SOCK_LOG(sock, "  [+] wrote 0x%08lx bytes...\n", final_file_size);
-
-cleanup_out_file_data:
-    munmap(out_file_data, final_file_size);
-cleanup_in_file_data:
-    munmap(self_file_data, self_file_stat.st_size);
-    close(self_file_fd);
-    close(out_fd);
-    bump_reset();
-    return err;
+    closedir(dir);
+    return total;
 }
 
-int dump_queue_init(int sock)
+/*=====================================================================
+ *  Process ONE file: decrypt → copy → backport → fself
+ *====================================================================*/
+static int process_file(const char *input_path, const char *output_path,
+                        const char *root_dst, int do_elf2fself, int do_backport)
 {
-    if (g_dump_queue_buf != NULL && g_dump_queue_buf != MAP_FAILED) return 0;
-    g_dump_queue_buf = mmap(NULL, G_DUMP_QUEUE_BUF_SIZE, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-    if (g_dump_queue_buf == NULL || g_dump_queue_buf == MAP_FAILED) {
-        SOCK_LOG(sock, "[!] failed to allocate buffer for directory entries\n");
-        exit(-1);
-    }
-    return 0;
-}
+    /* --- 1. DECRYPT --- */
+    int fd = open(input_path, O_RDONLY);
+    if (fd < 0) return -1;
 
-int dump_queue_reset()
-{
-    if (g_dump_queue_buf == NULL) return 0;
-    g_dump_queue_buf_pos = 0;
-    g_dump_queue_buf[0] = '\0';
-    g_total_files   = 0;
-    g_current_file  = 0;
-    return 0;
-}
-
-int dump_queue_add_file(int sock, char *path)
-{
-    dump_queue_init(sock);
-
-    static const char* allowed_exts[] = { ".elf", ".self", ".prx", ".sprx", ".bin" };
-    static const int allowed_exts_count = sizeof(allowed_exts) / sizeof(allowed_exts[0]);
-
-    int len = strlen(path);
-    char* dot = strrchr(path, '.');
-    if (dot == NULL) return -2;
-
-    int allowed = 0;
-    for (int i = 0; i < allowed_exts_count; i++) {
-        if (strcasecmp(dot, allowed_exts[i]) == 0) { allowed = 1; break; }
-    }
-    if (!allowed) return -3;
-
-    int fd = open(path, O_RDONLY, 0);
-    if (fd < 0) { SOCK_LOG(sock, "[!] failed to open file: %s\n", path); return -4; }
-
-    uint32_t magic = 0;
-    read(fd, &magic, sizeof(magic));
+    uint64_t out_size = 0;
+    char *out_data = NULL;
+    int res = decrypt_self(fd, &out_data, &out_size);
     close(fd);
 
-    if (magic != SELF_PROSPERO_MAGIC) return -5;
+    if (res == DECRYPT_ERROR_INPUT_NOT_SELF) return 0;
+    if (res != 0) return res;
 
-    g_total_files++;
-
-    int new_pos = g_dump_queue_buf_pos + len + 1;
-    if (new_pos >= G_DUMP_QUEUE_BUF_SIZE) {
-        SOCK_LOG(sock, "[!] dump queue buffer full\n");
-        exit(-2);
+    /* Create output dir */
+    char *slash = strrchr(output_path, '/');
+    if (slash) {
+        char dir[PATH_MAX];
+        size_t len = slash - output_path;
+        memcpy(dir, output_path, len);
+        dir[len] = '\0';
+        mkdirs(dir);
     }
 
-    memcpy(g_dump_queue_buf + g_dump_queue_buf_pos, path, len + 1);
-    g_dump_queue_buf_pos = new_pos;
-    g_dump_queue_buf[g_dump_queue_buf_pos] = '\0';
-    return 0;
-}
-
-#define DENTS_BUF_SIZE 0x10000
-int dump_queue_add_dir(int sock, char* path, int recursive)
-{
-    int dir_fd = open(path, O_RDONLY, 0);
-    if (dir_fd < 0) { SOCK_LOG(sock, "[!] failed to open directory: %s\n", path); return -1; }
-
-    char* dents = malloc(DENTS_BUF_SIZE);
-    while (1) {
-        int n = getdents(dir_fd, dents, DENTS_BUF_SIZE);
-        if (n <= 0) break;
-
-        struct dirent* entry = (struct dirent*)dents;
-        while ((char*)entry < dents + n) {
-            if (entry->d_type == DT_REG) {
-                char full_path[PATH_MAX];
-                sprintf(full_path, "%s/%s", path, entry->d_name);
-                dump_queue_add_file(sock, full_path);
-            } else if (recursive && entry->d_type == DT_DIR && entry->d_name[0] != '.') {
-                char full_path[PATH_MAX];
-                sprintf(full_path, "%s/%s", path, entry->d_name);
-                dump_queue_add_dir(sock, full_path, recursive);
-            }
-            entry = (struct dirent*)((char*)entry + entry->d_reclen);
-        }
+    int out_fd = open(output_path, O_RDWR | O_CREAT | O_TRUNC, 0644);
+    if (out_fd < 0) {
+        munmap(out_data, out_size);
+        return -1;
     }
-    close(dir_fd);
-    free(dents);
-    return 0;
-}
+    write(out_fd, out_data, out_size);
+    munmap(out_data, out_size);
+    close(out_fd);
 
-#define SYS_THR_SELF 0x1B0
-static inline int gettid()
-{
-    long tid;
-    __syscall(SYS_THR_SELF, &tid);
-    return tid;
-}
+    /* --- 2. COPY TO decrypted/ --- */
+    if (do_elf2fself || do_backport) {
+        const char *rel = output_path + strlen(root_dst);
+        if (*rel == '/') rel++;
 
-static uint64_t get_thread()
-{
-    uint64_t proc = kernel_get_proc(getpid());
-    int tid = gettid();
-    for(uint64_t thr = kernel_getlong(proc+16); thr; thr = kernel_getlong(thr+16))
-        if((int)kernel_getlong(thr+0x9c) == tid)
-            return thr;
-    return 0;
-}
+        char dest_path[PATH_MAX];
+        snprintf(dest_path, sizeof(dest_path), "%s/decrypted/%s", root_dst, rel);
 
-int dump(int sock, uint64_t authmgr_handle, struct tailored_offsets *offsets, const char *src_root, const char *out_dir_path, int do_elf2fself, int do_backport)
-{
-    if (g_dump_queue_buf == NULL) return -1;
-
-    int err = 0;
-    int out_fd;
-    char* entry;
-    char out_file_path[PATH_MAX];
-    struct stat out_file_stat;
-    uint64_t spinlock_lock = get_thread();
-    uint64_t spinlock_unlock = 0x1;
-
-    uintptr_t sbl_sxlock_addr = g_kernel_data_base + offsets->offset_sbl_sxlock + 0x18;
-
-    while (1) {
-        uint64_t lock_val = 0;
-        kernel_copyout(sbl_sxlock_addr, &lock_val, sizeof(lock_val));
-        if (lock_val == 0x1) {
-            kernel_copyin(&spinlock_lock, sbl_sxlock_addr, sizeof(spinlock_lock));
-            kernel_copyout(sbl_sxlock_addr, &lock_val, sizeof(lock_val));
-            if ((lock_val & ~0xFULL) == spinlock_lock) {
-                break;
-            }
-        }
-        usleep(1000);
-    }
-
-    entry = g_dump_queue_buf;
-    while (*entry != '\0') {
-        g_current_file++;
-
-        char progress_msg[128];
-        char *fname = strrchr(entry, '/'); if (!fname) fname = entry; else fname++;
-        snprintf(progress_msg, sizeof(progress_msg), "Decrypting %d/%d: %s", g_current_file, g_total_files, fname);
-        printf_notification(progress_msg);
-
-        SOCK_LOG(sock, "[+] processing %s\n", entry);
-        int entry_len = strlen(entry);
-
-        if (src_root != NULL && out_dir_path != NULL && strncmp(entry, src_root, strlen(src_root)) == 0) {
-            const char *relative = entry + strlen(src_root);
-            if (relative[0] == '/') relative++;
-            snprintf(out_file_path, sizeof(out_file_path), "%s/%s", out_dir_path, relative);
+        char *last = strrchr(dest_path, '/');
+        if (last) {
+            *last = '\0';
+            mkdirs(dest_path);
+            *last = '/';
         } else {
-            snprintf(out_file_path, sizeof(out_file_path), "%s%s", out_dir_path, entry);
+            mkdirs(dest_path);
         }
 
-        char parent_dir[PATH_MAX];
-        char *last_slash_ptr = strrchr(out_file_path, '/');
-        int last_slash = (last_slash_ptr != NULL) ? (last_slash_ptr - out_file_path) : -1;
-        if (last_slash > 0) {
-            strncpy(parent_dir, out_file_path, last_slash);
-            parent_dir[last_slash] = '\0';
-            _mkdir(parent_dir);
+        int src = open(output_path, O_RDONLY);
+        int dst = open(dest_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (src >= 0 && dst >= 0) {
+            char buf[8192];
+            ssize_t n;
+            while ((n = read(src, buf, sizeof(buf))) > 0)
+                write(dst, buf, n);
+            fsync(dst);
+            close(dst);
         }
-
-        if (stat(out_file_path, &out_file_stat) == 0) {
-            if (out_file_stat.st_size > 0) {
-                SOCK_LOG(sock, "[*] %s already exists — overwriting\n", out_file_path);
-                unlink(out_file_path);
-            } else {
-                unlink(out_file_path);
-            }
-        }
-
-        out_fd = open(out_file_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-        if (out_fd < 0) {
-            SOCK_LOG(sock, "[!] failed to open %s for writing, errno: %d\n", out_file_path, errno);
-            entry += entry_len + 1;
-            continue;
-        }
-
-        err = decrypt_self(sock, authmgr_handle, entry, out_fd, offsets);
-        if (err == -11) {
-            for (int attempt = 0; attempt < 2; attempt++) {
-                out_fd = open(out_file_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-                if (out_fd < 0) {
-                    SOCK_LOG(sock, "[!] failed to reopen %s for retry, errno: %d\n", out_file_path, errno);
-                    break;
-                }
-                err = decrypt_self(sock, authmgr_handle, entry, out_fd, offsets);
-                if (err == 0) break;
-            }
-        }
-
-        if (err != 0) {
-            unlink(out_file_path);
-            SOCK_LOG(sock, "[!] failed to dump %s\n", entry);
-            entry += entry_len + 1;
-            continue;
-        }
-
-        if (err == -5) goto out;
-
-        if (do_elf2fself || do_backport) {
-            if (src_root != NULL && out_dir_path != NULL) {
-                const char *relative = entry + strlen(src_root);
-                if (*relative == '/') relative++;
-                
-                char rel_path[PATH_MAX];
-                snprintf(rel_path, sizeof(rel_path), "%s", relative);
-            
-                char decrypted_root[PATH_MAX];
-                snprintf(decrypted_root, sizeof(decrypted_root), "%s/decrypted", out_dir_path);
-            
-                char full_dest_path[PATH_MAX];
-                snprintf(full_dest_path, sizeof(full_dest_path), "%s/%s", decrypted_root, rel_path);
-            
-                char *last_slash = strrchr(full_dest_path, '/');
-                if (last_slash) {
-                    *last_slash = '\0';
-                    _mkdir(full_dest_path);
-                    *last_slash = '/';
-                } else {
-                    _mkdir(decrypted_root);
-                }
-            
-                int src_fd = open(out_file_path, O_RDONLY, 0);
-                if (src_fd < 0) {
-                    SOCK_LOG(sock, "[!] Failed to open decrypted source for copy: %s\n", out_file_path);
-                } else {
-                    int dst_fd = open(full_dest_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-                    if (dst_fd < 0) {
-                        SOCK_LOG(sock, "[!] Failed to open decrypted copy target: %s\n", full_dest_path);
-                    } else {
-                        char buf[8192];
-                        ssize_t n;
-                        int copy_ok = 1;
-                        while ((n = read(src_fd, buf, sizeof(buf))) > 0) {
-                            if (write(dst_fd, buf, n) != n) {
-                                SOCK_LOG(sock, "[!] Write error during copy to %s\n", full_dest_path);
-                                copy_ok = 0;
-                                break;
-                            }
-                        }
-                        fsync(dst_fd);
-                        close(dst_fd);
-
-                        if (copy_ok) {
-                            SOCK_LOG(sock, "[+] Copied decrypted: %s → %s\n", out_file_path, full_dest_path);
-                        }
-                    }
-                    close(src_fd);
-                }
-            }
-		    }
-
-            if (do_backport) {
-                backport_sdk_file(out_file_path);
-            }
-			
-            if (do_elf2fself) {
-            char out_file_path_elf[1024];
-            sprintf(out_file_path_elf, "%s.decrypted", out_file_path);
-            if (rename(out_file_path, out_file_path_elf) == 0) {
-                if (elf2fself(out_file_path_elf, out_file_path) == 0) {
-                    unlink(out_file_path_elf);
-                    SOCK_LOG(sock, "[+] fself created: %s\n", out_file_path);
-                } else {
-                    SOCK_LOG(sock, "[!] elf2fself failed on %s\n", out_file_path_elf);
-                    rename(out_file_path_elf, out_file_path);
-                }
-            } else {
-                SOCK_LOG(sock, "[!] Failed to rename %s → %s\n", out_file_path, out_file_path_elf);
-            }
-        }
-        
-        entry += entry_len + 1;
+        if (src >= 0) close(src);
+        if (dst >= 0) close(dst);
     }
 
-    SOCK_LOG(sock, "[+] done\n");
-
-out:
-    {
-        uint64_t spinlock_after = 0;
-        kernel_copyout(sbl_sxlock_addr, &spinlock_after, sizeof(spinlock_after));
-
-        // Optional panic logic (commented out in original)
-        // if (spinlock_after & 0x6) {
-        //     SOCK_LOG(sock, "[!] lock has waiters, panicking to avoid hang...\n");
-        //     sleep(2);
-        //     kernel_setchar(KERNEL_ADDRESS_TEXT_BASE, 0); // panic
-        // }
-
-        spinlock_unlock = 0x1 | (spinlock_after & 0xF);
-        kernel_copyin(&spinlock_unlock, sbl_sxlock_addr, sizeof(spinlock_unlock));
-
-        return err;
+    /* --- 3. BACKPORT --- */
+    if (do_backport) {
+        backport_sdk_file(output_path);
     }
-}
 
-int decrypt_all(const char *src_game, const char *dst_game, int do_elf2fself, int do_backport)
+    /* --- 4. FSELF --- */
+    if (do_elf2fself) {
+        char tmp[PATH_MAX];
+        snprintf(tmp, sizeof(tmp), "%s.tmp", output_path);
+        if (rename(output_path, tmp) == 0) {
+            if (elf2fself(tmp, output_path) == 0) {
+                unlink(tmp);
+            } else {
+                rename(tmp, output_path);
+            }
+        }
+    }
+    
+        return 0;
+    }
+
+/*=====================================================================
+ *  Walk and process each file in order
+ *====================================================================*/
+static int decrypt_and_process_all(const char *input_dir, const char *output_dir,
+                                   const char *root_dst, int do_elf2fself, int do_backport)
 {
-    int sock = -1;
-    uint64_t authmgr_handle;
-    struct tailored_offsets offsets;
-    int err = 0;
+    DIR *dir = opendir(input_dir);
+    if (!dir) return -1;
 
-#ifdef LOG_TO_SOCKET
-    struct sockaddr_in addr = {0};
-    sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0) {
-        printf("[!] socket() failed\n");
-        return -1;
-    }
-    inet_pton(AF_INET, PC_IP, &addr.sin_addr);
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(PC_PORT);
-    if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        printf("[!] connect() failed\n");
-        close(sock);
-        return -1;
-    }
-#endif
+    struct dirent *ent;
+    char in_path[PATH_MAX];
+    char out_path[PATH_MAX];
 
-    g_bump_allocator_len = 16 * 1024 * 1024;
-    g_bump_allocator_base = mmap(NULL, g_bump_allocator_len, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-    if (g_bump_allocator_base == NULL) {
-        printf("[!] failed to allocate backing space for bump allocator\n");
-        goto out;
-    }
-    g_bump_allocator_cur = g_bump_allocator_base;
-    g_kernel_data_base = KERNEL_ADDRESS_DATA_BASE;
+    while ((ent = readdir(dir)) != NULL) {
+        const char *name = ent->d_name;
+        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) continue;
 
-    uint32_t version = kernel_get_fw_version() & 0xffff0000;
-    printf("[+] firmware version 0x%x\n", version);
+        snprintf(in_path, sizeof(in_path), "%s/%s", input_dir, name);
+        snprintf(out_path, sizeof(out_path), "%s/%s", output_dir, name);
 
-    switch (version) {
-        case 0x3000000: case 0x3100000: case 0x3200000: case 0x3210000:
-            offsets.offset_authmgr_handle = 0xC9EE50; offsets.offset_sbl_mb_mtx = 0x2712A98; offsets.offset_mailbox_base = 0x2712AA0; offsets.offset_sbl_sxlock = 0x2712AA8;
-            offsets.offset_mailbox_flags = 0x2CF5F98; offsets.offset_mailbox_meta = 0x2CF5D38; offsets.offset_dmpml4i = 0x31BE4A0; offsets.offset_dmpdpi = 0x31BE4A4;
-            offsets.offset_pml4pml4i = 0x31BE1FC; offsets.offset_g_message_id = 0x0008000; offsets.offset_datacave_1 = 0x8720000; offsets.offset_datacave_2 = 0x8724000;
-            break;
-        case 0x4000000: case 0x4020000: case 0x4030000: case 0x4500000: case 0x4510000:
-            offsets.offset_authmgr_handle = 0xD0FBB0; offsets.offset_sbl_mb_mtx = 0x2792AB8; offsets.offset_mailbox_base = 0x2792AC0; offsets.offset_sbl_sxlock = 0x2792AC8;
-            offsets.offset_mailbox_flags = 0x2D8DFC0; offsets.offset_mailbox_meta = 0x2D8DD60; offsets.offset_dmpml4i = 0x3257D00; offsets.offset_dmpdpi = 0x3257D04;
-            offsets.offset_pml4pml4i = 0x3257A5C; offsets.offset_g_message_id = 0x0008000; offsets.offset_datacave_1 = 0x8720000; offsets.offset_datacave_2 = 0x8724000;
-            break;
-        case 0x5000000: case 0x5020000: case 0x5100000:
-            offsets.offset_authmgr_handle = 0x0DFF410; offsets.offset_sbl_mb_mtx = 0x28C3038; offsets.offset_mailbox_base = 0x28C3040; offsets.offset_sbl_sxlock = 0x28C3048;
-            offsets.offset_mailbox_flags = 0x2EADFC0; offsets.offset_mailbox_meta = 0x2EADD60; offsets.offset_dmpml4i = 0x3398D24; offsets.offset_dmpdpi = 0x3398D28;
-            offsets.offset_pml4pml4i = 0x3397A2C; offsets.offset_g_message_id = 0x4270000; offsets.offset_datacave_1 = 0x8730000; offsets.offset_datacave_2 = 0x8734000;
-            break;
-        case 0x5500000:
-            offsets.offset_authmgr_handle = 0x0DFF410; offsets.offset_sbl_mb_mtx = 0x28C3038; offsets.offset_mailbox_base = 0x28C3040; offsets.offset_sbl_sxlock = 0x28C3048;
-            offsets.offset_mailbox_flags = 0x2EA9FC0; offsets.offset_mailbox_meta = 0x2EA9D60; offsets.offset_dmpml4i = 0x3394D24; offsets.offset_dmpdpi = 0x3394D28;
-            offsets.offset_pml4pml4i = 0x3393A2C; offsets.offset_g_message_id = 0x4270000; offsets.offset_datacave_1 = 0x8730000; offsets.offset_datacave_2 = 0x8734000;
-            break;
-        case 0x6000000: case 0x6020000: case 0x6500000:
-            offsets.offset_authmgr_handle = 0x0E1F8D0; offsets.offset_sbl_mb_mtx = 0x280F3A8; offsets.offset_mailbox_base = 0x280F3B0; offsets.offset_sbl_sxlock = 0x280F3B8;
-            offsets.offset_mailbox_flags = 0x2DF9FC0; offsets.offset_mailbox_meta = 0x2DF9D60; offsets.offset_dmpml4i = 0x32E45F4; offsets.offset_dmpdpi = 0x32E45F8;
-            offsets.offset_pml4pml4i = 0x32E32FC; offsets.offset_g_message_id = 0x4270000; offsets.offset_datacave_1 = 0x8730000; offsets.offset_datacave_2 = 0x8734000;
-            break;
-        case 0x7000000: case 0x7010000:
-            offsets.offset_authmgr_handle = 0x0E20270; offsets.offset_sbl_mb_mtx = 0x27FF808; offsets.offset_mailbox_base = 0x27FF810; offsets.offset_sbl_sxlock = 0x27FF818;
-            offsets.offset_mailbox_flags = 0x2CCDFC0; offsets.offset_mailbox_meta = 0x2CCDD60; offsets.offset_dmpml4i = 0x2E2CAE4; offsets.offset_dmpdpi = 0x2E2CAE8;
-            offsets.offset_pml4pml4i = 0x2E2B79C; offsets.offset_g_message_id = 0x4270000; offsets.offset_datacave_1 = 0x5060000; offsets.offset_datacave_2 = 0x5064000;
-            break;
-        case 0x7200000: case 0x7400000: case 0x7600000: case 0x7610000:
-            offsets.offset_authmgr_handle = 0x0E20330; offsets.offset_sbl_mb_mtx = 0x27FF808; offsets.offset_mailbox_base = 0x27FF810; offsets.offset_sbl_sxlock = 0x27FF818;
-            offsets.offset_mailbox_flags = 0x2CCDFC0; offsets.offset_mailbox_meta = 0x2CCDD60; offsets.offset_dmpml4i = 0x2E2CAE4; offsets.offset_dmpdpi = 0x2E2CAE8;
-            offsets.offset_pml4pml4i = 0x2E2B79C; offsets.offset_g_message_id = 0x4270000; offsets.offset_datacave_1 = 0x5060000; offsets.offset_datacave_2 = 0x5064000;
-            break;
-        case 0x8000000: case 0x8200000: case 0x8400000: case 0x8600000:
-            offsets.offset_authmgr_handle = 0x0E203C0; offsets.offset_sbl_mb_mtx = 0x27FF888; offsets.offset_mailbox_base = 0x27FF890; offsets.offset_sbl_sxlock = 0x27FF898;
-            offsets.offset_mailbox_flags = 0x2CEA820; offsets.offset_mailbox_meta = 0x2CEA5C0; offsets.offset_dmpml4i = 0x2E48AE4; offsets.offset_dmpdpi = 0x2E48AE8;
-            offsets.offset_pml4pml4i = 0x2E4779C; offsets.offset_g_message_id = 0x4270000; offsets.offset_datacave_1 = 0x5060000; offsets.offset_datacave_2 = 0x5064000;
-            break;
-        case 0x9000000: case 0x9050000: case 0x9200000: case 0x9400000: case 0x9600000:
-            offsets.offset_authmgr_handle = 0xDB8D60; offsets.offset_sbl_mb_mtx = 0x26E71F8; offsets.offset_mailbox_base = 0x26E7200; offsets.offset_sbl_sxlock = 0x26E7208;
-            offsets.offset_mailbox_flags = 0x2BCA860; offsets.offset_mailbox_meta = 0x2BCA600; offsets.offset_dmpml4i = 0x2D28E14; offsets.offset_dmpdpi = 0x2D28E18;
-            offsets.offset_pml4pml4i = 0x2D279CC; offsets.offset_g_message_id = 0x4270000; offsets.offset_datacave_1 = 0x5060000; offsets.offset_datacave_2 = 0x5064000;
-            break;
-        case 0x10000000: case 0x10010000: case 0x10200000: case 0x10400000: case 0x10600000:
-            offsets.offset_authmgr_handle = 0x0DB8DF0; offsets.offset_sbl_mb_mtx = 0x26F71F8; offsets.offset_mailbox_base = 0x26F7200; offsets.offset_sbl_sxlock = 0x26F7208;
-            offsets.offset_mailbox_flags = 0x2BEE860; offsets.offset_mailbox_meta = 0x2BEE600; offsets.offset_dmpml4i = 0x2CF1194; offsets.offset_dmpdpi = 0x2CF1198;
-            offsets.offset_pml4pml4i = 0x2CEFD4C; offsets.offset_g_message_id = 0x4270000; offsets.offset_datacave_1 = 0x5060000; offsets.offset_datacave_2 = 0x5064000;
-            break;
-        default:
-            printf("[!] unsupported firmware, dumping then bailing!\n");
-            char *dump_buf = mmap(NULL, 0x7800 * 0x1000, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-            for (int pg = 0; pg < 0x7800; pg++) {
-                kernel_copyout(g_kernel_data_base + (pg * 0x1000), dump_buf + (pg * 0x1000), 0x1000);
+        if (ent->d_type == DT_DIR) {
+            /* Skip union folders */
+            if (ent->d_namlen == sizeof("PPSA00000-app0-patch0-union") - 1 &&
+                strncmp(input_dir, "/mnt/sandbox/pfsmnt", 19) == 0 &&
+                strncmp(name + 9, "-app0-patch0-union", 18) == 0) {
+                continue;
             }
-            int dump_fd = open("/mnt/usb0/PS5/data_dump.bin", O_WRONLY | O_CREAT, 0644);
-            write(dump_fd, dump_buf, 0x7800 * 0x1000);
-            close(dump_fd);
-            printf("  [+] dumped\n");
-            goto out;
+            decrypt_and_process_all(in_path, out_path, root_dst, do_elf2fself, do_backport);
+            continue;
+        }
+
+        if (ent->d_type != DT_REG) continue;
+
+        const char *ext = strrchr(name, '.');
+        if (!ext) continue;
+        if (strcasecmp(ext, ".elf") && strcasecmp(ext, ".self") &&
+            strcasecmp(ext, ".prx") && strcasecmp(ext, ".sprx") &&
+            strcasecmp(ext, ".bin")) continue;
+
+        /* PROGRESS */
+        char msg[512];
+        g_current_file++;
+        snprintf(msg, sizeof(msg), "Decrypting %d/%d: %s", g_current_file, g_total_files, name);
+        printf_notification(msg);
+
+        /* PROCESS FULLY */
+        process_file(in_path, out_path, root_dst, do_elf2fself, do_backport);
     }
 
-    init_sbl(g_kernel_data_base, offsets.offset_dmpml4i, offsets.offset_dmpdpi, offsets.offset_pml4pml4i,
-             offsets.offset_mailbox_base, offsets.offset_mailbox_flags, offsets.offset_mailbox_meta,
-             offsets.offset_sbl_mb_mtx, offsets.offset_g_message_id);
-
-    authmgr_handle = get_authmgr_sm(sock, &offsets);
-    printf("[+] got auth manager: %lu\n", authmgr_handle);
-
-    dump_queue_reset();
-    dump_queue_add_dir(sock, (char *)src_game, 1);
-
-    err = dump(sock, authmgr_handle, &offsets, src_game, dst_game, do_elf2fself, do_backport);
-
-out:
-#ifdef LOG_TO_SOCKET
-    if (sock >= 0) close(sock);
-#endif
-    return err;
+    closedir(dir);
+    return 0;
 }

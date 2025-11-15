@@ -222,7 +222,6 @@ static int patch_elf(const char *path)
     if (g_backport_enabled) {
         char *fname = strrchr(path, '/');
         fname = fname ? fname + 1 : (char*)path;
-        printf_notification("Starting Backport: %s", fname);
     }
 
     if (fstat(fd, &st) < 0) goto cleanup;
@@ -308,9 +307,9 @@ static int patch_elf(const char *path)
         fname = fname ? fname + 1 : (char*)path;
 
         if (patched) {
-            printf_notification("Finished Backport: %s", fname);
+            printf_notification("Backported: %s", fname);
             if (g_enable_logging && g_log_path[0])
-                write_log(g_log_path, "Backport: PATCHED %s", path);
+                write_log(g_log_path, "Backported: %s", fname);
         } else {
             printf_notification("Skipped Backport: %s", fname);
             if (g_enable_logging && g_log_path[0])

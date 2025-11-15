@@ -113,5 +113,5 @@ Contributions are welcome. When opening issues or PRs, please include:
 * Project reference (This Project is base off pfsmnt): [https://github.com/logic-68/pfsmnt-dumper](https://github.com/logic-68/pfsmnt-dumper)
 * Project repository: [https://github.com/EchoStretch/ps5-app-dumper](https://github.com/EchoStretch/ps5-app-dumper)
 * PS5 Payload SDK (John Tornblom / pacbrew-repo): [https://github.com/ps5-payload-dev/pacbrew-repo](https://github.com/ps5-payload-dev/pacbrew-repo)
-* PS5-SELF-Decrypter ( By Specter / Updated By Idlesauce): [https://github.com/idlesauce/PS5-SELF-Decrypter](https://github.com/idlesauce/PS5-SELF-Decrypter)
+* PS5-SELF-Pager ( By Idlesauce): [https://github.com/idlesauce/ps5-self-pager](https://github.com/idlesauce/ps5-self-pager)
 ---

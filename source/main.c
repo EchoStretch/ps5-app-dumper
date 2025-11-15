@@ -11,7 +11,7 @@
 /* prototype for decrypt function in decrypt.c */
 extern int decrypt_all(const char *src_game, const char *dst_game, int do_elf2fself, int do_backport);
 
-#define VERSION "1.05"
+#define VERSION "1.06"
 #define SANDBOX_PATH "/mnt/sandbox/pfsmnt"
 #define LOG_FILE_NAME "log.txt"
 
@@ -203,7 +203,6 @@ int main(void)
         int decrypt_err = decrypt_all(src_game, dst_game, do_elf2fself, do_backport);
         if (decrypt_err == 0) {
             write_log(logpath, "Decryption Finished: %s", dst_game);
-            printf_notification("Decryption Finished: %s", dst_game);
         } else {
             write_log(logpath, "Decryption Failed: %d", decrypt_err);
             printf_notification("Decryption Failed: %d", decrypt_err);
