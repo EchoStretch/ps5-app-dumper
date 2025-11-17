@@ -138,7 +138,7 @@ static int init() {
     case 0x740:
     case 0x760:
     case 0x761:
-        pagertab_addr = KERNEL_ADDRESS_DATA_BASE + 0xE41180;
+        pagertab_addr = KERNEL_ADDRESS_DATA_BASE + 0xE31180;
         break;
 
     case 0x800:
@@ -344,4 +344,5 @@ int decrypt_self(int input_file_fd, char **out_data, uint64_t *out_size) {
     *out_data = out_buf;
     *out_size = output_file_size;
     return 0;
+
 }
