@@ -114,4 +114,5 @@ Contributions are welcome. When opening issues or PRs, please include:
 * Project repository: [https://github.com/EchoStretch/ps5-app-dumper](https://github.com/EchoStretch/ps5-app-dumper)
 * PS5 Payload SDK (John Tornblom / pacbrew-repo): [https://github.com/ps5-payload-dev/pacbrew-repo](https://github.com/ps5-payload-dev/pacbrew-repo)
 * PS5-SELF-Pager ( By Idlesauce): [https://github.com/idlesauce/ps5-self-pager](https://github.com/idlesauce/ps5-self-pager)
+* PS4-App-Dumper ( By Alazif @ Scene-Collective): [https://github.com/Scene-Collective/ps4-app-dumper](https://github.com/Scene-Collective/ps4-app-dumper)
 ---

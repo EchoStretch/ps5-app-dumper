@@ -1,8 +1,3 @@
-/*=====================================================================
- *  decrypt.c  –  PER-FILE FLOW: decrypt → copy → backport → fself
- *               Handles subdirs, skips decrypted/, perfect order
- *====================================================================*/
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

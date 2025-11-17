@@ -6,6 +6,9 @@
 #include <time.h>
 #include <sys/types.h>
 
+extern int decrypt_all(const char *src_game, const char *dst_game,
+                       int do_elf2fself, int do_backport);
+
 /* Full PS5 notification struct */
 typedef struct {
     int type;                //0x00
@@ -44,12 +47,15 @@ extern size_t total_bytes_copied;
 extern char current_copied[256];
 extern int progress_thread_run;
 extern time_t copy_start_time;
+extern int copy_directory(const char *src, const char *dst);
+extern pthread_t progress_thread;
 
 int  find_usb_and_setup(void);
 int  read_decrypter_config(void);
 int  read_logging_config(void); 
 int  read_elf2fself_config(void);
 int  read_backport_config(void);
+int  read_split_config(void);          // NEW: 0-3 split mode
 const char* get_usb_homebrew_path(void);
 
 const char* detect_fs_type(const char *mountpoint);
@@ -57,5 +63,6 @@ void debug_list_usbs(void);
 
 extern int g_enable_logging;
 extern char g_log_path[512];
+extern int g_split_mode;               // 0-3: split mode
 
 #endif /* UTILS_H */

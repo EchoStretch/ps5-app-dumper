@@ -32,13 +32,6 @@
 #define PT_SCE_COMMENT 0x6FFFFF00
 #define PT_SCE_VERSION 0x6FFFFF01
 
-#define LOG_ERROR(...) \
-    do { \
-        if (g_enable_logging && g_log_path[0]) { \
-            write_log(g_log_path, __VA_ARGS__); \
-        } \
-    } while (0)
-
 // https://github.com/Cryptogenic/PS5-SELF-Decrypter/blob/def326f36c1f1b461030222daa9ea6124d4ce610/include/self.h#L21
 struct sce_self_header {
     uint32_t magic;         // 0x00
@@ -216,14 +209,16 @@ int decrypt_self(int input_file_fd, char **out_data, uint64_t *out_size) {
     struct sce_self_header self_header;
     ssize_t pread_res = pread(input_file_fd, &self_header, sizeof(self_header), 0);
     if (pread_res == -1) {
-        LOG_ERROR("Failed to read self header | errno: %d (%s)\n", errno, strerror(errno));
+        if (g_enable_logging && g_log_path[0]) {
+            write_log(g_log_path, "Failed to read self header | errno: %d (%s)\n", errno, strerror(errno));
+        }
         return DECRYPT_ERROR_IO;
     } else if (pread_res != sizeof(self_header)) {
         // https://man.freebsd.org/cgi/man.cgi?query=pread&apropos=0&sektion=2&manpath=FreeBSD+11.4-RELEASE&arch=default&format=html
         // The system guarantees to read the number of bytes requested if the descriptor
         // references a normal file that has that many bytes left before the end-of-file
 
-        // the file is smaller than 0x20 bytes, so not a self
+        // the file is smaller than 0x20 bytes, so not a self				 
         return DECRYPT_ERROR_INPUT_NOT_SELF;
     }
 
@@ -234,13 +229,17 @@ int decrypt_self(int input_file_fd, char **out_data, uint64_t *out_size) {
     Elf64_Ehdr elf_header;
     int self_elf_header_offset = sizeof(struct sce_self_header) + (sizeof(struct sce_self_segment_header) * self_header.segment_count);
     if (pread(input_file_fd, &elf_header, sizeof(elf_header), self_elf_header_offset) != sizeof(elf_header)) {
-        LOG_ERROR("Failed to read ELF header\n");
+        if (g_enable_logging && g_log_path[0]) {
+            write_log(g_log_path, "Failed to read ELF header\n");
+        }
         return DECRYPT_ERROR_IO;
     }
 
     if (elf_header.e_ident[EI_MAG0] != ELFMAG0 || elf_header.e_ident[EI_MAG1] != ELFMAG1 ||
         elf_header.e_ident[EI_MAG2] != ELFMAG2 || elf_header.e_ident[EI_MAG3] != ELFMAG3) {
-        LOG_ERROR("Failed to find ELF header offset\n");
+        if (g_enable_logging && g_log_path[0]) {
+            write_log(g_log_path, "Failed to find ELF header offset\n");
+        }
         return DECRYPT_ERROR_INTERNAL;
     }
 
@@ -248,7 +247,9 @@ int decrypt_self(int input_file_fd, char **out_data, uint64_t *out_size) {
     int phdrs_size = elf_header.e_phnum * sizeof(Elf64_Phdr);
     int self_elf_phdrs_offset = self_elf_header_offset + sizeof(elf_header);
     if (pread(input_file_fd, phdrs, phdrs_size, self_elf_phdrs_offset) != phdrs_size) {
-        LOG_ERROR("Failed to read program headers\n");
+        if (g_enable_logging && g_log_path[0]) {
+            write_log(g_log_path, "Failed to read program headers\n");
+        }
         return DECRYPT_ERROR_IO;
     }
 
@@ -265,13 +266,17 @@ int decrypt_self(int input_file_fd, char **out_data, uint64_t *out_size) {
     }
 
     if (output_file_size == 0) {
-        LOG_ERROR("Output file size is zero\n");
+        if (g_enable_logging && g_log_path[0]) {
+            write_log(g_log_path, "Output file size is zero\n");
+        }
         return DECRYPT_ERROR_INTERNAL;
     }
 
     void *out_buf = mmap(NULL, output_file_size, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     if (out_buf == MAP_FAILED) {
-        LOG_ERROR("Failed to mmap output buffer | errno: %d (%s)\n", errno, strerror(errno));
+        if (g_enable_logging && g_log_path[0]) {
+            write_log(g_log_path, "Failed to mmap output buffer | errno: %d (%s)\n", errno, strerror(errno));
+        }
         return DECRYPT_ERROR_INTERNAL;
     }
 
@@ -283,17 +288,23 @@ int decrypt_self(int input_file_fd, char **out_data, uint64_t *out_size) {
         void *mapped_segment = map_self_segment(input_file_fd, phdr, i);
         if (mapped_segment == MAP_FAILED) {
             if (errno == ENOSYS) {
-                LOG_ERROR("Unsupported firmware version\n");
+                if (g_enable_logging && g_log_path[0]) {
+                    write_log(g_log_path, "Unsupported firmware version\n");
+                }
                 munmap(out_buf, output_file_size);
                 return DECRYPT_ERROR_UNSUPPORTED_FW;
             }
-            LOG_ERROR("Failed to mmap_self segment %d | errno: %d (%s)\n", i, errno, strerror(errno));
+            if (g_enable_logging && g_log_path[0]) {
+                write_log(g_log_path, "Failed to mmap_self segment %d | errno: %d (%s)\n", i, errno, strerror(errno));
+            }
             munmap(out_buf, output_file_size);
             return DECRYPT_ERROR_INTERNAL;
         }
 
         if (mlock(mapped_segment, phdr->p_filesz)) {
-            LOG_ERROR("Failed to decrypt segment data | segment %d\n", i);
+            if (g_enable_logging && g_log_path[0]) {
+                write_log(g_log_path, "Failed to decrypt segment data | segment %d\n", i);
+            }
             munmap(mapped_segment, phdr->p_filesz);
             munmap(out_buf, output_file_size);
             return DECRYPT_ERROR_FAILED_TO_DECRYPT_SEGMENT_DATA;
@@ -308,7 +319,9 @@ int decrypt_self(int input_file_fd, char **out_data, uint64_t *out_size) {
         Elf64_Phdr *phdr = &phdrs[version_segment_index];
         struct stat input_file_stat;
         if (fstat(input_file_fd, &input_file_stat)) {
-            LOG_ERROR("Failed to stat input file\n");
+            if (g_enable_logging && g_log_path[0]) {
+                write_log(g_log_path, "Failed to stat input file\n");
+            }
             munmap(out_buf, output_file_size);
             return DECRYPT_ERROR_IO;
         }
@@ -316,7 +329,9 @@ int decrypt_self(int input_file_fd, char **out_data, uint64_t *out_size) {
         int version_segment_self_offset = input_file_stat.st_size - phdr->p_filesz;
         int version_segment_elf_offset = phdr->p_offset;
         if (pread(input_file_fd, out_buf + version_segment_elf_offset, phdr->p_filesz, version_segment_self_offset) != (ssize_t)phdr->p_filesz) {
-            LOG_ERROR("Failed to read version segment from input file\n");
+            if (g_enable_logging && g_log_path[0]) {
+                write_log(g_log_path, "Failed to read version segment from input file\n");
+            }
             munmap(out_buf, output_file_size);
             return DECRYPT_ERROR_IO;
         }
@@ -326,11 +341,6 @@ int decrypt_self(int input_file_fd, char **out_data, uint64_t *out_size) {
     memcpy(out_buf, &elf_header, sizeof(elf_header));
     memcpy(out_buf + sizeof(elf_header), phdrs, phdrs_size);
 
-    pread(input_file_fd,
-          out_buf + sizeof(elf_header) + (elf_header.e_phnum * sizeof(Elf64_Phdr)),
-          0x40,
-          self_elf_phdrs_offset + phdrs_size);
-	  
     *out_data = out_buf;
     *out_size = output_file_size;
     return 0;

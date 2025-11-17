@@ -19,11 +19,13 @@ size_t total_bytes_copied = 0;
 char current_copied[256] = {0};
 int progress_thread_run = 1;
 time_t copy_start_time = 0;
+pthread_t progress_thread = 0;
 
 static char g_usb_homebrew[128] = {0};
 
 int g_enable_logging = 1;
 char g_log_path[512] = {0};
+int g_split_mode = 3;  // default: split both
 
 int find_usb_and_setup(void) {
     const char *possible_mounts[] = {
@@ -41,7 +43,7 @@ int find_usb_and_setup(void) {
         snprintf(config,   sizeof(config),   "%s/config.ini", homebrew);
 
         g_enable_logging = read_logging_config();
-		
+
         if (!dir_exists(root)) continue;
 
         mkdirs(homebrew);
@@ -64,20 +66,30 @@ int find_usb_and_setup(void) {
                         fprintf(f, "; enable_decrypter = 1  -> decrypt ELF files (default)\n");
                         fprintf(f, "; enable_decrypter = 0  -> disable decryption\n");
                         fprintf(f, "enable_decrypter = 1\n");
-                        fprintf(f, "; === Backport Options ===\n");
+                        fprintf(f, "\n");
+                        fprintf(f, "; === Backport Options PS5 Only ===\n");
                         fprintf(f, "; enable_backport = 1 -> enable SDK patching (default)\n");
                         fprintf(f, "; enable_backport = 0 -> disable SDK patching\n");
-                        fprintf(f, "; backport_level = 1-10 -> predefined SDK pair (default: 1 (1.00) )\n");
+                        fprintf(f, "; backport_level = 1-10 -> predefined SDK pair (default: 1 (PS5 1.00) )\n");
                         fprintf(f, "enable_backport = 0\n");
                         fprintf(f, "backport_level = 1\n");
+                        fprintf(f, "\n");
                         fprintf(f, "; === FSELF Files ===\n");
                         fprintf(f, "; enable_elf2fself = 1 -> enable fself ELF files (default)\n");
                         fprintf(f, "; enable_elf2fself = 0 -> disable fself\n");
                         fprintf(f, "enable_elf2fself = 1\n");
+                        fprintf(f, "\n");
                         fprintf(f, "; === Logging ===\n");
                         fprintf(f, "; enable_logging = 1 -> write log.txt (default)\n");
                         fprintf(f, "; enable_logging = 0 -> disable logging\n");
                         fprintf(f, "enable_logging = 1\n");
+                        fprintf(f, "\n");
+                        fprintf(f, "; === Split Mode ===\n");
+                        fprintf(f, "; 0 = no split (CUSAxxxxx/)\n");
+                        fprintf(f, "; 1 = app only (CUSAxxxxx-app/)\n");
+                        fprintf(f, "; 2 = patch only (CUSAxxxxx-patch/)\n");
+                        fprintf(f, "; 3 = both split (CUSAxxxxx-app/ + CUSAxxxxx-patch/)\n");
+                        fprintf(f, "split=3\n");
                         fclose(f);
                     }
                 }
@@ -242,6 +254,34 @@ int read_elf2fself_config(void)
     }
     fclose(f);
     return value;  // 1 = enable, 0 = disable
+}
+
+int read_split_config(void)
+{
+    if (g_usb_homebrew[0] == '\0') return 3;
+
+    char config_path[256];
+    snprintf(config_path, sizeof(config_path), "%s/config.ini", g_usb_homebrew);
+
+    FILE *f = fopen(config_path, "r");
+    if (!f) return 3;
+
+    char line[128];
+    while (fgets(line, sizeof(line), f)) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (strncmp(p, "split", 5) == 0) {
+            p += 5;
+            while (*p == ' ' || *p == '\t' || *p == '=') p++;
+            int val = atoi(p);
+            if (val >= 0 && val <= 3) {
+                fclose(f);
+                return val;
+            }
+        }
+    }
+    fclose(f);
+    return 3;
 }
 
 int dir_exists(const char *path)
