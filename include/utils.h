@@ -22,9 +22,6 @@ along with this program; see the file COPYING. If not, see
 #include <time.h>
 #include <sys/types.h>
 
-extern int decrypt_all(const char *src_game, const char *dst_game,
-                       int do_elf2fself, int do_backport);
-
 /* Full PS5 notification struct */
 typedef struct {
     int type;                //0x00

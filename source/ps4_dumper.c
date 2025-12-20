@@ -27,7 +27,7 @@ along with this program; see the file COPYING. If not, see
 #include "utils.h"
 
 extern int decrypt_all(const char *src_game, const char *dst_game,
-                       int do_elf2fself, int do_backport);
+                       int do_elf2fself, int do_backport, int is_ps4);
 
 /* ----------------------------------------------------------------- */
 /*  Progress callback for unpfs() – updates utils.c globals          */
@@ -150,7 +150,7 @@ static int decrypt_if_needed(const char *sandbox_root, const char *title_id,
     }
 
     printf_notification("Decrypting %s SELFs...", suffix);
-    if (decrypt_all(src_dir, dst_dir, do_elf2fself, do_backport) != 0) {
+    if (decrypt_all(src_dir, dst_dir, do_elf2fself, do_backport, 1) != 0) {
         write_log(logpath, "ERROR: decrypt_all failed for %s", src_dir);
         return -1;
     }

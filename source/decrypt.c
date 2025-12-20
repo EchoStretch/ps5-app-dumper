@@ -28,7 +28,8 @@ along with this program; see the file COPYING. If not, see
 
 #include "utils.h"
 #include "decrypt.h"
-#include "backport.h"
+#include "ps4_backport.h"
+#include "ps5_backport.h"
 #include "elf2fself.h"
 #include "selfpager.h"
 
@@ -39,26 +40,63 @@ int g_total_files  = 0;
 int g_current_file = 0;
 
 /*=====================================================================
- *  Forward declarations
+ *  Forward declarations (updated with is_ps4 parameter)
  *====================================================================*/
 static int count_files_recursive(const char *dir_path);
 static int process_file(const char *input_path, const char *output_path,
-                        const char *root_dst, int do_elf2fself, int do_backport);
+                        const char *root_dst, int do_elf2fself, int do_backport, int is_ps4);
 static int decrypt_and_process_all(const char *input_dir, const char *output_dir,
-                                   const char *root_dst, int do_elf2fself, int do_backport);
+                                   const char *root_dst, int do_elf2fself, int do_backport, int is_ps4);
 
 /*=====================================================================
- *  Public entry point
+ *  Public entry point - NOW WITH is_ps4 parameter
  *====================================================================*/
 int decrypt_all(const char *src_game, const char *dst_game,
-                int do_elf2fself, int do_backport)
+                int do_elf2fself, int do_backport, int is_ps4)
 {
     g_total_files = count_files_recursive(src_game);
     g_current_file = 0;
 
-    int res = decrypt_and_process_all(src_game, dst_game, dst_game,
-                                      do_elf2fself, do_backport);
-    return res;
+    int ret = decrypt_and_process_all(src_game, dst_game, dst_game,
+                                      do_elf2fself, do_backport, is_ps4);
+
+    /* === PS4 FULL BACKPORT (ONLY AFTER ALL FILES ARE DECRYPTED) === */
+    if (ret == 0 && do_backport && is_ps4) {
+        write_log(g_log_path, "Starting PS4 full backport on %s", dst_game);
+
+        // 1. Backport all ELFs recursively
+        ps4_backport_recursive(dst_game);
+
+        // 2. Backport param.sfo
+        char sfo_path[PATH_MAX];
+        snprintf(sfo_path, sizeof(sfo_path), "%s/sce_sys/param.sfo", dst_game);
+
+        if (access(sfo_path, F_OK) == 0) {
+            ps4_backport_param_sfo(sfo_path);
+        } else {
+            write_log(g_log_path, "param.sfo not found at %s - skipping SDK backport in SFO", sfo_path);
+        }
+    }
+
+    /* === PS5 FULL BACKPORT (ONLY AFTER ALL FILES ARE DECRYPTED) === */
+    if (ret == 0 && do_backport && !is_ps4) {
+        write_log(g_log_path, "Starting PS5 full backport on %s", dst_game);
+
+        // 1. Backport all ELFs recursively (exactly like PS4)
+        ps5_backport_recursive(dst_game);
+
+        // 2. Backport param.json
+        char json_path[PATH_MAX];
+        snprintf(json_path, sizeof(json_path), "%s/sce_sys/param.json", dst_game);
+
+        if (access(json_path, F_OK) == 0) {
+            ps5_backport_param_json(json_path);
+        } else {
+            write_log(g_log_path, "param.json not found at %s - skipping PS5 param backport", json_path);
+        }
+    }
+
+    return ret;
 }
 
 /*=====================================================================
@@ -98,7 +136,7 @@ static int count_files_recursive(const char *dir_path)
  *  Process ONE file: decrypt → copy → backport → fself
  *====================================================================*/
 static int process_file(const char *input_path, const char *output_path,
-                        const char *root_dst, int do_elf2fself, int do_backport)
+                        const char *root_dst, int do_elf2fself, int do_backport, int is_ps4)
 {
     /* --- 1. DECRYPT --- */
     int fd = open(input_path, O_RDONLY);
@@ -108,8 +146,6 @@ static int process_file(const char *input_path, const char *output_path,
     char *out_data = NULL;
     int res = decrypt_self(fd, &out_data, &out_size);
     close(fd);
-
-    if (res == DECRYPT_ERROR_INPUT_NOT_SELF) return 0;
     if (res != 0) return res;
 
     /* Create output dir */
@@ -131,8 +167,10 @@ static int process_file(const char *input_path, const char *output_path,
     munmap(out_data, out_size);
     close(out_fd);
 
-    /* --- 2. COPY TO decrypted/ --- */
-    if (do_elf2fself || do_backport) {
+    /* --- 2. COPY TO decrypted/ (for ELF/PRX + always for param.sfo) --- */
+    int copy_to_decrypted = (do_elf2fself || do_backport || strstr(output_path, "param.sfo") != NULL);
+
+    if (copy_to_decrypted) {
         const char *rel = output_path + strlen(root_dst);
         if (*rel == '/') rel++;
 
@@ -144,8 +182,6 @@ static int process_file(const char *input_path, const char *output_path,
             *last = '\0';
             mkdirs(dest_path);
             *last = '/';
-        } else {
-            mkdirs(dest_path);
         }
 
         int src = open(output_path, O_RDONLY);
@@ -160,11 +196,10 @@ static int process_file(const char *input_path, const char *output_path,
         }
         if (src >= 0) close(src);
         if (dst >= 0) close(dst);
-    }
 
-    /* --- 3. BACKPORT --- */
-    if (do_backport) {
-        backport_sdk_file(output_path);
+        if (strstr(output_path, "param.sfo")) {
+            write_log(g_log_path, "Copied param.sfo to decrypted folder");
+        }
     }
 
     /* --- 4. FSELF --- */
@@ -179,15 +214,15 @@ static int process_file(const char *input_path, const char *output_path,
             }
         }
     }
-    
-        return 0;
-    }
+
+    return 0;
+}
 
 /*=====================================================================
  *  Walk and process each file in order
  *====================================================================*/
 static int decrypt_and_process_all(const char *input_dir, const char *output_dir,
-                                   const char *root_dst, int do_elf2fself, int do_backport)
+                                   const char *root_dst, int do_elf2fself, int do_backport, int is_ps4)
 {
     DIR *dir = opendir(input_dir);
     if (!dir) return -1;
@@ -210,7 +245,7 @@ static int decrypt_and_process_all(const char *input_dir, const char *output_dir
                 strncmp(name + 9, "-app0-patch0-union", 18) == 0) {
                 continue;
             }
-            decrypt_and_process_all(in_path, out_path, root_dst, do_elf2fself, do_backport);
+            decrypt_and_process_all(in_path, out_path, root_dst, do_elf2fself, do_backport, is_ps4);
             continue;
         }
 
@@ -229,7 +264,7 @@ static int decrypt_and_process_all(const char *input_dir, const char *output_dir
         printf_notification(msg);
 
         /* PROCESS FULLY */
-        process_file(in_path, out_path, root_dst, do_elf2fself, do_backport);
+        process_file(in_path, out_path, root_dst, do_elf2fself, do_backport, is_ps4);
     }
 
     closedir(dir);

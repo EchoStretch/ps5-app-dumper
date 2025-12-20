@@ -18,6 +18,6 @@ along with this program; see the file COPYING. If not, see
 #define DECRYPT_H
 
 int decrypt_all(const char *src_game, const char *dst_game,
-                int do_elf2fself, int do_backport);
+                int do_elf2fself, int do_backport, int is_ps4);
 
 #endif /* DECRYPT_H */

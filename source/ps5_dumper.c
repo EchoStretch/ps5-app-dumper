@@ -26,7 +26,7 @@ along with this program; see the file COPYING. If not, see
 #include "utils.h"
 
 extern int decrypt_all(const char *src_game, const char *dst_game,
-                       int do_elf2fself, int do_backport);
+                       int do_elf2fself, int do_backport, int is_ps4);
 
 /* --------------------------------------------------------------------- */
 /*  dump_ps5_ppsa_app() – main entry point                               */
@@ -101,16 +101,12 @@ int dump_ps5_ppsa_app(
         if (n >= sizeof(ppsa_short)) n = sizeof(ppsa_short) - 1;
         memcpy(ppsa_short, app_folder, n);
         ppsa_short[n] = '\0';
-    } else {
-        strncpy(ppsa_short, app_folder, sizeof(ppsa_short) - 1);
     }
 
-    /* ------------------- 8. COPY APPMETA (FLAT into sce_sys) ------------------- */
-    char src_user_meta[512], src_sys_meta[512];
-    char dst_flat[512];
-
+    /* ------------------- 8. COPY APPMETA (user & system) ------------------- */
+    char src_user_meta[512], src_sys_meta[512], dst_flat[512];
     snprintf(src_user_meta, sizeof(src_user_meta), "/user/appmeta/%s", ppsa_short);
-    snprintf(src_sys_meta,  sizeof(src_sys_meta),  "/system_data/priv/appmeta/%s", ppsa_short);
+    snprintf(src_sys_meta, sizeof(src_sys_meta), "/system_data/priv/appmeta/%s", ppsa_short);
     snprintf(dst_flat,      sizeof(dst_flat),      "%s/sce_sys", dst_game);
 
     mkdirs(dst_flat);  // Ensure sce_sys exists
@@ -186,7 +182,7 @@ int dump_ps5_ppsa_app(
     if (do_decrypt) {
         write_log(logpath, "Starting decryption (elf2fself=%d, backport=%d)...", do_elf2fself, do_backport);
         printf_notification("Decrypting...");
-        int dec_err = decrypt_all(src_game, dst_game, do_elf2fself, do_backport);
+        int dec_err = decrypt_all(src_game, dst_game, do_elf2fself, do_backport, 0);
         if (dec_err == 0) {
             write_log(logpath, "Decryption completed successfully.");
             printf_notification("Decryption complete.");
