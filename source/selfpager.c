@@ -158,8 +158,30 @@ static int init() {
 
     case 0x1000:
     case 0x1001:
-        pagertab_addr = KERNEL_ADDRESS_DATA_BASE + 0xDE04F0;
-        break;
+    case 0x1020:
+    case 0x1040:
+    case 0x1060:
+      pagertab_addr = KERNEL_ADDRESS_DATA_BASE + 0xDE04F0;
+      break;
+    
+    case 0x1100:
+    case 0x1120:
+      pagertab_addr = KERNEL_ADDRESS_DATA_BASE + 0xDF1940;
+      break;
+    
+    case 0x1140:
+    case 0x1160:
+      pagertab_addr = KERNEL_ADDRESS_DATA_BASE + 0xDF1960;
+      break;
+    
+    case 0x1200:
+    case 0x1202:
+    case 0x1220:
+    case 0x1240:
+    case 0x1260:
+    case 0x1270:
+      pagertab_addr = KERNEL_ADDRESS_DATA_BASE + 0xDF2860;
+      break;
 
     default:
         return ENOSYS;
