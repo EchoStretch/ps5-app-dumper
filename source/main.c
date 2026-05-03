@@ -23,7 +23,7 @@ along with this program; see the file COPYING. If not, see
 #include "ps5_dumper.h"
 #include "utils.h"
 
-#define VERSION "1.08"
+#define VERSION "1.09"
 #define SANDBOX_PATH "/mnt/sandbox/pfsmnt"
 
 int main(void)
