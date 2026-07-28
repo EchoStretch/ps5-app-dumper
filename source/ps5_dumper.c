@@ -23,10 +23,12 @@ along with this program; see the file COPYING. If not, see
 #include <time.h>
 
 #include "ps5_dumper.h"
+#include "ps5_pkg.h"
 #include "utils.h"
 
 extern int decrypt_all(const char *src_game, const char *dst_game,
                        int do_elf2fself, int do_backport, int is_ps4);
+
 
 /* --------------------------------------------------------------------- */
 /*  dump_ps5_ppsa_app() – main entry point                               */
@@ -49,6 +51,39 @@ int dump_ps5_ppsa_app(
     snprintf(dst_game, sizeof(dst_game), "%s/%s", usb_path, app_folder);
 
     mkdirs(dst_game);  // void return
+
+    /* Extract PPSA Short ID once at top */
+    char ppsa_short[32] = {0};
+    const char *dash = strchr(app_folder, '-');
+    if (dash) {
+        size_t n = dash - app_folder;
+        if (n >= sizeof(ppsa_short)) n = sizeof(ppsa_short) - 1;
+        memcpy(ppsa_short, app_folder, n);
+        ppsa_short[n] = '\0';
+    } else {
+        strncpy(ppsa_short, app_folder, sizeof(ppsa_short) - 1);
+    }
+
+    /* Package search priority (checks disc app_sc.pkg first) */
+    char src_pkg[1024] = {0};
+    const char *pkg_paths[] = {
+        //"/mnt/disc/app/%s/app_sc.pkg",      /* 1st: Check for app_sc.pkg on disc */
+        //"/mnt/disc/app/%s/app.pkg",         /* 2nd: Check for app.pkg on disc */
+        "/user/app/%s/app.pkg",             /* 3rd: Internal storage */
+        "/mnt/ext1/user/app/%s/app.pkg",    /* 4th: External storage 1 */
+        "/mnt/ext0/user/app/%s/app.pkg",    /* 5th: External storage 0 */
+        NULL
+    };
+
+    for (int i = 0; pkg_paths[i]; ++i) {
+        snprintf(src_pkg, sizeof(src_pkg), pkg_paths[i], ppsa_short);
+        if (file_exists(src_pkg)) {
+            write_log(logpath, "Found package file: %s", src_pkg);
+            printf_notification("Extracting package...");
+            unpkg_ps5(src_pkg, dst_game);
+            break;
+        }
+    }
 
     /* ------------------- 2. RESET PROGRESS GLOBALS ------------------- */
     progress_thread_run = 0;
@@ -93,17 +128,7 @@ int dump_ps5_ppsa_app(
     write_log(logpath, "Main app copy complete.");
     printf_notification("Main app copy complete.");
 
-    /* ------------------- 7. EXTRACT PPSA SHORT ID ------------------- */
-    char ppsa_short[32] = {0};
-    const char *dash = strchr(app_folder, '-');
-    if (dash) {
-        size_t n = dash - app_folder;
-        if (n >= sizeof(ppsa_short)) n = sizeof(ppsa_short) - 1;
-        memcpy(ppsa_short, app_folder, n);
-        ppsa_short[n] = '\0';
-    }
-
-    /* ------------------- 8. COPY APPMETA (user & system) ------------------- */
+    /* ------------------- 7. COPY APPMETA (user & system) ------------------- */
     char src_user_meta[512], src_sys_meta[512], dst_flat[512];
     snprintf(src_user_meta, sizeof(src_user_meta), "/user/appmeta/%s", ppsa_short);
     snprintf(src_sys_meta, sizeof(src_sys_meta), "/system_data/priv/appmeta/%s", ppsa_short);
@@ -125,14 +150,14 @@ int dump_ps5_ppsa_app(
         write_log(logpath, "System appmeta not found: %s", src_sys_meta);
     }
 
-    /* ------------------- 9. ENSURE sce_sys SUBDIRS ------------------- */
+    /* ------------------- 8. ENSURE sce_sys SUBDIRS ------------------- */
     char trophy_dir[512], uds_dir[512];
     snprintf(trophy_dir, sizeof(trophy_dir), "%s/sce_sys/trophy2", dst_game);
     snprintf(uds_dir,    sizeof(uds_dir),    "%s/sce_sys/uds",     dst_game);
     mkdirs(trophy_dir);
     mkdirs(uds_dir);
 
-    /* ------------------- 10. TROPHY & UDS (via npbind.dat) ------------------- */
+    /* ------------------- 9. TROPHY & UDS (via npbind.dat) ------------------- */
     char npbind_src1[512], npbind_src2[512];
     snprintf(npbind_src1, sizeof(npbind_src1),
              "/system_data/priv/appmeta/%s/trophy2/npbind.dat", ppsa_short);
@@ -178,7 +203,7 @@ int dump_ps5_ppsa_app(
         write_log(logpath, "npbind.dat not found in either location.");
     }
 
-    /* ------------------- 11. OPTIONAL DECRYPTION ------------------- */
+    /* ------------------- 10. OPTIONAL DECRYPTION ------------------- */
     if (do_decrypt) {
         write_log(logpath, "Starting decryption (elf2fself=%d, backport=%d)...", do_elf2fself, do_backport);
         printf_notification("Decrypting...");
@@ -192,7 +217,7 @@ int dump_ps5_ppsa_app(
         }
     }
 
-    /* ------------------- 12. FINALIZE ------------------- */
+    /* ------------------- 11. FINALIZE ------------------- */
     write_log(logpath, "=== Dump complete (FLAT): %s ===", dst_game);
     printf_notification("Dump complete: %s", app_folder);
 

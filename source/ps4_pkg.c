@@ -22,7 +22,7 @@ along with this program; see the file COPYING. If not, see
 #include <sys/stat.h>
 #include <errno.h>
 
-#include "pkg.h"
+#include "ps4_pkg.h"
 #include "utils.h"
 
 /* ------------------- Endian Swap ------------------- */
@@ -80,7 +80,7 @@ static char *get_entry_name_by_type(uint32_t type) {
 }
 
 /* ------------------- PKG Validation ------------------- */
-int isfpkg(const char *pkgfn) {
+int isfpkg_ps4(const char *pkgfn) {
     write_log(g_log_path, "isfpkg: Checking %s", pkgfn);
 
     int fd = open(pkgfn, O_RDONLY);
@@ -111,7 +111,7 @@ int isfpkg(const char *pkgfn) {
 }
 
 /* ------------------- Main Extractor ------------------- */
-int unpkg(const char *pkgfn, const char *tidpath) {
+int unpkg_ps4(const char *pkgfn, const char *tidpath) {
     write_log(g_log_path, "unpkg: Opening %s", pkgfn);
     int fdin = open(pkgfn, O_RDONLY);
     if (fdin == -1) { write_log(g_log_path, "unpkg: open failed (errno: %d)", errno); return 1; }

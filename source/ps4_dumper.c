@@ -23,7 +23,7 @@ along with this program; see the file COPYING. If not, see
 #include <pthread.h>
 
 #include "ps4_dumper.h"
-#include "pkg.h"
+#include "ps4_pkg.h"
 #include "utils.h"
 
 extern int decrypt_all(const char *src_game, const char *dst_game,
@@ -231,9 +231,9 @@ int dump_ps4_cusa_app_real(
 
         for (int i = 0; pkg_paths[i]; ++i) {
             snprintf(src_pkg, sizeof(src_pkg), pkg_paths[i], title_id);
-            if (file_exists(src_pkg) && isfpkg(src_pkg) == 0) {
+            if (file_exists(src_pkg) && isfpkg_ps4(src_pkg) == 0) {
                 printf_notification("Extracting app package...");
-                unpkg(src_pkg, dst_app);
+                unpkg_ps4(src_pkg, dst_app);
                 pkg_existed = 1;
                 break;
             }
@@ -273,9 +273,9 @@ int dump_ps4_cusa_app_real(
 
         for (int i = 0; pkg_paths[i]; ++i) {
             snprintf(src_pkg, sizeof(src_pkg), pkg_paths[i], title_id);
-            if (file_exists(src_pkg) && isfpkg(src_pkg) == 0) {
+            if (file_exists(src_pkg) && isfpkg_ps4(src_pkg) == 0) {
                 printf_notification("Extracting patch package...");
-                unpkg(src_pkg, dst_pat);
+                unpkg_ps4(src_pkg, dst_pat);
                 pkg_existed = 1;
                 break;
             }
