@@ -22,7 +22,8 @@ along with this program; see the file COPYING. If not, see
 /* --------------------------------------------------------------------- */
 /*  PKG constants                                                       */
 /* --------------------------------------------------------------------- */
-#define PS4_PKG_MAGIC 0x544E437F
+#define PS4_PKG_MAGIC  0x7F434E54U   // PS4
+#define PS5_PKG_MAGIC  0x4849467FU   // PS5
 
 /* --------------------------------------------------------------------- */
 /*  PKG entry type enumeration                                          */
@@ -124,7 +125,7 @@ struct file_entry {
 /* --------------------------------------------------------------------- */
 /*  Public API                                                          */
 /* --------------------------------------------------------------------- */
-int isfpkg(const char *pkgfn);
-int unpkg(const char *pkgfn, const char *tidpath);
+int isfpkg_ps4(const char *pkgfn);
+int unpkg_ps4(const char *pkgfn, const char *tidpath);
 
 #endif /* PKG_H */
