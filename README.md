@@ -18,7 +18,7 @@ This tool **only dumps to USB**. It does **not** stream or transfer dumps over t
 
   * Repository: [https://github.com/ps5-payload-dev/pacbrew-repo](https://github.com/ps5-payload-dev/pacbrew-repo)
 
-* A PS5 able to run payloads (Jailbroken 1.00 - 10.01).
+* A PS5 able to run payloads (Jailbroken 1.00 - 13.60).
 
 * A USB drive formatted and mounted on the PS5 (the dumper writes files to the USB).
 
