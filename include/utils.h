@@ -74,6 +74,50 @@ const char* get_usb_homebrew_path(void);
 const char* detect_fs_type(const char *mountpoint);
 void debug_list_usbs(void);
 
+/* ------------------------------------------------------------------ */
+/*  In-memory log ring (feeds the live console of the web UI)          */
+/* ------------------------------------------------------------------ */
+
+#define LOG_RING_CAPACITY 400
+#define LOG_LINE_MAX      320
+
+typedef void (*log_line_cb)(void *ctx, unsigned seq, const char *line);
+
+void     log_ring_push(const char *line);
+void     log_ring_walk(unsigned since, log_line_cb cb, void *ctx);
+unsigned log_ring_seq(void);
+
+/* ------------------------------------------------------------------ */
+/*  Configuration                                                      */
+/* ------------------------------------------------------------------ */
+
+typedef struct {
+    int  enable_decrypter;
+    int  enable_backport;
+    int  ps4_backport_level;   /* 1-6  */
+    int  ps5_backport_level;   /* 1-10 */
+    int  enable_elf2fself;
+    int  enable_logging;
+    int  split;                /* 0-3, PS4 only */
+    int  enable_webui;         /* 1 -> serve the web UI instead of dumping right away */
+    int  web_port;
+    int  auto_start;           /* 1 -> legacy behaviour: dump the running app and exit */
+    char dump_subdir[64];      /* folder below the mount point, e.g. "homebrew" */
+} dumper_config_t;
+
+void config_defaults(dumper_config_t *cfg);
+void config_load(dumper_config_t *cfg);
+int  config_save(const dumper_config_t *cfg);
+int  config_path(char *out, size_t out_size);
+
+/* ------------------------------------------------------------------ */
+/*  Cooperative abort, honoured by the copy routines                   */
+/* ------------------------------------------------------------------ */
+
+void request_abort(void);
+void clear_abort(void);
+int  abort_requested(void);
+
 extern int g_enable_logging;
 extern char g_log_path[512];
 extern int g_split_mode;               // 0-3: split mode

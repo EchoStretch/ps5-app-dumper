@@ -16,102 +16,112 @@ along with this program; see the file COPYING. If not, see
 
 #include <stdio.h>
 #include <string.h>
-#include <dirent.h>
 #include <unistd.h>
+#include <sys/param.h>
+#include <sys/sysctl.h>
+#include <sys/user.h>
 
+#include "app_launch.h"
+#include "app_scan.h"
+#include "http_server.h"
 #include "ps4_dumper.h"
 #include "ps5_dumper.h"
 #include "utils.h"
 
 #define VERSION "1.11"
-#define SANDBOX_PATH "/mnt/sandbox/pfsmnt"
 
-int main(void)
+/* ------------------------------------------------------------------ */
+/*  Headless mode - dump the running title and exit                    */
+/* ------------------------------------------------------------------ */
+
+static int run_headless(const dumper_config_t *cfg)
 {
-    printf_notification("PS5 App Dumper v%s", VERSION);
-
-    /* Wait for USB */
     while (find_usb_and_setup() == -1) {
         printf_notification("Please insert USB (exFAT) into any port...");
         sleep(7);
     }
-	
-    const char *usb = get_usb_homebrew_path();
-    if (!usb) return 1;
 
-    // Config
-    int decrypt = read_decrypter_config();
-    int elf2fself = read_elf2fself_config();
-    int backport = read_backport_config();
-    g_enable_logging = read_logging_config();
+    const char *usb = get_usb_homebrew_path();
+    if (!usb || !usb[0]) return 1;
 
     char logpath[512];
     snprintf(logpath, sizeof(logpath), "%s/log.txt", usb);
-    strncpy(g_log_path, logpath, sizeof(g_log_path)-1);
+    strncpy(g_log_path, logpath, sizeof(g_log_path) - 1);
 
     write_log(logpath, "=== PS5 App Dumper v%s ===", VERSION);
 
-    /* Detect running app */
-    DIR *d = opendir(SANDBOX_PATH);
-    if (!d)
-    {
-        write_log(logpath, "ERROR: Failed to open %s", SANDBOX_PATH);
-        printf_notification("Failed to open %s", SANDBOX_PATH);
-        return 1;
-    }
+    app_entry_t apps[APP_SCAN_MAX];
+    int count = app_scan(apps, APP_SCAN_MAX);
 
-    char app_folder[128] = {0};
-    char patch_folder[128] = {0};
-    int is_cusa = 0;
-
-    struct dirent *dp;
-    while ((dp = readdir(d))) {
-        if (dp->d_type != DT_DIR) continue;
-        size_t len = strlen(dp->d_name);
-        if (len <= 5) continue;
-
-        int is_ppsa = (strncmp(dp->d_name, "PPSA", 4) == 0);
-        is_cusa = (strncmp(dp->d_name, "CUSA", 4) == 0);
-
-        if ((is_ppsa || is_cusa) && strcmp(dp->d_name + len - 5, "-app0") == 0) {
-            strncpy(app_folder, dp->d_name, sizeof(app_folder)-1);
-
-            if (is_cusa) {
-                char patch_name[128];
-                snprintf(patch_name, sizeof(patch_name), "%.*s-patch0", (int)(len - 5), dp->d_name);
-                rewinddir(d);
-                struct dirent *dp2;
-                while ((dp2 = readdir(d)) != NULL) {
-                    if (dp2->d_type == DT_DIR && strcmp(dp2->d_name, patch_name) == 0) {
-                        strncpy(patch_folder, patch_name, sizeof(patch_folder)-1);
-                        break;
-                    }
-                }
-            }
-            break;
-        }
-    }
-    closedir(d);
-
-    if (!app_folder[0])
-    {
+    if (count <= 0) {
         write_log(logpath, "Please start the App before running the payload...");
         printf_notification("Please start the App before running the payload...");
         return 1;
     }
 
-    write_log(logpath, "Detected App: %s", app_folder);
-    printf_notification("Detected: %s", app_folder);
-	
-    // === CALL DUMPER ===
-if (is_cusa) {
-    dump_ps4_cusa_app(SANDBOX_PATH, app_folder, patch_folder, usb, decrypt, elf2fself, backport);
-} else {
-    dump_ps5_ppsa_app(SANDBOX_PATH, app_folder, usb, decrypt, elf2fself, backport);
-}
+    /* headless mode has no way to ask, so it takes the first mount */
+    const app_entry_t *app = &apps[0];
+
+    write_log(logpath, "Detected App: %s", app->dir);
+    printf_notification("Detected: %s", app->title[0] ? app->title : app->dir);
+
+    if (app->is_ps4) {
+        dump_ps4_cusa_app(SANDBOX_PATH, app->dir, app->patch_dir, usb,
+                          cfg->enable_decrypter, cfg->enable_elf2fself,
+                          cfg->enable_backport);
+    } else {
+        dump_ps5_ppsa_app(SANDBOX_PATH, app->dir, usb,
+                          cfg->enable_decrypter, cfg->enable_elf2fself,
+                          cfg->enable_backport);
+    }
 
     write_log(logpath, "=== PS5 App Dumper v%s finished ===", VERSION);
     printf_notification("Dump Complete!");
     return 0;
+}
 
+/* ------------------------------------------------------------------ */
+
+/* Names the process the payload was loaded into. A payload lives only as
+   long as its host, so when the web UI vanishes the moment a game starts,
+   this line says which process took it down. */
+static void log_host_process(void)
+{
+    struct kinfo_proc kp;
+    size_t len = sizeof(kp);
+    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, (int)getpid() };
+
+    if (sysctl(mib, 4, &kp, &len, NULL, 0) == 0 && kp.ki_comm[0])
+        write_log(g_log_path, "Running as pid %d inside \"%s\"", (int)getpid(), kp.ki_comm);
+    else
+        write_log(g_log_path, "Running as pid %d (host unknown)", (int)getpid());
+}
+
+int main(void)
+{
+    /* before anything talks to the system services */
+    app_launch_init();
+
+    printf_notification("PS5 App Dumper v%s", VERSION);
+    log_host_process();
+
+    dumper_config_t cfg;
+
+    /* One pass over the mount points so config.ini can be read; the web UI
+       rescans on its own once a drive shows up later. */
+    find_usb_and_setup();
+    config_load(&cfg);
+
+    g_enable_logging = cfg.enable_logging;
+    g_split_mode = cfg.split;
+
+    if (!cfg.enable_webui || cfg.auto_start)
+        return run_headless(&cfg);
+
+    if (http_server_run(cfg.web_port) != 0) {
+        printf_notification("Web UI failed to start, dumping directly instead");
+        return run_headless(&cfg);
+    }
+
+    return 0;
 }

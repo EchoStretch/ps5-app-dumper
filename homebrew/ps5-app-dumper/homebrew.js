@@ -3,7 +3,7 @@ async function main() {
 
     return {
         mainText: "PS5 App Dumper",
-        secondaryText: 'Dump PS5 App To USB',
+        secondaryText: 'Web UI - dump apps to USB',
 	onclick: async () => {
 	    return {
 		path: PAYLOAD,
