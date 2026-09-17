@@ -19,6 +19,7 @@ along with this program; see the file COPYING. If not, see
 #include <unistd.h>
 #include <sys/param.h>
 #include <sys/sysctl.h>
+#include <sys/syscall.h>
 #include <sys/user.h>
 
 #include "app_launch.h"
@@ -99,6 +100,15 @@ static void log_host_process(void)
 
 int main(void)
 {
+    /* Name our main thread so this payload is identifiable at runtime.
+       Sent over elfldr we get no process of our own — we run inside
+       whichever host process elfldr loaded us into, so without this
+       ki_comm reports that host's generic name (e.g. "payload.elf") and
+       anything listing processes or listening sockets can't tell which
+       payload this actually is. Best-effort: harmless if the syscall
+       fails. */
+    syscall(SYS_thr_set_name, -1, "ps5-app-dumper");
+
     /* before anything talks to the system services */
     app_launch_init();
 
