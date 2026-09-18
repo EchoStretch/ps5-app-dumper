@@ -104,7 +104,7 @@ struct cnt_pkg_content_header {
 /* --------------------------------------------------------------------- */
 struct cnt_pkg_table_entry {
     uint32_t type;
-    uint32_t unk1;
+    uint32_t name_table_offset;   /* byte offset of this entry's name */
     uint32_t flags1;
     uint32_t flags2;
     uint32_t offset;

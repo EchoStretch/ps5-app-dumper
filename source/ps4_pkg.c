@@ -38,15 +38,6 @@ static inline uint32_t bswap_32(uint32_t v) {
 }
 
 /* ------------------- Read Null-Terminated String ------------------- */
-static char* read_string(int fd) {
-    char buf[256];
-    int i = 0;
-    char c;
-    while (read(fd, &c, 1) == 1 && c != '\0' && i < 255)
-        buf[i++] = c;
-    buf[i] = '\0';
-    return strdup(buf);
-}
 
 /* ------------------- Fallback Name Mapping ------------------- */
 static char *get_entry_name_by_type(uint32_t type) {
@@ -101,13 +92,26 @@ int isfpkg_ps4(const char *pkgfn) {
     write_log(g_log_path, "isfpkg: Raw bytes: %02X %02X %02X %02X → magic: 0x%08X",
               header[0], header[1], header[2], header[3], magic);
 
-    if (magic != PS4_PKG_MAGIC) {
-        write_log(g_log_path, "isfpkg: Invalid magic 0x%08X (expected 0x544E437F)", magic);
+    if (magic != bswap_32(PS4_PKG_MAGIC)) {
+        write_log(g_log_path, "isfpkg: Invalid magic 0x%08X (expected 0x%08X)", magic, bswap_32(PS4_PKG_MAGIC));
         return 2;
     }
 
     write_log(g_log_path, "isfpkg: Valid PS4 PKG");
     return 0;
+}
+
+/* Package names may carry a leading path; the dump wants the bare name
+   below sce_sys. */
+static void clean_entry_name(char *name)
+{
+    if (strncmp(name, "/sce_sys/", 9) == 0)      memmove(name, name + 9, strlen(name + 9) + 1);
+    else if (strncmp(name, "sce_sys/", 8) == 0)  memmove(name, name + 8, strlen(name + 8) + 1);
+
+    if (strncmp(name, "/mnt/usb0/", 10) == 0)    memmove(name, name + 10, strlen(name + 10) + 1);
+    else if (strncmp(name, "mnt/usb0/", 9) == 0) memmove(name, name + 9, strlen(name + 9) + 1);
+
+    if (name[0] == '/') memmove(name, name + 1, strlen(name));
 }
 
 /* ------------------- Main Extractor ------------------- */
@@ -119,7 +123,7 @@ int unpkg_ps4(const char *pkgfn, const char *tidpath) {
     struct cnt_pkg_main_header hdr;
     if (read(fdin, &hdr, sizeof(hdr)) != sizeof(hdr)) { close(fdin); return 2; }
 
-    if (hdr.magic != PS4_PKG_MAGIC) { close(fdin); return 3; }
+    if (hdr.magic != bswap_32(PS4_PKG_MAGIC)) { close(fdin); return 3; }
     write_log(g_log_path, "unpkg: Valid PS4 PKG");
 
     uint32_t table_offset = bswap_32(hdr.file_table_offset);
@@ -134,48 +138,45 @@ int unpkg_ps4(const char *pkgfn, const char *tidpath) {
     }
 
     for (int i = 0; i < n_entries; i++) {
-        entries[i].type   = bswap_32(entries[i].type);
-        entries[i].offset = bswap_32(entries[i].offset);
-        entries[i].size   = bswap_32(entries[i].size);
+        entries[i].type              = bswap_32(entries[i].type);
+        entries[i].name_table_offset = bswap_32(entries[i].name_table_offset);
+        entries[i].offset            = bswap_32(entries[i].offset);
+        entries[i].size              = bswap_32(entries[i].size);
     }
 
     char out_dir[512];
     snprintf(out_dir, sizeof(out_dir), "%s/sce_sys", tidpath);
     mkdirs(out_dir);
 
-    // === COLLECT NAME TABLE ===
-    char *name_table[256] = {0};
-    int name_idx = 0;
+    /* The name table is one blob of NUL terminated strings; every entry
+       points into it by byte offset. Handing the strings out in sequence
+       instead - as this used to - shifts the names by one as soon as a
+       single entry is named by its type, so files end up under each
+       other's names. */
+    char  *name_blob = NULL;
+    size_t name_blob_size = 0;
+
     for (int i = 0; i < n_entries; i++) {
-        if (entries[i].type == PS4_PKG_ENTRY_TYPE_NAME_TABLE) {
-            off_t pos = entries[i].offset + 1;
-            lseek(fdin, pos, SEEK_SET);
-            while (name_idx < 256) {
-                name_table[name_idx] = read_string(fdin);
-                if (!name_table[name_idx][0]) { free(name_table[name_idx]); break; }
-                name_idx++;
-            }
+        if (entries[i].type != PS4_PKG_ENTRY_TYPE_NAME_TABLE) continue;
+        if (entries[i].size == 0 || entries[i].size > 64 * 1024) break;
+
+        name_blob = malloc(entries[i].size + 1);
+        if (!name_blob) break;
+
+        lseek(fdin, entries[i].offset, SEEK_SET);
+        if (read(fdin, name_blob, entries[i].size) != (ssize_t)entries[i].size) {
+            free(name_blob);
+            name_blob = NULL;
             break;
         }
-    }
 
-    // === CLEAN NAME TABLE PATHS ===
-    for (int i = 0; i < name_idx; i++) {
-        char *name = name_table[i];
-
-        if (strncmp(name, "/sce_sys/", 9) == 0) memmove(name, name + 9, strlen(name + 9) + 1);
-        else if (strncmp(name, "sce_sys/", 8) == 0) memmove(name, name + 8, strlen(name + 8) + 1);
-
-        if (strncmp(name, "/mnt/usb0/", 10) == 0) memmove(name, name + 10, strlen(name + 10) + 1);
-        else if (strncmp(name, "mnt/usb0/", 9) == 0) memmove(name, name + 9, strlen(name + 9) + 1);
-
-        if (name[0] == '/') memmove(name, name + 1, strlen(name));
-        write_log(g_log_path, "unpkg: cleaned name[%d] = %s", i, name);
+        name_blob[entries[i].size] = '\0';   /* so a damaged table cannot run off */
+        name_blob_size = entries[i].size;
+        break;
     }
 
     // === EXTRACT FILES ===
     int extracted = 0;
-    int name_count = 0;
 
     for (int i = 0; i < n_entries; i++) {
         uint32_t type = entries[i].type;
@@ -184,13 +185,22 @@ int unpkg_ps4(const char *pkgfn, const char *tidpath) {
 
         if (sz == 0 || sz > 100*1024*1024) continue;
 
-        char *name = get_entry_name_by_type(type);
-        if (!name && name_count < name_idx) name = name_table[name_count++];
-
+        /* the table name wins: it is what the package itself says */
+        const char *name = NULL;
+        if (name_blob && entries[i].name_table_offset < name_blob_size)
+            name = name_blob + entries[i].name_table_offset;
+        if (!name || !name[0])
+            name = get_entry_name_by_type(type);
         if (!name || !name[0]) continue;
 
+        char clean[256];
+        strncpy(clean, name, sizeof(clean) - 1);
+        clean[sizeof(clean) - 1] = '\0';
+        clean_entry_name(clean);
+        if (!clean[0]) continue;
+
         char full[512];
-        snprintf(full, sizeof(full), "%s/%s", out_dir, name);
+        snprintf(full, sizeof(full), "%s/%s", out_dir, clean);
 
         char *dir = strdup(full);
         char *p = strrchr(dir, '/');
@@ -208,12 +218,12 @@ int unpkg_ps4(const char *pkgfn, const char *tidpath) {
             write(out, buf, sz);
             close(out);
             extracted++;
-            write_log(g_log_path, "unpkg: Extracted %s (%u bytes)", name, sz);
+            write_log(g_log_path, "unpkg: Extracted %s (%u bytes)", clean, sz);
         }
         free(buf);
     }
 
-    for (int i = 0; i < name_idx; i++) free(name_table[i]);
+    free(name_blob);
     free(entries);
     close(fdin);
 

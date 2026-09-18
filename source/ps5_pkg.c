@@ -59,15 +59,6 @@ static void *custom_memmem(const void *haystack, size_t haystacklen,
 }
 
 /* ------------------- Read Null-Terminated String ------------------- */
-static char* read_string(int fd) {
-    char buf[256];
-    int i = 0;
-    char c;
-    while (read(fd, &c, 1) == 1 && c != '\0' && i < 255)
-        buf[i++] = c;
-    buf[i] = '\0';
-    return strdup(buf);
-}
 
 /* ------------------- PARSE APP.JSON FOR APP_SC.PKG OFFSET & SIZE ------------------- */
 static int parse_app_json(const char *json_path, uint64_t *out_offset, uint64_t *out_size)
@@ -310,9 +301,10 @@ int unpkg_ps5(const char *pkgfn, const char *tidpath)
     /* Byte-swap entries */
     for (int i = 0; i < n_entries; i++)
     {
-        entries[i].type   = bswap_32(entries[i].type);
-        entries[i].offset = bswap_32(entries[i].offset);
-        entries[i].size   = bswap_32(entries[i].size);
+        entries[i].type              = bswap_32(entries[i].type);
+        entries[i].name_table_offset = bswap_32(entries[i].name_table_offset);
+        entries[i].offset            = bswap_32(entries[i].offset);
+        entries[i].size              = bswap_32(entries[i].size);
     }
 
     /* Target Directory */
@@ -321,33 +313,35 @@ int unpkg_ps5(const char *pkgfn, const char *tidpath)
     mkdirs(out_dir);
 
     /* === NAME TABLE === */
-    char *name_table[256] = {0};
-    int name_idx = 0;
+    /* Each entry points at its own name by byte offset; handing the strings
+       out in sequence only works while every entry is named by its type, and
+       shifts every following name by one as soon as one is not. */
+    char  *name_blob = NULL;
+    size_t name_blob_size = 0;
 
     for (int i = 0; i < n_entries; i++)
     {
-        if (entries[i].type == 0x0200)   // name table type
-        {
-            lseek(fdin, cnt_offset + entries[i].offset + 1, SEEK_SET);
+        if (entries[i].type != 0x0200) continue;   // name table
+        if (entries[i].size == 0 || entries[i].size > 64 * 1024) break;
 
-            while (name_idx < 256)
-            {
-                name_table[name_idx] = read_string(fdin);
-                if (!name_table[name_idx] || name_table[name_idx][0] == '\0')
-                {
-                    free(name_table[name_idx]);
-                    name_table[name_idx] = NULL;
-                    break;
-                }
-                name_idx++;
-            }
+        name_blob = malloc(entries[i].size + 1);
+        if (!name_blob) break;
+
+        lseek(fdin, cnt_offset + entries[i].offset, SEEK_SET);
+        if (read(fdin, name_blob, entries[i].size) != (ssize_t)entries[i].size)
+        {
+            free(name_blob);
+            name_blob = NULL;
             break;
         }
+
+        name_blob[entries[i].size] = '\0';   /* a damaged table cannot run off */
+        name_blob_size = entries[i].size;
+        break;
     }
 
     /* === EXTRACT FILES DIRECTLY FROM APP.PKG INTO SCE_SYS === */
     int extracted = 0;
-    int name_count = 0;
 
     for (int i = 0; i < n_entries; i++)
     {
@@ -357,10 +351,12 @@ int unpkg_ps5(const char *pkgfn, const char *tidpath)
 
         if (sz == 0) continue;
 
-        char *name = get_entry_name_by_type(type);
-        if (!name && name_count < name_idx)
-            name = name_table[name_count++];
-
+        /* the table name wins: it is what the package itself says */
+        const char *name = NULL;
+        if (name_blob && entries[i].name_table_offset < name_blob_size)
+            name = name_blob + entries[i].name_table_offset;
+        if (!name || !name[0])
+            name = get_entry_name_by_type(type);
         if (!name || !name[0]) continue;
 
         char full[512];
@@ -400,9 +396,7 @@ int unpkg_ps5(const char *pkgfn, const char *tidpath)
     }
 
     /* Cleanup */
-    for (int i = 0; i < name_idx; i++)
-        if (name_table[i]) free(name_table[i]);
-
+    free(name_blob);
     free(entries);
     close(fdin);
 
