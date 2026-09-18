@@ -1,0 +1,4 @@
+source/web_assets.c
+*.elf
+dist/
+.claude/worktrees/
