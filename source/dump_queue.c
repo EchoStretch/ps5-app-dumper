@@ -29,8 +29,12 @@ along with this program; see the file COPYING. If not, see
 
 /* How long a title may take to show up under pfsmnt after it was started,
    and to leave it again after it was closed. */
+#ifndef MOUNT_TIMEOUT      /* the host harness shortens these */
 #define MOUNT_TIMEOUT    120
+#endif
+#ifndef UNMOUNT_TIMEOUT
 #define UNMOUNT_TIMEOUT  60
+#endif
 /* The console answers "still open" for a moment after a title went away. */
 #define LAUNCH_ATTEMPTS  3
 #define LAUNCH_RETRY_GAP 5
@@ -106,6 +110,13 @@ static int nothing_mounted(void *arg)
     return count == 0;
 }
 
+/* A title can hold the console without ever mounting - one that hangs on
+   its way up, say - so the mounts alone do not tell whether the way is free. */
+static int console_idle(void *arg)
+{
+    return nothing_mounted(arg) && app_running_id() <= 0;
+}
+
 /* Waits up to seconds for cond to hold; with no cond it simply waits the
    time out. Returns 1 when cond held, 0 when the time ran out and -1 when
    the queue was stopped. */
@@ -136,7 +147,7 @@ static int bring_up(int index, const char *title_id, const char *dir, int settle
 
     /* A PS5 runs one game at a time, and the one in the way is usually the
        title this queue dumped a moment ago. */
-    if (!nothing_mounted(NULL)) {
+    if (!console_idle(NULL)) {
         set_item(index, QITEM_CLOSING, "closing the running game");
 
         if (app_close_running(err, sizeof(err)) != 0) {
@@ -144,10 +155,10 @@ static int bring_up(int index, const char *title_id, const char *dir, int settle
             return 1;
         }
 
-        int rc = wait_until(UNMOUNT_TIMEOUT, nothing_mounted, NULL);
+        int rc = wait_until(UNMOUNT_TIMEOUT, console_idle, NULL);
         if (rc < 0) return -1;
         if (rc == 0)
-            write_log(g_log_path, "Queue: the running game is still mounted, trying anyway");
+            write_log(g_log_path, "Queue: the running game is still up, trying anyway");
     }
 
     set_item(index, QITEM_LAUNCHING, "starting the game");
@@ -302,6 +313,8 @@ int queue_start(const char *const *title_ids, int count, const char *mount,
     if (queue_is_active())               FAIL("a queue is already running");
     if (job_is_active())                 FAIL("a dump is already running");
     if (target_is_known(mount) != 0)     FAIL("unknown destination");
+    if (strlen(mount) >= sizeof(((queue_status_t *)0)->mount))
+                                         FAIL("destination path is too long");
     if (!app_launch_available())         FAIL("this console build cannot start titles");
 
     queue_status_t next;
