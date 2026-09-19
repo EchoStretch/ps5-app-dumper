@@ -20,6 +20,8 @@ along with this program; see the file COPYING. If not, see
 #include <stdarg.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <sys/param.h>
+#include <sys/mount.h>
 
 #include "dump_job.h"
 #include "app_scan.h"
@@ -81,6 +83,17 @@ static void finish(job_state_t state, const char *fmt, ...)
     pthread_mutex_unlock(&g_mtx);
 }
 
+/* Space left for the dump. Returns -1 when the drive will not say, which is
+   no reason to refuse - the copy reports the real error then. */
+static int free_bytes(const char *path, uint64_t *out)
+{
+    struct statfs sf;
+    if (statfs(path, &sf) != 0) return -1;
+
+    *out = (uint64_t)sf.f_bavail * sf.f_bsize;
+    return 0;
+}
+
 static void *worker(void *arg)
 {
     job_request_t *req = (job_request_t *)arg;
@@ -100,6 +113,19 @@ static void *worker(void *arg)
     g_status.total_bytes = estimate;
     g_status.state = JOB_RUNNING;
     pthread_mutex_unlock(&g_mtx);
+
+    /* Found out now rather than hours in: a dump that runs the drive full
+       leaves nothing usable behind. */
+    uint64_t avail = 0;
+    if (estimate && free_bytes(req->dest, &avail) == 0 && estimate > avail) {
+        write_log(g_log_path, "Web UI: %s needs %llu MB, %s has %llu MB free",
+                  req->app.dir, (unsigned long long)(estimate >> 20),
+                  req->dest, (unsigned long long)(avail >> 20));
+        finish(JOB_FAILED, "Not enough space: the dump needs %.1f GB, the drive has %.1f GB free",
+               estimate / 1073741824.0, avail / 1073741824.0);
+        free(req);
+        return NULL;
+    }
 
     set_stage("Dumping");
     write_log(g_log_path, "Web UI: dumping %s to %s", req->app.dir, req->dest);
