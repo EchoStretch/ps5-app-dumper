@@ -38,6 +38,7 @@ along with this program; see the file COPYING. If not, see
 #include "fs_browse.h"
 #include "app_launch.h"
 #include "dump_job.h"
+#include "dump_queue.h"
 #include "utils.h"
 
 #define MAX_CONNECTIONS   8
@@ -341,11 +342,13 @@ static void json_config(sb_t *sb, const dumper_config_t *cfg)
         "{\"enableDecrypter\":%d,\"enableBackport\":%d,"
         "\"ps4BackportLevel\":%d,\"ps5BackportLevel\":%d,"
         "\"enableElf2fself\":%d,\"enableLogging\":%d,\"split\":%d,"
-        "\"enableWebui\":%d,\"webPort\":%d,\"autoStart\":%d,\"dumpSubdir\":",
+        "\"enableWebui\":%d,\"webPort\":%d,\"autoStart\":%d,"
+        "\"queueDelay\":%d,\"dumpSubdir\":",
         cfg->enable_decrypter, cfg->enable_backport,
         cfg->ps4_backport_level, cfg->ps5_backport_level,
         cfg->enable_elf2fself, cfg->enable_logging, cfg->split,
-        cfg->enable_webui, cfg->web_port, cfg->auto_start);
+        cfg->enable_webui, cfg->web_port, cfg->auto_start,
+        cfg->queue_delay);
     sb_json_str(sb, cfg->dump_subdir);
     sb_puts(sb, "}");
 }
@@ -373,6 +376,31 @@ static void json_job(sb_t *sb, const job_status_t *job)
               (unsigned long long)job->total_bytes,
               (unsigned long long)job->copied_bytes,
               (long long)job->started, (long long)job->finished);
+}
+
+static void json_queue(sb_t *sb, const queue_status_t *q)
+{
+    sb_printf(sb, "{\"active\":%s,\"current\":%d,\"settle\":%d,\"wait\":%d,"
+                  "\"started\":%lld,\"finished\":%lld,\"target\":",
+              q->active ? "true" : "false", q->current, q->settle_seconds,
+              q->wait_remaining, (long long)q->started, (long long)q->finished);
+    sb_json_str(sb, q->mount);
+    sb_puts(sb, ",\"items\":[");
+
+    for (int i = 0; i < q->count; i++) {
+        if (i) sb_puts(sb, ",");
+        sb_puts(sb, "{\"titleId\":");
+        sb_json_str(sb, q->items[i].title_id);
+        sb_puts(sb, ",\"title\":");
+        sb_json_str(sb, q->items[i].title);
+        sb_puts(sb, ",\"state\":");
+        sb_json_str(sb, queue_item_state_name(q->items[i].state));
+        sb_puts(sb, ",\"message\":");
+        sb_json_str(sb, q->items[i].message);
+        sb_puts(sb, "}");
+    }
+
+    sb_puts(sb, "]}");
 }
 
 typedef struct {
@@ -416,14 +444,24 @@ static void handle_status(int fd, const params_t *q)
     job_status_t job;
     job_get_status(&job);
 
+    /* too large for a connection thread's stack next to the request buffers */
+    queue_status_t *queue = malloc(sizeof(*queue));
+    if (!queue) { send_error(fd, 500, "out of memory"); return; }
+    queue_get_status(queue);
+
     sb_t sb;
     sb_init(&sb);
 
     sb_puts(&sb, "{\"job\":");
     json_job(&sb, &job);
+    sb_puts(&sb, ",\"queue\":");
+    json_queue(&sb, queue);
     sb_puts(&sb, ",\"log\":");
     json_log(&sb, (unsigned)param_get_int(q, "since", 0));
-    sb_printf(&sb, ",\"busy\":%s}", job_is_active() ? "true" : "false");
+    sb_printf(&sb, ",\"busy\":%s}",
+              (job_is_active() || queue->active) ? "true" : "false");
+
+    free(queue);
 
     send_sb(fd, 200, &sb);
 }
@@ -544,6 +582,8 @@ static void handle_config_post(int fd, const params_t *p)
     cfg.enable_webui       = param_get_int(p, "enableWebui",      cfg.enable_webui) ? 1 : 0;
     cfg.web_port           = clamp(param_get_int(p, "webPort",    cfg.web_port), 1024, 65535);
     cfg.auto_start         = param_get_int(p, "autoStart",        cfg.auto_start) ? 1 : 0;
+    cfg.queue_delay        = clamp(param_get_int(p, "queueDelay", cfg.queue_delay),
+                                   QUEUE_SETTLE_MIN, QUEUE_SETTLE_MAX);
 
     const char *subdir = param_get(p, "dumpSubdir", NULL);
     if (subdir) {
@@ -583,6 +623,7 @@ static void handle_dump(int fd, const params_t *p)
     const char *app = param_get(p, "app", NULL);
     const char *target = param_get(p, "target", NULL);
 
+    if (queue_is_active())   { send_error(fd, 409, "a queue is running"); return; }
     if (!app || !*app)       { send_error(fd, 400, "no app selected"); return; }
     if (!target || !*target) { send_error(fd, 400, "no destination selected"); return; }
 
@@ -608,6 +649,13 @@ static void handle_dump(int fd, const params_t *p)
 
 static void handle_abort(int fd)
 {
+    /* stopping the dump of a queued title stops the queue with it */
+    if (queue_is_active()) {
+        queue_stop();
+        send_json(fd, 200, "{\"stopping\":true}");
+        return;
+    }
+
     if (!job_is_active()) {
         send_error(fd, 409, "no dump is running");
         return;
@@ -615,6 +663,46 @@ static void handle_abort(int fd)
 
     job_abort();
     send_json(fd, 200, "{\"stopping\":true}");
+}
+
+/* "PPSA01234,CUSA05678" -> the titles to dump, in that order. */
+static void handle_queue_start(int fd, const params_t *p)
+{
+    const char *target = param_get(p, "target", NULL);
+    if (!target || !*target) { send_error(fd, 400, "no destination selected"); return; }
+
+    char list[sizeof(((param_t *)0)->val)];
+    snprintf(list, sizeof(list), "%s", param_get(p, "titles", ""));
+
+    const char *ids[QUEUE_MAX + 1];
+    int count = 0;
+
+    for (char *tok = strtok(list, ","); tok; tok = strtok(NULL, ",")) {
+        if (count > QUEUE_MAX) break;   /* one over, so queue_start reports it */
+        ids[count++] = tok;
+    }
+
+    pthread_mutex_lock(&g_cfg_mtx);
+    dumper_config_t cfg = g_cfg;
+    pthread_mutex_unlock(&g_cfg_mtx);
+
+    char err[160] = {0};
+    if (queue_start(ids, count, target, cfg.queue_delay, &cfg, err, sizeof(err)) != 0) {
+        send_error(fd, 409, err[0] ? err : "could not start the queue");
+        return;
+    }
+
+    send_json(fd, 200, "{\"started\":true}");
+}
+
+static void handle_queue_clear(int fd)
+{
+    if (queue_clear() != 0) {
+        send_error(fd, 409, "the queue is still running");
+        return;
+    }
+
+    send_json(fd, 200, "{\"cleared\":true}");
 }
 
 static void handle_icon(int fd, const params_t *p)
@@ -697,7 +785,7 @@ static void handle_launch(int fd, const params_t *p)
     const char *title = param_get(p, "title", NULL);
     if (!title || !*title) { send_error(fd, 400, "no title given"); return; }
 
-    if (job_is_active()) {
+    if (job_is_active() || queue_is_active()) {
         send_error(fd, 409, "a dump is running");
         return;
     }
@@ -803,7 +891,7 @@ static void handle_mkdir(int fd, const params_t *p)
 
 static void handle_quit(int fd)
 {
-    if (job_is_active()) {
+    if (job_is_active() || queue_is_active()) {
         send_error(fd, 409, "a dump is running");
         return;
     }
@@ -831,6 +919,8 @@ static void route(int fd, const char *method, const char *path, const params_t *
     else if (is_post && !strcmp(path, "/api/config"))  handle_config_post(fd, p);
     else if (is_post && !strcmp(path, "/api/dump"))    handle_dump(fd, p);
     else if (is_post && !strcmp(path, "/api/abort"))   handle_abort(fd);
+    else if (is_post && !strcmp(path, "/api/queue/start")) handle_queue_start(fd, p);
+    else if (is_post && !strcmp(path, "/api/queue/clear")) handle_queue_clear(fd);
     else if (is_post && !strcmp(path, "/api/quit"))    handle_quit(fd);
     else if (is_get  && !strcmp(path, "/api/icon"))    handle_icon(fd, p);
     else if (is_get  && !strcmp(path, "/api/library")) handle_library(fd);

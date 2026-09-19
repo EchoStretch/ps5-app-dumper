@@ -37,6 +37,11 @@ int app_launch_probably_available(void);
    console sits on the dashboard. */
 int app_running_id(void);
 
+/* Closes the title in the foreground, ending the player's session. Returns
+   0 when nothing is running or the console accepted the request - the mount
+   under pfsmnt goes away a moment later, not before this returns. */
+int app_close_running(char *err, size_t err_size);
+
 /* Starts a title so its files appear under pfsmnt.
 
    A PS5 runs one game at a time, so a title already in the foreground has to

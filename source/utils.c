@@ -352,6 +352,7 @@ void config_defaults(dumper_config_t *cfg)
     cfg->web_port           = 8081;   /* 8080 usually belongs to websrv */
     cfg->auto_start         = 0;
     strncpy(cfg->dump_subdir, "homebrew", sizeof(cfg->dump_subdir) - 1);
+    cfg->queue_delay        = 30;
 }
 
 int config_path(char *out, size_t out_size)
@@ -424,6 +425,7 @@ void config_load(dumper_config_t *cfg)
         else if (!strcmp(key, "enable_webui"))       cfg->enable_webui       = atoi(val) ? 1 : 0;
         else if (!strcmp(key, "web_port"))           cfg->web_port           = clamp_int(atoi(val), 1024, 65535);
         else if (!strcmp(key, "auto_start"))         cfg->auto_start         = atoi(val) ? 1 : 0;
+        else if (!strcmp(key, "queue_delay"))        cfg->queue_delay        = clamp_int(atoi(val), 5, 600);
         else if (!strcmp(key, "dump_subdir")) {
             strncpy(cfg->dump_subdir, val, sizeof(cfg->dump_subdir) - 1);
             cfg->dump_subdir[sizeof(cfg->dump_subdir) - 1] = '\0';
@@ -459,6 +461,10 @@ int config_save(const dumper_config_t *cfg)
         "; dump_subdir -> folder below the mount point that receives the dump\n"
         "dump_subdir = %s\n"
         "\n"
+        "; === Dump Queue ===\n"
+        "; queue_delay -> seconds a queued title gets to load before it is dumped (5-600)\n"
+        "queue_delay = %d\n"
+        "\n"
         "; === Decrypt App ===\n"
         "; enable_decrypter = 1  -> decrypt ELF files (default)\n"
         "; enable_decrypter = 0  -> disable decryption\n"
@@ -492,6 +498,7 @@ int config_save(const dumper_config_t *cfg)
         "split = %d\n",
         cfg->enable_webui, cfg->auto_start, cfg->web_port,
         cfg->dump_subdir[0] ? cfg->dump_subdir : "homebrew",
+        cfg->queue_delay,
         cfg->enable_decrypter,
         cfg->enable_backport, cfg->ps4_backport_level, cfg->ps5_backport_level,
         cfg->enable_elf2fself,

@@ -103,6 +103,7 @@ typedef struct {
     int  web_port;
     int  auto_start;           /* 1 -> legacy behaviour: dump the running app and exit */
     char dump_subdir[64];      /* folder below the mount point, e.g. "homebrew" */
+    int  queue_delay;          /* seconds a queued title gets to load before its dump */
 } dumper_config_t;
 
 void config_defaults(dumper_config_t *cfg);

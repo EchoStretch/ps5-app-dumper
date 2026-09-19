@@ -436,6 +436,29 @@ static int library_seen(const library_entry_t *list, int count, const char *titl
     return 0;
 }
 
+/* Fills an entry for a title found below one of the app roots. */
+static void library_fill(library_entry_t *e, const char *title_id, const char *label)
+{
+    memset(e, 0, sizeof(*e));
+    strncpy(e->title_id, title_id, sizeof(e->title_id) - 1);
+    strncpy(e->source, label, sizeof(e->source) - 1);
+    e->is_ps4 = (strncmp(title_id, "CUSA", 4) == 0);
+
+    char dirs[2][256];
+    appmeta_dirs(e->title_id, dirs);
+    read_metadata(dirs, 2, e->is_ps4,
+                  e->title, sizeof(e->title),
+                  e->version, sizeof(e->version));
+
+    char icon[512];
+    e->has_icon = (library_icon_path(e->title_id, icon, sizeof(icon)) == 0);
+
+    char mounted[320];
+    snprintf(mounted, sizeof(mounted), "%s/%s-app0", SANDBOX_PATH, e->title_id);
+    e->is_running = dir_exists(mounted);
+    e->on_disc = title_on_disc(e->title_id);
+}
+
 int library_scan(library_entry_t *out, int max)
 {
     if (!out || max <= 0) return 0;
@@ -451,30 +474,27 @@ int library_scan(library_entry_t *out, int max)
             if (!is_title_id(dp->d_name)) continue;
             if (library_seen(out, count, dp->d_name)) continue;
 
-            library_entry_t *e = &out[count];
-            memset(e, 0, sizeof(*e));
-            strncpy(e->title_id, dp->d_name, sizeof(e->title_id) - 1);
-            strncpy(e->source, g_app_roots[r].label, sizeof(e->source) - 1);
-            e->is_ps4 = (strncmp(dp->d_name, "CUSA", 4) == 0);
-
-            char dirs[2][256];
-            appmeta_dirs(e->title_id, dirs);
-            read_metadata(dirs, 2, e->is_ps4,
-                          e->title, sizeof(e->title),
-                          e->version, sizeof(e->version));
-
-            char icon[512];
-            e->has_icon = (library_icon_path(e->title_id, icon, sizeof(icon)) == 0);
-
-            char mounted[320];
-            snprintf(mounted, sizeof(mounted), "%s/%s-app0", SANDBOX_PATH, e->title_id);
-            e->is_running = dir_exists(mounted);
-            e->on_disc = title_on_disc(e->title_id);
-
+            library_fill(&out[count], dp->d_name, g_app_roots[r].label);
             count++;
         }
         closedir(d);
     }
 
     return count;
+}
+
+int library_find(const char *title_id, library_entry_t *out)
+{
+    if (!out || !is_title_id(title_id)) return -1;
+
+    for (int r = 0; g_app_roots[r].path; r++) {
+        char path[320];
+        snprintf(path, sizeof(path), "%s/%s", g_app_roots[r].path, title_id);
+        if (!dir_exists(path)) continue;
+
+        library_fill(out, title_id, g_app_roots[r].label);
+        return 0;
+    }
+
+    return -1;
 }

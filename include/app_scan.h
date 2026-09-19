@@ -79,6 +79,9 @@ int title_on_disc(const char *title_id);
 /* Lists the titles installed on the console. */
 int library_scan(library_entry_t *out, int max);
 
+/* Looks up a single installed title by its id. Returns 0 on success. */
+int library_find(const char *title_id, library_entry_t *out);
+
 /* Resolves the icon of an installed title. Returns 0 on success. */
 int library_icon_path(const char *title_id, char *out, size_t out_size);
 

@@ -157,25 +157,36 @@ int app_running_id(void)
     return p_get_running_bigapp();
 }
 
+#define FAIL(...) do { if (err && err_size) snprintf(err, err_size, __VA_ARGS__); \
+                       return -1; } while (0)
+
+int app_close_running(char *err, size_t err_size)
+{
+    if (!app_launch_available()) FAIL("this console build cannot close titles");
+
+    int app_id = p_get_running_bigapp();
+    if (app_id <= 0) return 0;
+
+    if (!p_kill_app) FAIL("cannot close the running game");
+
+    write_log(g_log_path, "Web UI: closing running app %d", app_id);
+    int rc = p_kill_app(app_id, -1, 0, 0);
+    if (rc) FAIL("could not close the running game (0x%x)", rc);
+
+    return 0;
+}
+
 int app_launch_title(const char *title_id, int close_running,
                      char *err, size_t err_size)
 {
-    #define FAIL(...) do { if (err && err_size) snprintf(err, err_size, __VA_ARGS__); \
-                           return -1; } while (0)
-
     if (!app_launch_available()) FAIL("this console build cannot start titles");
     if (!valid_title_id(title_id)) FAIL("not a title id");
 
-    int app_id = p_get_running_bigapp();
-    if (app_id > 0) {
+    if (p_get_running_bigapp() > 0) {
         if (!close_running)
             FAIL("another game is running");
 
-        if (!p_kill_app) FAIL("cannot close the running game");
-
-        write_log(g_log_path, "Web UI: closing running app %d", app_id);
-        int rc = p_kill_app(app_id, -1, 0, 0);
-        if (rc) FAIL("could not close the running game (0x%x)", rc);
+        if (app_close_running(err, err_size) != 0) return -1;
     }
 
     /* Launch on behalf of the signed-in player; without a user the system
@@ -232,6 +243,6 @@ int app_launch_title(const char *title_id, int close_running,
     write_log(g_log_path, "Web UI: launched %s", title_id);
     printf_notification("Starting %s...", title_id);
     return 0;
-
-    #undef FAIL
 }
+
+#undef FAIL
