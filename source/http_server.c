@@ -473,9 +473,10 @@ static void handle_devices(int fd)
         sb_json_str(&sb, apps[i].version);
         sb_puts(&sb, ",\"patchDir\":");
         sb_json_str(&sb, apps[i].patch_dir);
-        sb_printf(&sb, ",\"isPs4\":%s,\"hasIcon\":%s}",
+        sb_printf(&sb, ",\"isPs4\":%s,\"hasIcon\":%s,\"media\":\"%s\"}",
                   apps[i].is_ps4 ? "true" : "false",
-                  apps[i].has_icon ? "true" : "false");
+                  apps[i].has_icon ? "true" : "false",
+                  apps[i].on_disc ? "disc" : "pkg");
     }
 
     sb_puts(&sb, "],\"targets\":[");
@@ -668,10 +669,11 @@ static void handle_library(int fd)
         sb_json_str(&sb, lib[i].version);
         sb_puts(&sb, ",\"source\":");
         sb_json_str(&sb, lib[i].source);
-        sb_printf(&sb, ",\"isPs4\":%s,\"hasIcon\":%s,\"isRunning\":%s}",
+        sb_printf(&sb, ",\"isPs4\":%s,\"hasIcon\":%s,\"isRunning\":%s,\"media\":\"%s\"}",
                   lib[i].is_ps4 ? "true" : "false",
                   lib[i].has_icon ? "true" : "false",
-                  lib[i].is_running ? "true" : "false");
+                  lib[i].is_running ? "true" : "false",
+                  lib[i].on_disc ? "disc" : "pkg");
     }
 
     /* Whether a title is up is already known from the pfsmnt scan, so the

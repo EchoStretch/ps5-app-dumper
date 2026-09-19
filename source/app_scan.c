@@ -197,6 +197,7 @@ static void app_read_metadata(app_entry_t *app)
 
     char icon[512];
     app->has_icon = (app_icon_path(app, icon, sizeof(icon)) == 0);
+    app->on_disc = title_on_disc(app->title_id);
 }
 
 int app_icon_path(const app_entry_t *app, char *out, size_t out_size)
@@ -399,6 +400,19 @@ static int is_title_id(const char *name)
     return 1;
 }
 
+/* An inserted disc is mounted here, one folder per title it carries - for
+   PS4 and PS5 discs alike. */
+#define DISC_APP_ROOT "/mnt/disc/app"
+
+int title_on_disc(const char *title_id)
+{
+    if (!is_title_id(title_id)) return 0;
+
+    char path[64];
+    snprintf(path, sizeof(path), "%s/%s", DISC_APP_ROOT, title_id);
+    return dir_exists(path) ? 1 : 0;
+}
+
 int library_icon_path(const char *title_id, char *out, size_t out_size)
 {
     if (!title_id || !out || out_size == 0) return -1;
@@ -455,6 +469,7 @@ int library_scan(library_entry_t *out, int max)
             char mounted[320];
             snprintf(mounted, sizeof(mounted), "%s/%s-app0", SANDBOX_PATH, e->title_id);
             e->is_running = dir_exists(mounted);
+            e->on_disc = title_on_disc(e->title_id);
 
             count++;
         }

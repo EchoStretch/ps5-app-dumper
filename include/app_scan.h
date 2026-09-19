@@ -33,6 +33,7 @@ typedef struct {
     char version[24];     /* content/app version, empty when unknown    */
     int  is_ps4;          /* 1 for CUSA titles                          */
     int  has_icon;
+    int  on_disc;         /* served by the disc in the drive            */
 } app_entry_t;
 
 /* A mount point the dump can be written to. */
@@ -65,9 +66,15 @@ typedef struct {
     int  is_ps4;
     int  has_icon;
     int  is_running;      /* already mounted under pfsmnt       */
+    int  on_disc;         /* served by the disc in the drive    */
 } library_entry_t;
 
 #define LIBRARY_SCAN_MAX 128
+
+/* 1 when the disc in the drive carries this title. A disc game whose disc
+   is not inserted cannot be told apart from a package install - it cannot
+   be started either, so for dumping the difference does not matter. */
+int title_on_disc(const char *title_id);
 
 /* Lists the titles installed on the console. */
 int library_scan(library_entry_t *out, int max);
