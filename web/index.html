@@ -25,6 +25,7 @@
   --amber:#ffb020;
   --green:#33d17f;
   --red:#ff4d5e;
+  --violet:#b79cff;
   --display:"Bahnschrift","DIN Alternate","Avenir Next Condensed","Roboto Condensed","Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
   --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Mono","Roboto Mono",Menlo,Consolas,monospace;
   --shadow:0 18px 40px -24px rgba(0,0,0,.9);
@@ -106,7 +107,7 @@ main{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:18px;a
 @media(max-width:900px){
   main{display:flex;flex-direction:column;align-items:stretch}
   .col{display:contents}
-  #sec-apps{order:1}#sec-drives{order:2}#progress{order:3}#sec-options{order:4}#sec-console{order:5}
+  #sec-apps{order:1}#sec-queue{order:2}#sec-drives{order:3}#progress{order:4}#sec-options{order:5}#sec-console{order:6}
 }
 
 section.card{
@@ -117,6 +118,7 @@ section.card{
 }
 #sec-apps{animation-delay:.04s}
 #sec-drives{animation-delay:.08s}
+#sec-queue{animation-delay:.10s}
 #progress{animation-delay:.12s}
 #sec-options{animation-delay:.12s}
 #sec-console{animation-delay:.16s}
@@ -270,6 +272,48 @@ section.card{position:relative}
 }
 .tag.ps5{color:var(--accent)}
 .tag.ps4{color:var(--amber)}
+.tag.disc{color:var(--violet)}
+.tag.pkg{color:var(--ink-faint)}
+
+/* ---------------- queue ---------------- */
+.mini.on{background:rgba(51,209,127,.14);border-color:rgba(51,209,127,.5);color:#9be8c2}
+.mini.on:hover{background:rgba(51,209,127,.24);color:#fff}
+.lib-acts{display:flex;gap:6px;align-items:center;flex:none}
+.q-list{display:flex;flex-direction:column;gap:7px;max-height:min(46vh,380px);overflow-y:auto;
+  scrollbar-width:thin;scrollbar-color:rgba(47,157,255,.35) transparent}
+.q-row{
+  display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--line-soft);
+  border-radius:9px;background:var(--panel-2)
+}
+.q-row.cur{border-color:rgba(47,157,255,.6);background:linear-gradient(180deg,rgba(47,157,255,.13),rgba(47,157,255,.04))}
+.q-pos{
+  font-family:var(--mono);font-size:11px;color:var(--accent);width:20px;height:20px;flex:none;
+  border:1px solid rgba(47,157,255,.35);border-radius:50%;display:grid;place-items:center
+}
+.q-row .meta .name{font-size:14px}
+.q-msg{display:block;font-size:11.5px;color:var(--ink-faint);line-height:1.35;margin-top:2px;white-space:normal}
+.q-row.failed .q-msg{color:#ff9aa4}
+.q-state{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;flex:none;
+  border:1px solid var(--line);border-radius:4px;padding:3px 7px;color:var(--ink-dim);white-space:nowrap
+}
+.q-state.live{color:var(--accent);border-color:rgba(47,157,255,.5)}
+.q-state.done{color:var(--green);border-color:rgba(51,209,127,.45)}
+.q-state.failed{color:var(--red);border-color:rgba(255,77,94,.5)}
+.q-btn{
+  font:inherit;font-family:var(--mono);font-size:13px;line-height:1;width:26px;height:26px;flex:none;
+  border-radius:6px;cursor:pointer;background:none;border:1px solid var(--line);color:var(--ink-dim);
+  display:grid;place-items:center;padding:0;transition:border-color .15s,color .15s
+}
+.q-btn:hover:not(:disabled){border-color:var(--accent);color:var(--ink)}
+.q-btn.rm:hover{border-color:var(--red);color:var(--red)}
+.q-btn:disabled{opacity:.3;cursor:not-allowed}
+.q-btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.q-foot{border-top:1px solid var(--line-soft);padding:4px 16px 14px}
+.q-foot input{max-width:72px;text-align:right}
+.q-foot .unit{font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
+.q-go{display:flex;gap:9px;align-items:center;margin-top:10px}
+.q-go .act{flex:1;padding:11px 16px;font-size:13px}
 
 /* ---------------- drives ---------------- */
 .drive{
@@ -553,6 +597,31 @@ footer{
         <div class="body tight" id="drives"><div class="skel"></div></div>
       </section>
 
+      <section class="card" id="sec-queue">
+        <div class="head"><h2>Queue</h2><span class="num" id="queuecount">0</span>
+          <span class="spacer"></span><span class="num" id="queuestage" hidden></span></div>
+        <div class="body tight" id="queue"></div>
+        <div class="q-foot" id="queue-foot" hidden>
+          <div class="row">
+            <div class="txt">
+              <div class="label">Load time</div>
+              <div class="hint">How long each game gets to load before its dump starts</div>
+            </div>
+            <input type="text" id="c-qdelay" inputmode="numeric" spellcheck="false" autocomplete="off">
+            <span class="unit">sec</span>
+          </div>
+          <div class="q-go">
+            <button type="button" class="act ghost" id="q-empty">Empty</button>
+            <button type="button" class="act go" id="q-start">Start queue</button>
+          </div>
+        </div>
+        <div class="q-foot" id="queue-done" hidden>
+          <div class="q-go">
+            <button type="button" class="act ghost" id="q-clear">Clear result</button>
+          </div>
+        </div>
+      </section>
+
       <section class="card" id="sec-options">
         <div class="head"><h2>Options</h2><span class="spacer"></span><span id="opt-plat" class="opt-plat"></span></div>
         <div class="body">
@@ -685,6 +754,8 @@ var state = {
   app: null, target: null,
   logSeq: 0, job: null, busy: false, sizes: {},
   tab: "running", library: null, launching: null, canLaunch: true,
+  queue: [],             /* titles picked in this browser, not started yet */
+  squeue: null,          /* the queue the console is working on, or its result */
   online: true, failures: 0,
   samples: []            /* {t, bytes} for the speed estimate */
 };
@@ -709,6 +780,10 @@ function esc(s){
   return String(s).replace(/[&<>"]/g, function(c){
     return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];
   });
+}
+function mediaTag(media){
+  return media === "disc" ? '<span class="tag disc">DISC</span>'
+       : media === "pkg"  ? '<span class="tag pkg">PKG</span>' : "";
 }
 var toastTimer;
 function toast(msg, kind){
@@ -753,7 +828,7 @@ function renderApps(){
   $("appcount").textContent = state.apps.length;
 
   var sig = (state.launching ? "launching~" : "") + state.apps.map(function(a){
-    return a.dir + "|" + a.title + "|" + a.version + "|" + a.hasIcon;
+    return a.dir + "|" + a.title + "|" + a.version + "|" + a.hasIcon + "|" + a.media;
   }).join("~");
 
   if(sig === appSig){ markPressed(box, "data-dir", state.app); return; }
@@ -780,7 +855,7 @@ function renderApps(){
       icon +
       '<span class="meta">' +
         '<span class="name">' + esc(a.title) + '</span>' +
-        '<span class="id">' + tag + esc(a.titleId) + (a.version ? " &middot; " + esc(a.version) : "") + '</span>' +
+        '<span class="id">' + tag + mediaTag(a.media) + esc(a.titleId) + (a.version ? " &middot; " + esc(a.version) : "") + '</span>' +
       '</span></button>';
   });
   html += '</div>';
@@ -807,7 +882,7 @@ function renderLibrary(){
   $("libcount").textContent = state.library.length;
 
   var sig = (state.canLaunch === false ? "nolaunch~" : "") + state.library.map(function(t){
-    return t.titleId + "|" + t.title + "|" + t.isRunning;
+    return t.titleId + "|" + t.title + "|" + t.isRunning + "|" + t.media;
   }).join("~");
   if(sig === libSig) return;
   libSig = sig;
@@ -835,22 +910,30 @@ function renderLibrary(){
     html += '<div class="tile lib" data-search="' + esc((t.title + " " + t.titleId).toLowerCase()) + '">' + icon +
       '<span class="meta">' +
         '<span class="name">' + esc(t.title) + '</span>' +
-        '<span class="id">' + tag + esc(t.titleId) +
+        '<span class="id">' + tag + mediaTag(t.media) + esc(t.titleId) +
           (t.source && t.source !== "internal" ? " &middot; " + esc(t.source) : "") + '</span>' +
       '</span>' +
+      '<span class="lib-acts">' +
+      (state.canLaunch
+        ? '<button class="mini" type="button" data-queue="' + esc(t.titleId) + '"></button>'
+        : '') +
       (t.isRunning
         ? '<span class="running-badge">running</span>'
         : state.canLaunch
           ? '<button class="mini" type="button" data-title="' + esc(t.titleId) + '">Start</button>'
           : '') +
-      '</div>';
+      '</span></div>';
   });
   html += '</div>';
   box.innerHTML = html;
 
-  Array.prototype.forEach.call(box.querySelectorAll(".mini"), function(el){
+  Array.prototype.forEach.call(box.querySelectorAll("[data-title]"), function(el){
     el.addEventListener("click", function(){ launch(el, el.getAttribute("data-title")); });
   });
+  Array.prototype.forEach.call(box.querySelectorAll("[data-queue]"), function(el){
+    el.addEventListener("click", function(){ toggleQueued(el.getAttribute("data-queue")); });
+  });
+  markQueued();
 
   var filter = document.getElementById("libfilter");
   if(filter){
@@ -975,6 +1058,196 @@ function showTab(which){
   if(which === "library" && state.library === null) loadLibrary();
 }
 
+/* ---------------- queue ---------------- */
+/* The queue is put together in the browser and handed to the console in one
+   go; from then on the console owns it and this page only mirrors it. */
+var QUEUE_MAX = 16, QUEUE_KEY = "ps5-app-dumper.queue";
+
+function storeQueue(){
+  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(state.queue)); } catch(e){}
+}
+function restoreQueue(){
+  try {
+    var saved = JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]");
+    if(Array.isArray(saved)) state.queue = saved.filter(function(q){
+      return q && /^(PPSA|CUSA)\d{5}$/.test(q.titleId);
+    }).slice(0, QUEUE_MAX);
+  } catch(e){}
+}
+
+function queueIndex(titleId){
+  for(var i = 0; i < state.queue.length; i++)
+    if(state.queue[i].titleId === titleId) return i;
+  return -1;
+}
+
+function queueOnConsole(){ return !!(state.squeue && state.squeue.items.length); }
+function queueActive(){ return !!(state.squeue && state.squeue.active); }
+
+function toggleQueued(titleId){
+  if(queueOnConsole()){ toast(queueActive() ? "A queue is running." : "Clear the last queue result first.", "bad"); return; }
+
+  var at = queueIndex(titleId);
+  if(at >= 0) state.queue.splice(at, 1);
+  else {
+    if(state.queue.length >= QUEUE_MAX){ toast("A queue holds at most " + QUEUE_MAX + " titles.", "bad"); return; }
+    var t = null;
+    (state.library || []).forEach(function(l){ if(l.titleId === titleId) t = l; });
+    if(!t) return;
+    state.queue.push({titleId: t.titleId, title: t.title, isPs4: t.isPs4, media: t.media});
+  }
+  storeQueue(); markQueued(); renderQueue(); updateAction();
+}
+
+/* Reflects queue membership on the Installed rows without rebuilding them. */
+function markQueued(){
+  Array.prototype.forEach.call($("library").querySelectorAll("[data-queue]"), function(el){
+    var at = queueIndex(el.getAttribute("data-queue"));
+    el.classList.toggle("on", at >= 0);
+    el.textContent = at >= 0 ? "Queued " + (at + 1) : "+ Queue";
+    el.setAttribute("aria-pressed", String(at >= 0));
+  });
+}
+
+var STATE_LABEL = {
+  pending: "waiting", closing: "closing game", launching: "starting", settling: "loading",
+  dumping: "dumping", done: "done", failed: "failed", skipped: "skipped"
+};
+
+function queueRowHead(pos, q, cls){
+  /* the console reports only ids and names; the rest is known from here */
+  var known = null;
+  (state.library || []).forEach(function(l){ if(l.titleId === q.titleId) known = l; });
+  var media = q.media || (known && known.media);
+  var tag = q.titleId.indexOf("CUSA") === 0 ? '<span class="tag ps4">PS4</span>' : '<span class="tag ps5">PS5</span>';
+  return '<div class="q-row' + (cls ? " " + cls : "") + '"><span class="q-pos">' + pos + '</span>' +
+    '<span class="meta"><span class="name">' + esc(q.title || q.titleId) + '</span>' +
+    '<span class="id">' + tag + mediaTag(media) + esc(q.titleId) + '</span>';
+}
+
+var queueSig = null;
+function renderQueue(){
+  var box = $("queue"), remote = queueOnConsole();
+  var items = remote ? state.squeue.items : state.queue;
+
+  $("queuecount").textContent = items.length;
+  $("queue-foot").hidden = remote || !items.length;
+  $("queue-done").hidden = !remote || queueActive();
+
+  var sig = (remote ? "r" + state.squeue.active + state.squeue.current : "l") + "~" + items.map(function(q){
+    return q.titleId + "|" + (q.state || "") + "|" + (q.message || "");
+  }).join("~");
+
+  if(sig !== queueSig){
+    queueSig = sig;
+
+    if(!items.length){
+      box.innerHTML = '<div class="empty-state"><strong>Queue is empty</strong>' +
+        'Add titles with <b>+ Queue</b> in the Installed tab. They are started, dumped and closed one after the other.</div>';
+    } else if(remote){
+      box.innerHTML = '<div class="q-list">' + items.map(function(q, i){
+        var live = state.squeue.current === i;
+        var kind = q.state === "done" ? "done" : q.state === "failed" ? "failed" : live ? "live" : "";
+        return queueRowHead(i + 1, q, (live ? "cur " : "") + q.state) +
+          (q.message && (q.state === "failed" || q.state === "skipped" || live)
+            ? '<span class="q-msg">' + esc(q.message) + '</span>' : "") + '</span>' +
+          '<span class="q-state ' + kind + '"' + (live ? ' id="q-live"' : "") + '>' +
+          esc(STATE_LABEL[q.state] || q.state) + '</span></div>';
+      }).join("") + '</div>';
+    } else {
+      box.innerHTML = '<div class="q-list">' + items.map(function(q, i){
+        return queueRowHead(i + 1, q) + '</span>' +
+          '<button class="q-btn" type="button" data-mv="-1" data-i="' + i + '" aria-label="Move up"' + (i ? "" : " disabled") + '>&uarr;</button>' +
+          '<button class="q-btn" type="button" data-mv="1" data-i="' + i + '" aria-label="Move down"' + (i < items.length - 1 ? "" : " disabled") + '>&darr;</button>' +
+          '<button class="q-btn rm" type="button" data-rm="' + i + '" aria-label="Remove from queue">&times;</button></div>';
+      }).join("") + '</div>';
+
+      Array.prototype.forEach.call(box.querySelectorAll("[data-mv]"), function(el){
+        el.addEventListener("click", function(){
+          var i = Number(el.getAttribute("data-i")), j = i + Number(el.getAttribute("data-mv"));
+          if(j < 0 || j >= state.queue.length) return;
+          var moved = state.queue.splice(i, 1)[0];
+          state.queue.splice(j, 0, moved);
+          storeQueue(); markQueued(); renderQueue();
+        });
+      });
+      Array.prototype.forEach.call(box.querySelectorAll("[data-rm]"), function(el){
+        el.addEventListener("click", function(){
+          state.queue.splice(Number(el.getAttribute("data-rm")), 1);
+          storeQueue(); markQueued(); renderQueue(); updateAction();
+        });
+      });
+    }
+  }
+
+  /* the part that changes every second is patched in place */
+  var stage = $("queuestage");
+  stage.hidden = !queueActive();
+  if(queueActive()){
+    var sq = state.squeue, cur = sq.items[sq.current];
+    stage.textContent = (sq.current + 1) + " / " + sq.items.length;
+
+    var live = document.getElementById("q-live");
+    if(live && cur) live.textContent = queuePhase(cur);
+  }
+
+  var startBtn = $("q-start");
+  startBtn.disabled = state.busy || !state.target;
+  if(!startBtn.classList.contains("arm"))
+    startBtn.textContent = "Start queue (" + state.queue.length + ")";
+}
+
+function queuePhase(item){
+  var label = STATE_LABEL[item.state] || item.state, wait = state.squeue.wait;
+
+  if(item.state === "dumping" && state.job && state.job.totalBytes)
+    return label + " " + Math.min(100, Math.floor(state.job.copiedBytes / state.job.totalBytes * 100)) + "%";
+  if((item.state === "launching" || item.state === "settling" || item.state === "closing") && wait > 0)
+    return label + " " + clock(wait);
+  return label;
+}
+
+var queueArm;
+function startQueue(){
+  var b = $("q-start");
+  if(!state.queue.length || state.busy) return;
+  if(!state.target){ toast("Select a destination drive first.", "bad"); return; }
+
+  /* a game that is up and not first in line gets closed - ask once */
+  var inTheWay = state.apps.some(function(a){ return a.titleId !== state.queue[0].titleId; });
+  if(inTheWay && !b.classList.contains("arm")){
+    b.classList.add("arm");
+    b.textContent = "Closes the running game - confirm";
+    clearTimeout(queueArm);
+    queueArm = setTimeout(function(){ b.classList.remove("arm"); renderQueue(); }, 5000);
+    return;
+  }
+  clearTimeout(queueArm);
+  b.classList.remove("arm");
+  b.disabled = true;
+
+  var ids = state.queue.map(function(q){ return q.titleId; });
+  post("/api/queue/start", {titles: ids.join(","), target: state.target}).then(function(){
+    state.queue = [];
+    storeQueue(); markQueued();
+    state.busy = true;
+    $("logbox").innerHTML = "";
+    state.samples = [];
+    toast("Queue started: " + ids.length + " titles", "ok");
+    pollStatus();
+  }).catch(function(e){
+    toast(e.message, "bad");
+    renderQueue();
+  });
+}
+
+function clearQueueResult(){
+  post("/api/queue/clear").then(function(){
+    state.squeue = null;
+    renderQueue(); updateAction();
+  }).catch(function(e){ toast(e.message, "bad"); });
+}
+
 /* ---------------- rendering: drives ---------------- */
 function renderDrives(){
   var box = $("drives");
@@ -1042,6 +1315,7 @@ function applyConfig(c){
   $("c-subdir").value     = c.dumpSubdir || "";
   $("c-bp5").value        = c.ps5BackportLevel;
   $("c-bp4").value        = c.ps4BackportLevel;
+  if(document.activeElement !== $("c-qdelay")) $("c-qdelay").value = c.queueDelay;
 
   Array.prototype.forEach.call($("c-split").querySelectorAll("button"), function(b){
     b.setAttribute("aria-pressed", String(Number(b.getAttribute("data-v")) === c.split));
@@ -1074,6 +1348,7 @@ function collectConfig(){
     ps5BackportLevel:$("c-bp5").value,
     ps4BackportLevel:$("c-bp4").value,
     dumpSubdir:      $("c-subdir").value.trim(),
+    queueDelay:      parseInt($("c-qdelay").value, 10) || 30,
     split:           split
   };
 }
@@ -1102,6 +1377,7 @@ function wireSettings(){
   $("c-bp5").addEventListener("change", saveConfig);
   $("c-bp4").addEventListener("change", saveConfig);
   $("c-subdir").addEventListener("change", saveConfig);
+  $("c-qdelay").addEventListener("change", saveConfig);
   Array.prototype.forEach.call($("c-split").querySelectorAll("button"), function(b){
     b.addEventListener("click", function(){
       Array.prototype.forEach.call($("c-split").querySelectorAll("button"), function(o){
@@ -1172,6 +1448,20 @@ function updateAction(){
   ["sec-apps","sec-drives","sec-options"].forEach(function(id){
     $(id).classList.toggle("locked", state.busy);
   });
+
+  renderQueue();
+
+  if(state.busy && queueActive()){
+    var sq = state.squeue, cur = sq.items[sq.current];
+    go.style.display = "none";
+    stop.style.display = "";
+    reload.style.display = "none";
+    if(!stop.classList.contains("arm")) stop.textContent = "Stop queue";
+    sum.innerHTML = "Queue <b>" + (sq.current + 1) + "/" + sq.items.length + "</b>" +
+                    (cur ? " · <b>" + esc(cur.title) + "</b> — " + esc(queuePhase(cur)) : "") +
+                    " → <b>" + esc(sq.target) + "</b>";
+    return;
+  }
 
   if(state.busy){
     go.style.display = "none";
@@ -1265,7 +1555,7 @@ function renderJob(job){
     var took = job.finished && job.started ? " · " + clock(job.finished - job.started) : "";
     verdict.className = "verdict " + kind;
     verdict.innerHTML = "<div><b>" + head + took + "</b>" + esc(job.message || "") + "</div>";
-    $("btn-reload").style.display = "";
+    if(!state.busy) $("btn-reload").style.display = "";
   }
 }
 
@@ -1311,17 +1601,25 @@ function pollStatus(){
       if(d.log.seq) state.logSeq = d.log.seq;
     }
 
-    var wasBusy = state.busy;
+    var wasBusy = state.busy, wasQueue = queueActive();
     state.busy = !!d.busy;
     state.job = d.job;
+    state.squeue = d.queue || null;
     renderJob(d.job);
 
     if(wasBusy && !state.busy){
       loadDevices();
-      if(d.job.state === "done") toast("Dump complete", "ok");
+      if(wasQueue){
+        var ok = d.queue.items.filter(function(q){ return q.state === "done"; }).length;
+        toast("Queue finished: " + ok + " of " + d.queue.items.length + " dumped",
+              ok === d.queue.items.length ? "ok" : "bad");
+      }
+      else if(d.job.state === "done") toast("Dump complete", "ok");
       else if(d.job.state === "failed") toast(d.job.message || "Dump failed", "bad");
     }
-    if(wasBusy !== state.busy) updateAction();
+    /* a queue moves through phases without the busy flag ever changing */
+    if(wasBusy !== state.busy || queueActive() || wasQueue) updateAction();
+    else renderQueue();
   }).catch(function(){
     if(++state.failures >= 2) setOnline(false);
   });
@@ -1397,7 +1695,7 @@ function stop(){
     clearTimeout(armTimer);
     armTimer = setTimeout(function(){
       b.classList.remove("arm");
-      b.textContent = "Stop";
+      b.textContent = queueActive() ? "Stop queue" : "Stop";
     }, 4000);
     return;
   }
@@ -1526,6 +1824,13 @@ $("refresh").addEventListener("click", function(){
   Promise.all(jobs).then(function(){ toast("Rescanned"); });
 });
 
+$("q-start").addEventListener("click", startQueue);
+$("q-clear").addEventListener("click", clearQueueResult);
+$("q-empty").addEventListener("click", function(){
+  state.queue = [];
+  storeQueue(); markQueued(); renderQueue(); updateAction();
+});
+
 $("tab-running").addEventListener("click", function(){ showTab("running"); });
 $("tab-library").addEventListener("click", function(){ showTab("library"); });
 $("clearlog").addEventListener("click", function(){
@@ -1568,11 +1873,14 @@ $("quit").addEventListener("click", function(){
 
 $("sub").textContent = "Web console · " + location.host;
 
+restoreQueue();
+renderQueue();
 loadDevices();
 pollStatus();
 setInterval(pollStatus, 1000);
 setInterval(function(){
-  if(state.busy) return;
+  /* a queue starts and closes games, so the listing keeps moving under it */
+  if(state.busy && !queueActive()) return;
   loadDevices();
   if(state.tab === "library") loadLibrary();
 }, 8000);
