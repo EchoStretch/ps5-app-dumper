@@ -27,13 +27,9 @@ along with this program; see the file COPYING. If not, see
 #include "app_launch.h"
 #include "utils.h"
 
-/* How long a title may take to show up under pfsmnt after it was started,
-   and to leave it again after it was closed. */
-#ifndef MOUNT_TIMEOUT      /* the host harness shortens these */
+/* How long a title may take to show up under pfsmnt after it was started. */
+#ifndef MOUNT_TIMEOUT      /* the host harness shortens this */
 #define MOUNT_TIMEOUT    120
-#endif
-#ifndef UNMOUNT_TIMEOUT
-#define UNMOUNT_TIMEOUT  60
 #endif
 /* The console answers "still open" for a moment after a title went away. */
 #define LAUNCH_ATTEMPTS  3
@@ -52,7 +48,6 @@ const char *queue_item_state_name(queue_item_state_t state)
 {
     switch (state) {
         case QITEM_PENDING:   return "pending";
-        case QITEM_CLOSING:   return "closing";
         case QITEM_LAUNCHING: return "launching";
         case QITEM_SETTLING:  return "settling";
         case QITEM_DUMPING:   return "dumping";
@@ -98,25 +93,6 @@ static int title_mounted(void *arg)
     return app_find((const char *)arg, &app) == 0;
 }
 
-static int nothing_mounted(void *arg)
-{
-    (void)arg;
-
-    app_entry_t *apps = calloc(APP_SCAN_MAX, sizeof(*apps));
-    if (!apps) return 1;
-
-    int count = app_scan(apps, APP_SCAN_MAX);
-    free(apps);
-    return count == 0;
-}
-
-/* A title can hold the console without ever mounting - one that hangs on
-   its way up, say - so the mounts alone do not tell whether the way is free. */
-static int console_idle(void *arg)
-{
-    return nothing_mounted(arg) && app_running_id() <= 0;
-}
-
 /* Waits up to seconds for cond to hold; with no cond it simply waits the
    time out. Returns 1 when cond held, 0 when the time ran out and -1 when
    the queue was stopped. */
@@ -145,24 +121,13 @@ static int bring_up(int index, const char *title_id, const char *dir, int settle
 {
     char err[192] = {0};
 
-    /* A PS5 runs one game at a time, and the one in the way is usually the
-       title this queue dumped a moment ago. */
-    if (!console_idle(NULL)) {
-        set_item(index, QITEM_CLOSING, "closing the running game");
-
-        if (app_close_running(err, sizeof(err)) != 0) {
-            set_item(index, QITEM_FAILED, "%s", err);
-            return 1;
-        }
-
-        int rc = wait_until(UNMOUNT_TIMEOUT, console_idle, NULL);
-        if (rc < 0) return -1;
-        if (rc == 0)
-            write_log(g_log_path, "Queue: the running game is still up, trying anyway");
-    }
-
     set_item(index, QITEM_LAUNCHING, "starting the game");
 
+    /* A PS5 runs one game at a time, and the one in the way is usually the
+       title this queue dumped a moment ago. The launch closes it on its way,
+       the same as a forced start from the web UI - that goes by whatever the
+       console reports as running, so a title that hung before it ever
+       mounted is cleared away too. */
     for (int attempt = 1; ; attempt++) {
         if (app_launch_title(title_id, 1, err, sizeof(err)) == 0) break;
 

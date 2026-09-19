@@ -31,7 +31,7 @@ Not every title starts this way. A title that the console itself refuses to laun
 
 **Disc or package:** every title carries a **DISC** or **PKG** badge. DISC means the disc in the drive carries that title. A disc game whose disc is not inserted cannot be told apart from a package install — it cannot be started either, so it shows as PKG until the disc goes in.
 
-**Queue:** press **+ Queue** on several installed titles to dump them in one go. The queue card on the right orders them, and **Start queue** hands the list to the console: each title is started, given the *load time* to finish loading (`queue_delay`, 30 seconds by default), dumped, and closed to make room for the next. A title that does not come up, does not fit on the drive or fails to dump is marked and the queue moves on. **Stop queue** aborts the current dump and skips the rest. The queue runs on the console, so the browser can be closed in the meantime.
+**Queue:** press **+ Queue** on several installed titles to dump them in one go. The queue card on the right orders them, and **Start queue** hands the list to the console: each title is started — which closes the one before it — and once it shows up as the running title it gets the *load time* to finish loading (`queue_delay`, 30 seconds by default) before it is dumped. A title that does not come up, does not fit on the drive or fails to dump is marked and the queue moves on. **Stop queue** aborts the current dump and skips the rest. The queue runs on the console, so the browser can be closed in the meantime.
 
 Before a dump starts, single or queued, its size is compared with the free space on the drive; a dump that would not fit is refused instead of filling the drive.
 

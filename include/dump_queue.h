@@ -28,7 +28,6 @@ along with this program; see the file COPYING. If not, see
 
 typedef enum {
     QITEM_PENDING = 0,
-    QITEM_CLOSING,        /* ending the title that is in the way       */
     QITEM_LAUNCHING,      /* started, waiting for its mount to appear  */
     QITEM_SETTLING,       /* mounted, giving the game time to load     */
     QITEM_DUMPING,

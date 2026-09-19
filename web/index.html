@@ -1110,7 +1110,7 @@ function markQueued(){
 }
 
 var STATE_LABEL = {
-  pending: "waiting", closing: "closing game", launching: "starting", settling: "loading",
+  pending: "waiting", launching: "starting", settling: "loading",
   dumping: "dumping", done: "done", failed: "failed", skipped: "skipped"
 };
 
@@ -1202,7 +1202,7 @@ function queuePhase(item){
 
   if(item.state === "dumping" && state.job && state.job.totalBytes)
     return label + " " + Math.min(100, Math.floor(state.job.copiedBytes / state.job.totalBytes * 100)) + "%";
-  if((item.state === "launching" || item.state === "settling" || item.state === "closing") && wait > 0)
+  if((item.state === "launching" || item.state === "settling") && wait > 0)
     return label + " " + clock(wait);
   return label;
 }
