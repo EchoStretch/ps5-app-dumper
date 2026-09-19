@@ -29,6 +29,12 @@ The page shows every mounted title with its name, icon and version, the size of 
 
 Not every title starts this way. A title that the console itself refuses to launch from the home screen will not start from here either, and the page says so. If the console does not expose the launch service at all, the tab still lists the titles but without Start buttons.
 
+**Disc or package:** every title carries a **DISC** or **PKG** badge. DISC means the disc in the drive carries that title. A disc game whose disc is not inserted cannot be told apart from a package install — it cannot be started either, so it shows as PKG until the disc goes in.
+
+**Queue:** press **+ Queue** on several installed titles to dump them in one go. The queue card on the right orders them, and **Start queue** hands the list to the console: each title is started, given the *load time* to finish loading (`queue_delay`, 30 seconds by default), dumped, and closed to make room for the next. A title that does not come up, does not fit on the drive or fails to dump is marked and the queue moves on. **Stop queue** aborts the current dump and skips the rest. The queue runs on the console, so the browser can be closed in the meantime.
+
+Before a dump starts, single or queued, its size is compared with the free space on the drive; a dump that would not fit is refused instead of filling the drive.
+
 **Port:** the first port tried is `8081`, because the homebrew launcher normally holds `8080`. If it is busy the payload walks up to nine ports further and announces the one it settled on. Set `web_port` in `config.ini` to pick another.
 
 **Turning it off:** set `enable_webui = 0` to go back to the old behaviour (dump the running title immediately and exit), or `auto_start = 1` to keep the setting but dump right away.
@@ -133,6 +139,7 @@ socat -t 99999999 - TCP:<ip>:9021 < ps5-app-dumper.elf
 | `auto_start` | `0` | Dump the running title immediately, even with the web UI enabled |
 | `web_port` | `8081` | First TCP port tried for the web interface |
 | `dump_subdir` | `homebrew` | Folder below the drive that receives the dump |
+| `queue_delay` | `30` | Seconds a queued title gets to load before its dump starts, 5-600 |
 | `enable_decrypter` | `1` | Decrypt SELF/SPRX files while dumping |
 | `enable_elf2fself` | `0` | Re-sign decrypted executables as FSELF |
 | `enable_backport` | `0` | Patch SDK versions down — advanced, may break the dump |

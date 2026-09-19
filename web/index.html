@@ -1611,7 +1611,8 @@ function pollStatus(){
       loadDevices();
       if(wasQueue){
         var ok = d.queue.items.filter(function(q){ return q.state === "done"; }).length;
-        toast("Queue finished: " + ok + " of " + d.queue.items.length + " dumped",
+        var cut = d.queue.items.some(function(q){ return q.state === "skipped"; });
+        toast("Queue " + (cut ? "stopped" : "finished") + ": " + ok + " of " + d.queue.items.length + " dumped",
               ok === d.queue.items.length ? "ok" : "bad");
       }
       else if(d.job.state === "done") toast("Dump complete", "ok");
