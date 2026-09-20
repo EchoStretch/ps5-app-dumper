@@ -1526,7 +1526,7 @@ function collectConfig(){
 var saveTimer;
 function saveConfigNow(){
   clearTimeout(saveTimer);
-  post("/api/config", collectConfig()).then(function(r){
+  post(WHB_API + "/config", collectConfig()).then(function(r){
     applyConfig(r.config);
     if(!r.saved) toast(r.note, "bad");
     else toast("Settings saved", "ok");
@@ -2123,7 +2123,7 @@ function pkBrowse(path){
   var list = $("pk-list");
   list.innerHTML = '<div class="pk-empty">loading…</div>';
 
-  var q = "/api/browse?mount=" + encodeURIComponent(pk.mount) +
+  var q = WHB_API + "/browse?mount=" + encodeURIComponent(pk.mount) +
           "&path=" + encodeURIComponent(path) + "&token=" + encodeURIComponent(accessToken());
   api(q).then(function(d){
     pk.path = d.path || "";
@@ -2183,7 +2183,7 @@ function renderPicker(dirs){
 function pkCreate(){
   var name = $("pk-name").value.trim();
   if(!name){ toast("Enter a folder name.", "bad"); return; }
-  post("/api/mkdir", { mount: pk.mount, path: pk.path, name: name }).then(function(d){
+  post(WHB_API + "/mkdir", { mount: pk.mount, path: pk.path, name: name }).then(function(d){
     $("pk-name").value = "";
     pk.path = d.path;            // the folder just created
     pkUse();                     // select it as the destination and close
@@ -2446,6 +2446,7 @@ whb.app = {
   elf: "ps5-app-dumper", shortName: "App Dumper", storage: "ps5-app-dumper",
   busyText: "A dump is running.", afterBusy: "after the dump",
   lockedFrom: "start, stop or delete anything",
+  statusPath: "/api/status",
   views: { "#settings": "view-settings", "#dumps": "view-dumps" }, settingsView: "view-settings",
   onView: function(page){ if(page === "view-dumps") loadDumps(); },
   onOnline: function(){ loadDevices(); loadLibrary(); },

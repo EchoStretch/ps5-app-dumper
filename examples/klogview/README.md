@@ -32,9 +32,9 @@ Good to know:
 
 - `webhb/webhb.mk`: page inlining, build stamp, icon, the two-stage build, and
   a host build (`make sim`) against `webhb/host/stubs.c`.
-- A `/api/status` of the core's own (log feed and busy), for apps that have
-  nothing more to tell.
-- Telling a running copy by its file name (`/api/self`) rather than by what
+- A status route of the core's own (`/api/whb/status`: log feed and busy), for
+  apps that have nothing more to tell.
+- Telling a running copy by its file name (`/api/whb/self`) rather than by what
   the dumper's status looks like - otherwise this payload would have asked
   the dumper to quit.
 - A kit that leaves alone what a page does not have (no tile row here), and

@@ -26,6 +26,14 @@ along with this program; see the file COPYING. If not, see
 
 #include "webhb.h"
 
+/* Refuses with what the app says it is busy with ("a dump"). */
+static void send_busy(int fd, const char *fmt)
+{
+    char msg[120];
+    snprintf(msg, sizeof(msg), fmt, whb_app()->busy_with ? whb_app()->busy_with : "the running work");
+    send_error(fd, 409, msg);
+}
+
 /* What this copy is, and whether it carries an ELF it could store. */
 static void handle_self(int fd, const params_t *p)
 {
@@ -92,7 +100,7 @@ static void handle_install_tile(int fd, const params_t *p)
     /* Registering a title makes the shell rework its app database. Keep that
        away from work that may be reading the very same titles. */
     if (whb_busy()) {
-        send_error(fd, 409, "wait for the dump to finish first");
+        send_busy(fd, "wait for %s to finish first");
         return;
     }
 
@@ -108,7 +116,7 @@ static void handle_quit(int fd, const params_t *p)
 {
     (void)p;
     if (whb_busy()) {
-        send_error(fd, 409, "a dump is running");
+        send_busy(fd, "%s is running");
         return;
     }
 
@@ -263,9 +271,10 @@ static void handle_mkdir(int fd, const params_t *p)
 }
 
 /* What the page's poll needs and every app can give: the live console's feed
-   and whether work is going on. An app with more to tell registers its own
-   /api/status before whb_serve() - the first route registered for a path is
-   the one that answers - and keeps "log" and "busy" in it. */
+   and whether work is going on. An app with more to tell has a status route
+   of its own, keeps "log" and "busy" in it and points the page there
+   (whb.app.statusPath) - one question a second instead of two. The next copy
+   of the payload asks this one, whatever the app. */
 static void handle_status(int fd, const params_t *p)
 {
     sb_t sb;
@@ -298,15 +307,15 @@ void whb_routes_init(void)
     http_route("GET",  "/apple-touch-icon.png", handle_app_icon);
     http_route("GET",  "/apple-touch-icon-precomposed.png", handle_app_icon);
     http_route("GET",  "/app.webmanifest",      handle_web_manifest);
-    http_route("GET",  "/api/status",           handle_status);
-    http_route("GET",  "/api/self",             handle_self);
-    http_route("GET",  "/api/self/compare",     handle_self_compare);
-    http_route("POST", "/api/self/store",       handle_self_store);
-    http_route("GET",  "/api/tile",             handle_tile_state);
-    http_route("POST", "/api/tile",             handle_install_tile);
-    http_route("GET",  "/api/browse",           handle_browse);
-    http_route("POST", "/api/mkdir",            handle_mkdir);
-    http_route("POST", "/api/quit",             handle_quit);
+    http_route("GET",  WHB_API "/status",           handle_status);
+    http_route("GET",  WHB_API "/self",             handle_self);
+    http_route("GET",  WHB_API "/self/compare",     handle_self_compare);
+    http_route("POST", WHB_API "/self/store",       handle_self_store);
+    http_route("GET",  WHB_API "/tile",             handle_tile_state);
+    http_route("POST", WHB_API "/tile",             handle_install_tile);
+    http_route("GET",  WHB_API "/browse",           handle_browse);
+    http_route("POST", WHB_API "/mkdir",            handle_mkdir);
+    http_route("POST", WHB_API "/quit",             handle_quit);
 }
 
 int whb_serve(int port)

@@ -32,24 +32,25 @@ q() {
   printf '### GET /icon.png (bytes)\n'; curl -s "$B/icon.png" | wc -c | tr -d ' '
   curl -s -o /dev/null -w '[%{http_code} %{content_type}]' "$B/apple-touch-icon.png"
   q GET /cache.appcache; q GET /app.webmanifest; q GET /index.html-nope; q GET /api/nope
-  q GET /api/status; q GET "/api/status?since=99999"; q GET /api/devices; q GET /api/config; q GET /api/library
-  q GET /api/self; q GET /api/tile; q GET "/api/self/compare?path=/etc/passwd"
-  q GET "/api/browse?mount=usb0&path="; q GET "/api/browse?mount=/etc&path="; q GET "/api/browse?mount=usb0&path=../.."
+  q GET /api/status; q GET "/api/status?since=99999"; q GET /api/devices; q GET /api/whb/config; q GET /api/library
+  q GET /api/whb/status; q GET /api/self   # the core's own status; and where its routes used to be
+  q GET /api/whb/self; q GET /api/whb/tile; q GET "/api/whb/self/compare?path=/etc/passwd"
+  q GET "/api/whb/browse?mount=usb0&path="; q GET "/api/whb/browse?mount=/etc&path="; q GET "/api/whb/browse?mount=usb0&path=../.."
   q GET "/api/icon?app=nope"; q GET "/api/libicon?title=PPSA01234"; q GET "/api/size?app=nope"
-  q POST /api/config "queueDelay=7&split=1&dumpSubdir=dumps"; q POST /api/config "dumpSubdir=../x"
-  q POST /api/mkdir "mount=usb0&path=&name=made"; q POST /api/mkdir "mount=usb0&path=&name=../evil"
+  q POST /api/whb/config "queueDelay=7&split=1&dumpSubdir=dumps"; q POST /api/whb/config "dumpSubdir=../x"
+  q POST /api/whb/mkdir "mount=usb0&path=&name=made"; q POST /api/whb/mkdir "mount=usb0&path=&name=../evil"
   q POST /api/dump ""; q POST /api/dump "app=nope&target=usb0"; q POST /api/abort ""
   q POST /api/queue/start "titles=&target=usb0"; q POST /api/queue/start "titles=NOPE00000&target=usb0"
   q POST /api/queue/start "titles=PPSA01234&target=usb0&o_PPSA01234=zz"; q POST /api/queue/skip ""; q POST /api/queue/clear ""
   q POST /api/dumps/delete "mount=usb0&folder=../x"; q POST /api/launch "title=bad"; q POST /api/launch "title=PPSA01234"
-  sleep 6; q GET /api/devices; q POST /api/launch "title=CUSA07211"; q POST /api/tile ""; q GET /api/tile
+  sleep 6; q GET /api/devices; q POST /api/launch "title=CUSA07211"; q POST /api/whb/tile ""; q GET /api/whb/tile
   # access: loopback is trusted, so the lock itself is asked over the LAN address
-  q GET /api/access | sed -E 's/"code":"[0-9]{6}"/"code":"CODE"/'
+  q GET /api/whb/access | sed -E 's/"code":"[0-9]{6}"/"code":"CODE"/'
   LAN="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || hostname -I 2>/dev/null | cut -d' ' -f1)"
   if [ -n "$LAN" ]; then
     B="http://$LAN:$PORT"
-    q GET /api/access; q GET "/api/access?token=nope"; q POST /api/config "queueDelay=9"
-    q POST /api/unlock "code=abc"; q POST /api/access/show ""; q POST /api/quit ""
+    q GET /api/whb/access; q GET "/api/whb/access?token=nope"; q POST /api/whb/config "queueDelay=9"
+    q POST /api/whb/unlock "code=abc"; q POST /api/whb/access/show ""; q POST /api/whb/quit ""
     B="http://127.0.0.1:$PORT"
   fi
   # the dump library: nothing there, then the refusals
@@ -60,7 +61,7 @@ q() {
   q POST /api/dumps/remove "mount=usb0&dir=homebrew&folder=PPSA01234-app0"; q POST /api/dumps/remove "mount=usb0&dir=homebrew&folder=PPSA01234-app0&confirm=yes"
   q POST /api/dumps/remove "mount=usb0&dir=homebrew&folder=PPSA01234-app0&confirm=PPSA01234-app0"; q POST /api/dumps/remove "mount=usb0&dir=&folder=homebrew&confirm=homebrew"
   q POST /api/dumps/unlink "mount=usb0&dir=homebrew&folder=PPSA01234-app0"; q POST /api/dumps/unlink "mount=usb0&dir=..&folder=PPSA01234-app0"
-  q POST /api/quit ""
+  q POST /api/whb/quit ""
 } > "$OUT" 2>&1
 
 sleep 1; pkill -f "$SIM" 2>/dev/null

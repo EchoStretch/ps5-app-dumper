@@ -79,11 +79,24 @@ static int local_request(int port, const char *request, char *out, size_t out_si
     return got;
 }
 
+/* Copies built before the core's routes moved below WHB_API answer the old
+   paths only; they are asked second. */
+static const char *const g_api_roots[] = { WHB_API, "/api" };
+#define API_ROOTS ((int)(sizeof(g_api_roots) / sizeof(g_api_roots[0])))
+
+static int ask(int port, const char *method, const char *root, const char *what, char *out, size_t out_size)
+{
+    char request[160];
+    snprintf(request, sizeof(request), "%s %s%s HTTP/1.0\r\nContent-Length: 0\r\n\r\n", method, root, what);
+    return local_request(port, request, out, out_size);
+}
+
 /* 1 busy, 0 idle, -1 when the port does not belong to a copy of this
    payload. Web homebrews sit on neighbouring ports and answer the same
-   routes, so a copy is told by the file name /api/self gives - it starts
-   with the app's elf_basename - and never by the shape of an answer. */
-static int instance_state(int port)
+   routes, so a copy is told by the file name its "self" route gives - it
+   starts with the app's elf_basename - and never by the shape of an answer.
+   *root gets the paths that copy understands. */
+static int instance_state(int port, const char **root)
 {
     /* the status answer carries the log, which can be long */
     char *buf = malloc(32768);
@@ -93,12 +106,17 @@ static int instance_state(int port)
     snprintf(mark, sizeof(mark), "\"file\":\"%s_v", whb_app()->elf_basename);
 
     int state = -1;
-    int n = local_request(port, "GET /api/self HTTP/1.0\r\n\r\n", buf, 32768);
-    if (n <= 0 || !strstr(buf, mark)) { free(buf); return -1; }
+    for (int i = 0; i < API_ROOTS && state < 0; i++) {
+        int n = ask(port, "GET", g_api_roots[i], "/self", buf, 32768);
+        if (n <= 0) break;                       /* nobody there at all */
+        if (!strstr(buf, mark)) continue;
 
-    n = local_request(port, "GET /api/status HTTP/1.0\r\n\r\n", buf, 32768);
-    if (n > 0 && strstr(buf, "\"busy\":"))
-        state = strstr(buf, "\"busy\":true") ? 1 : 0;
+        n = ask(port, "GET", g_api_roots[i], "/status", buf, 32768);
+        if (n > 0 && strstr(buf, "\"busy\":")) {
+            state = strstr(buf, "\"busy\":true") ? 1 : 0;
+            if (root) *root = g_api_roots[i];
+        }
+    }
 
     free(buf);
     return state;
@@ -151,7 +169,8 @@ int instance_take_over(int web_port, int *busy_port)
     /* The web UI is asked first: it knows whether a dump is running, and a
        copy built before the process had a name can only be found this way. */
     for (int port = web_port; port < web_port + PORT_SPAN; port++) {
-        int state = instance_state(port);
+        const char *root = WHB_API;
+        int state = instance_state(port, &root);
         if (state < 0) continue;
 
         if (state == 1) {
@@ -160,8 +179,7 @@ int instance_take_over(int web_port, int *busy_port)
         }
 
         char reply[512];
-        local_request(port, "POST /api/quit HTTP/1.0\r\nContent-Length: 0\r\n\r\n",
-                      reply, sizeof(reply));
+        ask(port, "POST", root, "/quit", reply, sizeof(reply));
         write_log(g_log_path, "Asked the instance on port %d to quit", port);
         asked++;
     }
@@ -170,7 +188,7 @@ int instance_take_over(int web_port, int *busy_port)
     for (int waited = 0; asked && waited < QUIT_GRACE_MS; waited += 250) {
         int still = 0;
         for (int port = web_port; port < web_port + PORT_SPAN; port++)
-            if (instance_state(port) >= 0) still++;
+            if (instance_state(port, NULL) >= 0) still++;
         if (!still) break;
         usleep(250000);
     }

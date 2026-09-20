@@ -63,6 +63,8 @@ Before a dump starts, single or queued, its size is compared with the free space
 
 * A PS5 able to run payloads (Jailbroken 1.00 - 13.60).
 
+  * The web interface and what came with it - starting titles, the home-screen shortcut, replacing a running copy - have been tested on firmware **5.10** and **12.00**. They go through system services that differ between firmwares, so other versions may behave differently; the dump itself does not depend on them.
+
 * A USB drive formatted and mounted on the PS5 (the dumper writes files to the USB).
 
 * **elfldr.elf** — all delivery methods require `elfldr.elf` running on the PS5 to accept and execute incoming payloads. Download: [https://github.com/ps5-payload-dev/elfldr/releases/tag/v0.21](https://github.com/ps5-payload-dev/elfldr/releases/tag/v0.21)

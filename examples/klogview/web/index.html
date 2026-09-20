@@ -197,7 +197,7 @@ function refilter(){
 }
 
 function applyConfig(c){ $("c-save").checked = !!c.saveToFile; }
-function loadConfig(){ api("/api/config").then(applyConfig).catch(function(){}); }
+function loadConfig(){ api(WHB_API + "/config").then(applyConfig).catch(function(){}); }
 
 $("k-filter").addEventListener("input", refilter);
 $("clearlog").addEventListener("click", function(){ shown = total = 0; count(); });
@@ -205,7 +205,7 @@ $("k-mark").addEventListener("click", function(){
   post("/api/klog/mark", { text: $("k-filter").value || "mark" }).catch(function(e){ toast(e.message, "bad"); });
 });
 $("c-save").addEventListener("change", function(){
-  post("/api/config", { saveToFile: $("c-save").checked ? 1 : 0 }).then(function(r){
+  post(WHB_API + "/config", { saveToFile: $("c-save").checked ? 1 : 0 }).then(function(r){
     applyConfig(r.config);
     toast(r.config.saveToFile ? "Writing to logs/klog.txt" : "No longer writing to a file", "ok");
   }).catch(function(e){ toast(e.message, "bad"); loadConfig(); });

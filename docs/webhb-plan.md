@@ -93,7 +93,7 @@ handlers are still `(int fd, const params_t *p)`.
 `busy()` is the one callback the core needs: single-instance takeover, `quit`
 and the cached page's reload all ask it instead of knowing about dumps.
 
-Built-in routes, served by the core for every app:
+Built-in routes, served by the core for every app (as built - see the prefix decision at the end):
 `/`, `/cache.appcache`, `/icon.png` (+ apple-touch names), `/app.webmanifest`,
 `/api/whb/status` (log feed, busy), `/api/whb/self`, `/api/whb/self/store`,
 `/api/whb/self/compare`, `/api/whb/tile`, `/api/whb/config`, `/api/whb/browse`,
@@ -224,7 +224,17 @@ Steps 1-3 already pay off for the dumper alone.
 
 ## Decide before anything is published
 
-- **Name and route prefix** (`webhb`, `/api/whb/...`).
+- **Name and route prefix** - decided 2026-09-20: the name stays `webhb`, and
+  the core's routes live below `/api/whb/` (`WHB_API` in `webhb.h`, `WHB_API`
+  in `whb.js`): `status`, `self`, `self/store`, `self/compare`, `tile`,
+  `config`, `config/console`, `browse`, `mkdir`, `quit`, `access`,
+  `access/show`, `unlock`. Everything else below `/api/` is the app's. An app
+  with a status route of its own that carries `log` and `busy` points the page
+  there (`whb.app.statusPath`, the dumper's `/api/status`) so that one question
+  a second is enough; the next copy of a payload always asks `/api/whb/status`.
+  `instance.c` still asks the unprefixed paths second, for copies built before
+  the move. The page, its cache manifest, the icons and the web manifest keep
+  their paths - browsers and the tile know them.
 - **Copyright headers** - decided 2026-09-20: the files written in this fork
   name both, "Copyright (C) 2025 EchoStretch" and "Copyright (C) 2026 slopmaster33"
   (`webhb/`, the job / queue / store / library / scan / launch modules and
@@ -240,7 +250,8 @@ Steps 1-3 already pay off for the dumper alone.
   that stores nothing gets a new code with every start. Not covered: reads
   (titles, log, folder names on the drives are visible to the LAN), and plain
   HTTP - whoever can sniff the network can take the token.
-- **Firmware scope.** Tile install, launch services and the process list are
-  proven on FW 12.00 only.
+- **Firmware scope** - tested by the user on FW 5.10 and 12.00 (tile install,
+  launch services, the process list, the takeover of a running copy). The
+  README says so; other firmwares are untested, not known to fail.
 - **iOS.** No offline start there: service workers need HTTPS, AppCache is
   gone. The kit should say so instead of pretending.

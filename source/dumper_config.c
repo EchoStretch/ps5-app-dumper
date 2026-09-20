@@ -28,7 +28,7 @@ along with this program; see the file COPYING. If not, see
    by many tools */
 static char g_default_subdir[WHB_CFG_STR_MAX];
 
-/* The order is the one /api/config has always had. */
+/* The order is the one the settings have always had in the page's requests. */
 static const whb_cfg_key_t g_keys[] = {
     { .ini_name = "enable_decrypter", .web_name = "enableDecrypter", .type = WHB_CFG_BOOL, .def = 1,
       .comment = "; === Decrypt App ===\n"

@@ -18,6 +18,8 @@
  *    views         { "#settings": "view-settings", ... } - the pages behind
  *                  the menu, by location.hash
  *    settingsView  the one of them that holds the access rows
+ *    statusPath    "/api/status" - the app's own status route, when it has one
+ *                  that carries "log" and "busy" along; the core's otherwise
  *    onView(id)    a page was opened (null: the main one)
  *    onOnline()    the payload answers again: load everything anew
  *    onStatus(d, wasBusy)  the rest of /api/status, once a second
@@ -32,6 +34,9 @@
  *  (access settings), c-cfgcopy, c-tile + tile-hint, c-store + store-hint,
  *  quit, sub, ver, build, cachestate, .actions.
  * ------------------------------------------------------------------ */
+/* where the core's own routes live - webhb.h says the same */
+var WHB_API = "/api/whb";
+
 var whb = {
   app: { elf: "payload", shortName: "Homebrew", storage: "whb", busyText: "The payload is busy.",
          afterBusy: "when the work is done", views: {}, settingsView: null },
@@ -82,7 +87,7 @@ function accessToken(){
 function api(path, opts){
   return fetch(path, opts).then(function(r){
     return r.json().catch(function(){ return {}; }).then(function(body){
-      if(r.status === 401 && path !== "/api/unlock"){ refusedTap = true; openUnlock(); }
+      if(r.status === 401 && path !== WHB_API + "/unlock"){ refusedTap = true; openUnlock(); }
       if(!r.ok){
         var err = new Error(body.error || ("HTTP " + r.status));
         err.body = body;
@@ -233,7 +238,7 @@ function startPayload(){
    payload is there at all, feeds the live console and knows about busy. What
    else the answer holds is the app's (whb.app.onStatus). */
 function whbPoll(){
-  return api("/api/status?since=" + whb.logSeq).then(function(d){
+  return api((whb.app.statusPath || WHB_API + "/status") + "?since=" + whb.logSeq).then(function(d){
     whb.failures = 0;
     setOnline(true);
 
@@ -348,7 +353,7 @@ function closeMenu(){
 /* A locked device is told so right away, not only when a tap is refused. */
 var unlockOffered = false;
 function showAccess(){
-  api("/api/access?token=" + encodeURIComponent(accessToken())).then(function(a){
+  api(WHB_API + "/access?token=" + encodeURIComponent(accessToken())).then(function(a){
     var locked = !!(a.required && !a.unlocked);
     $("lockchip").hidden = !locked;
     if(locked && !unlockOffered){ unlockOffered = true; openUnlock(); }
@@ -381,7 +386,7 @@ function tryUnlock(){
   var code = $("ul-code").value.replace(/\D/g, "");
   if(code.length !== 6){ $("ul-msg").textContent = "Six digits."; return; }
   $("ul-go").disabled = true;
-  post("/api/unlock", {code: code}).then(function(r){
+  post(WHB_API + "/unlock", {code: code}).then(function(r){
     try { localStorage.setItem(TOKEN_KEY, r.token); } catch(e){}
     closeUnlock();
     showAccess();
@@ -433,7 +438,7 @@ function checkStored(){
     var found = ((d && d.payloads) || []).filter(function(p){ return typeof p === "string" && p.split("/").pop() === self.file; })[0];
     if(!found){ showStoreState("none"); return; }
 
-    api("/api/self/compare?path=" + encodeURIComponent(found)).then(function(r){
+    api(WHB_API + "/self/compare?path=" + encodeURIComponent(found)).then(function(r){
       showStoreState(r.match === "same" ? "same" : r.match === "other" ? "other" : "unknown");
     }).catch(function(){ showStoreState("unknown"); });
   }).catch(function(){ showStoreState("none"); });
@@ -472,7 +477,7 @@ function whbBoot(){
 
   on("c-require", "change", function(){
     var want = $("c-require").checked ? 1 : 0;
-    post("/api/config", {requireCode: want}).then(function(r){
+    post(WHB_API + "/config", {requireCode: want}).then(function(r){
       if(whb.app.onConfig) whb.app.onConfig(r.config);
       toast(want ? "Other devices need the code again." : "Other devices may change things without a code.", want ? "ok" : "bad");
     }).catch(function(e){ toast(e.message, "bad"); }).then(showAccess);
@@ -480,7 +485,7 @@ function whbBoot(){
   on("c-cfgcopy", "click", function(){
     var b = $("c-cfgcopy");
     b.disabled = true;
-    post("/api/config/console").then(function(r){
+    post(WHB_API + "/config/console").then(function(r){
       toast("Settings copied to " + r.path, "ok");
     }).catch(function(e){ toast(e.message, "bad"); }).then(function(){ b.disabled = false; });
   });
@@ -489,14 +494,14 @@ function whbBoot(){
   on("ul-code", "keydown", function(e){ if(e.key === "Enter" || e.keyCode === 13) tryUnlock(); });
   on("ul-close", "click", closeUnlock);
   on("ul-show", "click", function(){
-    post("/api/access/show").then(function(){
+    post(WHB_API + "/access/show").then(function(){
       $("ul-msg").textContent = "Look at the TV.";
     }).catch(function(e){ $("ul-msg").textContent = e.message; });
   });
   showAccess();
   showView();
 
-  if($("c-tile")) api("/api/tile").then(function(r){
+  if($("c-tile")) api(WHB_API + "/tile").then(function(r){
     showTileState(!!r.installed, !!r.current);
     if(r.installed && !r.current)
       toast("The home-screen tile is out of date - update it under Menu > Settings.", "bad");
@@ -506,11 +511,11 @@ function whbBoot(){
     var b = $("c-tile");
     b.disabled = true;
     b.textContent = "Installing…";
-    post("/api/tile").then(function(){
+    post(WHB_API + "/tile").then(function(){
       showTileState(true, true);
       toast("Shortcut installed - look for \"" + whb.app.shortName + "\" on the home screen.", "ok");
     }).catch(function(e){
-      api("/api/tile").then(function(r){ showTileState(!!r.installed, !!r.current); }).catch(function(){});
+      api(WHB_API + "/tile").then(function(r){ showTileState(!!r.installed, !!r.current); }).catch(function(){});
       toast("Shortcut not installed: " + e.message, "bad");
     }).then(function(){ b.disabled = false; });
   });
@@ -526,7 +531,7 @@ function whbBoot(){
       return;
     }
     clearTimeout(quitArm);
-    post("/api/quit").then(function(){
+    post(WHB_API + "/quit").then(function(){
       setOnline(false);
       b.textContent = "payload stopped";
       b.disabled = true;
@@ -540,7 +545,7 @@ function whbBoot(){
 
   put("sub", "Web console · " + location.host);
 
-  api("/api/self").then(function(r){
+  api(WHB_API + "/self").then(function(r){
     self = r;
     put("sub", "Web console · v" + r.version + " · " + location.host);
     put("ver", "v" + r.version + " · ");
@@ -552,7 +557,7 @@ function whbBoot(){
     var b = $("c-store");
     b.disabled = true;
     b.textContent = "Saving…";
-    post("/api/self/store").then(function(r){
+    post(WHB_API + "/self/store").then(function(r){
       toast(r.file + " stored in Payload Manager", "ok");
       checkStored();
     }).catch(function(e){

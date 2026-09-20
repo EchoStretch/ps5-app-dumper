@@ -476,7 +476,7 @@ void whb_config_routes_init(void)
     access_adopt();
     whb_config_unlock();
 
-    http_route("GET",  "/api/config",         handle_config_get);
-    http_route("POST", "/api/config",         handle_config_post);
-    http_route("POST", "/api/config/console", handle_config_to_console);
+    http_route("GET",  WHB_API "/config",         handle_config_get);
+    http_route("POST", WHB_API "/config",         handle_config_post);
+    http_route("POST", WHB_API "/config/console", handle_config_to_console);
 }

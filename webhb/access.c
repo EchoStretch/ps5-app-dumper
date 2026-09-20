@@ -233,9 +233,9 @@ void whb_access_routes_init(void)
     /* an app that stores nothing still gets a code, new with every start */
     if (!g_code[0]) whb_access_init(NULL, NULL, 1);
 
-    http_route("GET",  "/api/access",      handle_access);
-    http_route("POST", "/api/unlock",      handle_unlock);
-    http_route("POST", "/api/access/show", handle_show_code);
-    http_route_open("/api/unlock");
-    http_route_open("/api/access/show");
+    http_route("GET",  WHB_API "/access",      handle_access);
+    http_route("POST", WHB_API "/unlock",      handle_unlock);
+    http_route("POST", WHB_API "/access/show", handle_show_code);
+    http_route_open(WHB_API "/unlock");
+    http_route_open(WHB_API "/access/show");
 }

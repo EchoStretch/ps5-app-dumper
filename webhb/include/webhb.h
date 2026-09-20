@@ -82,11 +82,14 @@ int whb_start(const whb_app_t *app);
    the app's own routes first. Returns what http_server_run() returns. */
 int whb_serve(int port);
 
+/* Where the core's own routes live. Everything else below /api/ is the
+   app's, so neither can get in the other's way. */
+#define WHB_API "/api/whb"
+
 /* Registers the routes every app gets: the page and its cache manifest, the
-   icons, the web manifest, /api/status (unless the app brought its own),
-   /api/self*, /api/tile, /api/quit, the settings
-   (/api/config*), the folder picker (/api/browse, /api/mkdir) and the access
-   check. Call after whb_config_init() and before http_server_run(). */
+   icons, the web manifest, and below WHB_API: status (log feed and busy),
+   self*, tile, quit, the settings (config*), the folder picker (browse,
+   mkdir) and the access check (access, unlock). Call after whb_config_init() and before http_server_run(). */
 void whb_routes_init(void);
 
 /* ------------------------------------------------------------------ */
@@ -185,7 +188,7 @@ void whb_config_unlock(void);
 void whb_config_json(sb_t *sb);
 
 /* Hands the stored access code to the access check and registers
-   /api/config and /api/config/console. whb_routes_init() calls it. */
+   WHB_API "/config" and "/config/console". whb_routes_init() calls it. */
 void whb_config_routes_init(void);
 
 /* ------------------------------------------------------------------ */
