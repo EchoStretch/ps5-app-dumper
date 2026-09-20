@@ -52,11 +52,6 @@
 .smbanner .sm-txt{display:block;font-size:12.5px;line-height:1.5;color:var(--ink-dim)}
 .smbanner .mini{margin-top:10px}
 .smbanner .mini.arm{border-color:var(--red);color:var(--red)}
-.picker-note{flex:none;padding:10px 16px;border-bottom:1px solid var(--line-soft);font-size:12.5px;line-height:1.45;
-  color:var(--ink-dim);background:rgba(52,211,153,.07)}
-.picker-drives{padding:9px 16px 0;flex:none}
-.picker-drives button{margin:0 6px 6px 0}
-.picker-drives button[aria-pressed=true]{border-color:var(--accent);color:var(--ink)}
 
 /* ---------------- layout ---------------- */
 main{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:18px;align-items:start}
@@ -598,29 +593,7 @@ button.tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
   </div>
 </div>
 
-<div class="picker" id="picker" hidden>
-  <div class="picker-box" role="dialog" aria-modal="true" aria-label="Choose destination folder">
-    <div class="picker-head">
-      <span id="pk-title">Choose folder</span>
-      <span class="spacer"></span>
-      <button type="button" class="ghost act" id="pk-close" style="padding:5px 11px;font-size:11px;letter-spacing:.1em">Close</button>
-    </div>
-    <div class="picker-note" id="pk-note" hidden></div>
-    <div class="picker-drives" id="pk-drives" hidden></div>
-    <div class="picker-path"><span id="pk-drive"></span><span id="pk-crumb"></span></div>
-    <div class="picker-list" id="pk-list"></div>
-    <div class="picker-new">
-      <input type="text" id="pk-name" placeholder="New folder name" spellcheck="false" autocapitalize="off" autocomplete="off">
-      <button type="button" class="mini" id="pk-create">Create &amp; use</button>
-    </div>
-    <div class="picker-foot">
-      <span class="picker-dest" id="pk-dest"></span>
-      <span class="spacer"></span>
-      <button type="button" class="act ghost" id="pk-cancel">Cancel</button>
-      <button type="button" class="act go" id="pk-use">Use this folder</button>
-    </div>
-  </div>
-</div>
+<!-- @WHB:picker@ -->
 
 <div class="picker" id="delconfirm" hidden>
   <div class="picker-box" role="alertdialog" aria-modal="true" aria-label="Delete this dump" style="max-width:460px">
@@ -1965,8 +1938,6 @@ function stopThisDump(){
 
 /* ---------------- boot ---------------- */
 /* ---------------- destination folder picker ---------------- */
-var pk = { mount: null, path: "" };
-
 /* the drive with the most room; the console itself only when there is none */
 function betterTarget(t, best){
   if(!t.writable) return false;
@@ -1986,12 +1957,14 @@ function openPicker(forConsole){
   if(whb.busy){ toast("A dump is running - type the folder in, or browse when it is done.", "bad"); return; }
   var mount = pkDriveForBrowse(forConsole);
   if(!mount){ toast(forConsole ? "The console's storage is not available." : "Plug in a USB drive to choose a folder on it.", "bad"); return; }
-  pk.mount = mount;
-  pk.forConsole = !!forConsole;
-  pk.path = "";
-  $("picker").hidden = false;
-  $("pk-name").value = "";
-  pkBrowse("");
+  whbPickFolder({
+    mount: mount,
+    onUse: function(m, path){
+      $(forConsole ? "c-subdir-console" : "c-subdir").value = path;
+      saveConfig();
+      updateAction();
+    }
+  });
 }
 
 /* Choosing where a dump goes: the same dialog, with the destinations to
@@ -1999,144 +1972,32 @@ function openPicker(forConsole){
 function openMovePicker(d){
   if(whb.busy){ toast("A dump or a move is running.", "bad"); return; }
   if(!d) return;
-  pk.move = d;
-  pk.forConsole = false;
-  pk.mount = d.mount;
-  $("pk-name").value = "";
-  $("pk-use").textContent = "Move here";
-  $("pk-create").textContent = "Create & move";
-  $("pk-title").textContent = "Move " + d.folder + " to…";
-  $("pk-note").hidden = !d.inUse;
-  $("pk-note").textContent = d.inUse
-    ? "ShadowMount starts " + d.title + " from this folder. It can be moved while the game is not running; afterwards the game starts " +
-      "from its installed package again - unless ShadowMount finds the dump in its new place and links it anew" +
-      (state.shadowMount ? " (it is running: stop it on the Dumps page first to prevent that)." : ".")
-    : "";
-  renderPickerDrives();
-  $("picker").hidden = false;
-  pkBrowse(d.dir || "");
-}
-function renderPickerDrives(){
-  var box = $("pk-drives");
-  box.hidden = !pk.move;
-  if(!pk.move) return;
-  var html = "";
-  state.targets.forEach(function(t){
-    if(!t.writable) return;
-    html += '<button type="button" class="mini" data-pkdrive="' + esc(t.mount) + '" aria-pressed="' + (t.mount === pk.mount) + '">' +
-            (t.internal ? "Console storage" : esc(t.mount)) + '</button>';
-  });
-  box.innerHTML = html;
-  Array.prototype.forEach.call(box.querySelectorAll("[data-pkdrive]"), function(b){
-    b.addEventListener("click", function(){
-      pk.mount = b.getAttribute("data-pkdrive");
-      renderPickerDrives();
-      /* start where dumps on that destination usually go */
+  whbPickFolder({
+    mount: d.mount, path: d.dir || "",
+    title: "Move " + d.folder + " to…", useLabel: "Move here", createLabel: "Create & move",
+    leaf: d.folder,
+    note: d.inUse
+      ? "ShadowMount starts " + d.title + " from this folder. It can be moved while the game is not running; afterwards the game starts " +
+        "from its installed package again - unless ShadowMount finds the dump in its new place and links it anew" +
+        (state.shadowMount ? " (it is running: stop it on the Dumps page first to prevent that)." : ".")
+      : "",
+    drives: state.targets.filter(function(t){ return t.writable; })
+                         .map(function(t){ return { mount: t.mount, label: t.internal ? "Console storage" : t.mount }; }),
+    /* start where dumps on that destination usually go */
+    startPath: function(mount){
+      if(mount === d.mount) return d.dir || "";
       var internal = false;
-      state.targets.forEach(function(t){ if(t.mount === pk.mount) internal = !!t.internal; });
-      pkBrowse(pk.mount === pk.move.mount ? (pk.move.dir || "")
-               : ((internal ? state.config.dumpSubdirConsole : state.config.dumpSubdir) || ""));
-    });
-  });
-}
-function closePicker(){
-  $("picker").hidden = true;
-  pk.move = null;
-  $("pk-use").textContent = "Use this folder";
-  $("pk-create").textContent = "Create & use";
-  $("pk-title").textContent = "Choose folder";
-  $("pk-note").hidden = true;
-  $("pk-drives").hidden = true;
-}
-
-function pkBrowse(path){
-  pk.path = path;
-  var list = $("pk-list");
-  list.innerHTML = '<div class="pk-empty">loading…</div>';
-
-  var q = WHB_API + "/browse?mount=" + encodeURIComponent(pk.mount) +
-          "&path=" + encodeURIComponent(path) + "&token=" + encodeURIComponent(accessToken());
-  api(q).then(function(d){
-    pk.path = d.path || "";
-    renderPicker(d.dirs || []);
-  }).catch(function(e){
-    /* a folder that does not exist yet: start one level up instead */
-    if(path && /cannot open/.test(e.message)){
-      var parts = path.split("/"); parts.pop();
-      pkBrowse(parts.join("/"));
-      return;
+      state.targets.forEach(function(t){ if(t.mount === mount) internal = !!t.internal; });
+      return (internal ? state.config.dumpSubdirConsole : state.config.dumpSubdir) || "";
+    },
+    onUse: function(toMount, toDir){
+      post("/api/dumps/move", {mount: d.mount, dir: d.dir, folder: d.folder, toMount: toMount, toDir: toDir}).then(function(r){
+        if(r.copying) toast("Copying " + d.folder + " - the original goes once the copy is complete.", "ok");
+        else toast(d.folder + " moved to " + toMount + (toDir ? "/" + toDir : ""), "ok");
+        loadDumps(); pollStatus();
+      }).catch(function(e){ toast(e.message, "bad"); });
     }
-    list.innerHTML = '<div class="pk-empty">' + esc(e.message) + '</div>';
   });
-}
-
-var FOLDER_SVG = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
-
-function renderPicker(dirs){
-  /* breadcrumb */
-  $("pk-drive").textContent = pk.mount;
-  $("pk-crumb").textContent = pk.path ? "/" + pk.path : "/";
-
-  /* destination preview */
-  $("pk-dest").textContent = pk.mount + (pk.path ? "/" + pk.path : "") + "/" + (pk.move ? pk.move.folder : "…");
-
-  var list = $("pk-list");
-  var html = "";
-
-  if(pk.path){
-    html += '<button class="pk-row up" type="button" data-up="1">' + FOLDER_SVG + '<span>.. up one level</span></button>';
-  }
-  if(!dirs.length && !pk.path){
-    // still allow selecting root; show hint
-  }
-  dirs.forEach(function(name){
-    html += '<button class="pk-row" type="button" data-dir="' + esc(name) + '">' + FOLDER_SVG +
-            '<span>' + esc(name) + '</span></button>';
-  });
-  if(!dirs.length){
-    html += '<div class="pk-empty">no sub-folders here — create one below, or use this folder</div>';
-  }
-  list.innerHTML = html;
-
-  var up = list.querySelector('[data-up]');
-  if(up) up.addEventListener("click", function(){
-    var parts = pk.path.split("/"); parts.pop();
-    pkBrowse(parts.join("/"));
-  });
-  Array.prototype.forEach.call(list.querySelectorAll('[data-dir]'), function(el){
-    el.addEventListener("click", function(){
-      var name = el.getAttribute("data-dir");
-      pkBrowse(pk.path ? pk.path + "/" + name : name);
-    });
-  });
-}
-
-function pkCreate(){
-  var name = $("pk-name").value.trim();
-  if(!name){ toast("Enter a folder name.", "bad"); return; }
-  post(WHB_API + "/mkdir", { mount: pk.mount, path: pk.path, name: name }).then(function(d){
-    $("pk-name").value = "";
-    pk.path = d.path;            // the folder just created
-    pkUse();                     // select it as the destination and close
-    toast("Folder created", "ok");
-  }).catch(function(e){ toast(e.message, "bad"); });
-}
-
-function pkUse(){
-  if(pk.move){
-    var d = pk.move, toMount = pk.mount, toDir = pk.path;
-    closePicker();
-    post("/api/dumps/move", {mount: d.mount, dir: d.dir, folder: d.folder, toMount: toMount, toDir: toDir}).then(function(r){
-      if(r.copying) toast("Copying " + d.folder + " - the original goes once the copy is complete.", "ok");
-      else toast(d.folder + " moved to " + toMount + (toDir ? "/" + toDir : ""), "ok");
-      loadDumps(); pollStatus();
-    }).catch(function(e){ toast(e.message, "bad"); });
-    return;
-  }
-  $(pk.forConsole ? "c-subdir-console" : "c-subdir").value = pk.path;
-  closePicker();
-  saveConfig();
-  updateAction();
 }
 
 fillLevels();
@@ -2364,13 +2225,6 @@ $("move-ok").addEventListener("click", function(){
 });
 
 
-$("pk-close").addEventListener("click", closePicker);
-$("pk-cancel").addEventListener("click", closePicker);
-$("pk-use").addEventListener("click", pkUse);
-$("pk-create").addEventListener("click", pkCreate);
-$("pk-name").addEventListener("keydown", function(e){ if(e.key === "Enter") pkCreate(); });
-$("picker").addEventListener("click", function(e){ if(e.target === $("picker")) closePicker(); });
-document.addEventListener("keydown", function(e){ if(e.key === "Escape" && !$("picker").hidden) closePicker(); });
 
 /* ---------------- the kit ---------------- */
 whb.app = {
