@@ -321,6 +321,7 @@ section.card{position:relative}
 .tag.disc{color:var(--violet)}
 .tag.pkg{color:var(--ink-faint)}
 .tag.disc.out{opacity:.6;border-style:dashed}
+.tag.mount{color:var(--green)}
 .tag.all{color:var(--ink-faint);margin-right:0}
 .tag.all.on{color:var(--ink);background:rgba(47,157,255,.22);border-color:var(--accent)}
 button.tag{font:inherit;font-family:var(--mono);font-size:9px;letter-spacing:.1em;background:none;cursor:pointer;line-height:inherit}
@@ -1031,6 +1032,11 @@ function mediaTag(media, discIn){
       : '<span class="tag disc">DISC</span>';
   return media === "pkg" ? '<span class="tag pkg">PKG</span>' : "";
 }
+/* A title redirected to a folder (ShadowMount's mount.lnk): it starts from a
+   dump, not from its package, so there is nothing to dump. */
+function mountTag(from){
+  return from ? '<span class="tag mount" title="Runs from ' + esc(from) + ' instead of its package - nothing to dump">MOUNT</span>' : "";
+}
 var toastTimer;
 function toast(msg, kind){
   var t = $("toast");
@@ -1165,7 +1171,7 @@ function renderLibrary(){
   var list = state.library.filter(function(t){ return !mounted[t.titleId]; });
 
   var sig = (state.canLaunch === false ? "nolaunch~" : "") + list.map(function(t){
-    return t.titleId + "|" + t.title + "|" + t.isRunning + "|" + t.media + t.discIn;
+    return t.titleId + "|" + t.title + "|" + t.isRunning + "|" + t.media + t.discIn + "|" + (t.mountedFrom || "");
   }).join("~") + "#" + state.library.length;
   if(sig === libSig) return;
   libSig = sig;
@@ -1196,7 +1202,7 @@ function renderLibrary(){
     html += '<div class="tile lib" data-search="' + esc((t.title + " " + t.titleId).toLowerCase()) + '">' + icon +
       '<span class="meta">' +
         '<span class="name">' + esc(t.title) + '</span>' +
-        '<span class="id">' + tag + mediaTag(t.media, t.discIn) + esc(t.titleId) +
+        '<span class="id">' + tag + mediaTag(t.media, t.discIn) + mountTag(t.mountedFrom) + esc(t.titleId) +
           (t.source && t.source !== "internal" ? " &middot; " + esc(t.source) : "") + '</span>' +
       '</span>' +
       '<span class="lib-acts">' +
@@ -1373,6 +1379,10 @@ function toggleQueued(titleId){
     if(state.queue.length >= QUEUE_MAX){ toast("A queue holds at most " + QUEUE_MAX + " titles.", "bad"); return; }
     var t = null;
     (state.library || []).forEach(function(l){ if(l.titleId === titleId) t = l; });
+    if(t && t.mountedFrom){
+      toast(t.title + " is a mount: it runs from " + t.mountedFrom + " instead of its package, so there is nothing to dump.", "bad");
+      return;
+    }
     if(!t) return;
     state.queue.push({titleId: t.titleId, title: t.title, isPs4: t.isPs4, media: t.media});
   }

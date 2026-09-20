@@ -71,6 +71,10 @@ typedef struct {
     int  is_running;      /* already mounted under pfsmnt       */
     int  on_disc;         /* served by the disc in the drive    */
     int  is_disc;         /* a disc game, inserted or not       */
+    /* Set when the title is redirected to a folder instead of its package
+       (ShadowMount's mount.lnk next to app.pkg): the folder it runs from.
+       Such a title has nothing to dump while the redirect is in place. */
+    char mounted_from[160];
 } library_entry_t;
 
 #define LIBRARY_SCAN_MAX 128

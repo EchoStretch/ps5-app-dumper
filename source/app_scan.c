@@ -588,9 +588,30 @@ static int library_seen(const library_entry_t *list, int count, const char *titl
 }
 
 /* Fills an entry for a title found below one of the app roots. */
-static void library_fill(library_entry_t *e, const char *title_id, const char *label)
+/* The folder a title is redirected to, read from <root>/<id>/mount.lnk - a
+   single line, the path. Empty when there is no such file. */
+static void read_mount_link(const char *root, const char *title_id, char *out, size_t out_size)
+{
+    out[0] = '\0';
+
+    char path[320];
+    snprintf(path, sizeof(path), "%s/%s/mount.lnk", root, title_id);
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+
+    size_t n = fread(out, 1, out_size - 1, f);
+    fclose(f);
+    out[n] = '\0';
+    out[strcspn(out, "\r\n")] = '\0';
+
+    /* something is there but unreadable as a path: still a redirect */
+    if (!out[0] || out[0] != '/') snprintf(out, out_size, "%s", "(unknown folder)");
+}
+
+static void library_fill(library_entry_t *e, const char *title_id, const char *root, const char *label)
 {
     memset(e, 0, sizeof(*e));
+    read_mount_link(root, title_id, e->mounted_from, sizeof(e->mounted_from));
     strncpy(e->title_id, title_id, sizeof(e->title_id) - 1);
     strncpy(e->source, label, sizeof(e->source) - 1);
     e->is_ps4 = (strncmp(title_id, "CUSA", 4) == 0);
@@ -627,7 +648,7 @@ int library_scan(library_entry_t *out, int max)
             if (!is_title_id(dp->d_name)) continue;
             if (library_seen(out, count, dp->d_name)) continue;
 
-            library_fill(&out[count], dp->d_name, g_app_roots[r].label);
+            library_fill(&out[count], dp->d_name, g_app_roots[r].path, g_app_roots[r].label);
             count++;
         }
         closedir(d);
@@ -645,7 +666,7 @@ int library_find(const char *title_id, library_entry_t *out)
         snprintf(path, sizeof(path), "%s/%s", g_app_roots[r].path, title_id);
         if (!dir_exists(path)) continue;
 
-        library_fill(out, title_id, g_app_roots[r].label);
+        library_fill(out, title_id, g_app_roots[r].path, g_app_roots[r].label);
         return 0;
     }
 

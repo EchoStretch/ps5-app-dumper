@@ -135,6 +135,7 @@ static void fill_lib(library_entry_t *e, int i)
     e->on_disc = title_on_disc(LIB[i].id);
     e->is_disc = LIB[i].disc;
     e->has_pic = 1;
+    if (!strcmp(LIB[i].id, "PPSA07777")) strcpy(e->mounted_from, "/mnt/usb0/homebrew/PPSA07777-app0");
     e->is_running = (running_now(id) && !strcmp(id, LIB[i].id)) || title_runs_from_folder(LIB[i].id);
 }
 

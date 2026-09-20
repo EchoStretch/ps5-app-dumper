@@ -517,13 +517,16 @@ static void handle_library(int fd, const params_t *p)
         sb_puts(&sb, ",\"source\":");
         sb_json_str(&sb, lib[i].source);
         sb_printf(&sb, ",\"isPs4\":%s,\"hasIcon\":%s,\"hasPic\":%s,\"isRunning\":%s,"
-                       "\"media\":\"%s\",\"discIn\":%s}",
+                       "\"media\":\"%s\",\"discIn\":%s",
                   lib[i].is_ps4 ? "true" : "false",
                   lib[i].has_icon ? "true" : "false",
                   lib[i].has_pic ? "true" : "false",
                   lib[i].is_running ? "true" : "false",
                   lib[i].is_disc ? "disc" : "pkg",
                   lib[i].on_disc ? "true" : "false");
+        sb_puts(&sb, ",\"mountedFrom\":");
+        sb_json_str(&sb, lib[i].mounted_from);
+        sb_puts(&sb, "}");
     }
 
     /* Whether a title is up is already known from the pfsmnt scan, so the
