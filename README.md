@@ -20,12 +20,12 @@ This tool **only dumps to USB**. The web interface controls the dump over the ne
 
 1. Plug in the USB drive and start the payload (see *Usage* below). A notification shows the address, for example `http://192.168.1.42:8081`.
 2. Open that address in any browser on the same network — a phone or PC works well, or the console's own browser.
-3. Pick the title under **Installed** and press **Start**, or launch the game on the console yourself.
+3. Press **Start** on a title, or launch the game on the console yourself. The game that is up appears as a card at the top of the list.
 4. Once it shows up under **Running**, choose the destination drive and press **Start dump**.
 
 The page shows every mounted title with its name, icon and version, the size of the selected title against the free space on each drive, the live transfer rate with an ETA, and the full log output. Settings changed in the page are written straight to `config.ini`.
 
-**Starting titles:** the **Installed** tab lists what is installed on the console, internal and external drives alike. Press **Start** and the payload launches the title, waits for it to mount and selects it for you. A PS5 runs one game at a time, so starting a title closes the running one — the button asks first.
+**Starting titles:** the list shows what is installed on the console, internal and external drives alike, with the running game on top. Press **Start** and the payload launches the title, waits for it to mount and selects it for you. A PS5 runs one game at a time, so starting a title closes the running one — the button asks first.
 
 Not every title starts this way. A title that the console itself refuses to launch from the home screen will not start from here either, and the page says so. If the console does not expose the launch service at all, the tab still lists the titles but without Start buttons.
 
@@ -33,7 +33,9 @@ Not every title starts this way. A title that the console itself refuses to laun
 
 **Queue:** press **+ Queue** on several installed titles to dump them in one go. The queue card on the right orders them, and **Start queue** hands the list to the console: each title is started — which closes the one before it — and once it shows up as the running title it gets the *load time* to finish loading (`queue_delay`, 30 seconds by default) before it is dumped. A title that does not come up, does not fit on the drive or fails to dump is marked and the queue moves on. **Stop queue** aborts the current dump and skips the rest.
 
-Several disc games can share a queue. When the next title is a disc game and its disc is not in the drive, the queue holds — for as long as it takes, with a reminder on the console every two minutes — and carries on a few seconds after the disc is in. Click the DISC/PKG badge of a queued title to correct it before starting, and use **Skip** to pass over a title the queue is waiting on. The queue runs on the console, so the browser can be closed in the meantime.
+Several disc games can share a queue. When the next title is a disc game and its disc is not in the drive, the queue holds — for as long as it takes, with a reminder on the console every two minutes — and carries on a few seconds after the disc is in. Every queued title has a settings button: decrypt, FSELF, backport target and the PS4 split mode can differ from title to title, and a title with settings of its own is marked **CUSTOM**. Each dump writes the settings it ran with into the log.
+
+Click the DISC/PKG badge of a queued title to correct it before starting, and use **Skip** to pass over a title the queue is waiting on. The queue runs on the console, so the browser can be closed in the meantime.
 
 Before a dump starts, single or queued, its size is compared with the free space on the drive; a dump that would not fit is refused instead of filling the drive.
 
