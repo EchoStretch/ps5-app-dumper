@@ -1,6 +1,6 @@
 # webhb - carving the web-homebrew core out of the dumper
 
-Status: steps 1 to 4 and 6 are done (server split, `whb_app_t` and the four modules moved, harness in the repo, log / notifications / storage out of `utils.c`, the config store, `whb_start()` / `whb_serve()`); `webhb/` no longer includes a single header of the dumper, and no route that is not about dumping is left outside it. Open: the client kit (step 5) and the second payload (step 7). Working name `webhb`; everything stays in
+Status: steps 1 to 6 are done (server split, `whb_app_t` and the four modules moved, harness in the repo, log / notifications / storage out of `utils.c`, the client kit, the config store, `whb_start()` / `whb_serve()`); `webhb/` no longer includes a single header of the dumper, and no route that is not about dumping is left outside it. Open: the second payload (step 7), which is what will show where the kit still assumes the dumper's page. Working name `webhb`; everything stays in
 this repository until a second payload has proven the interface.
 
 ## Why
@@ -36,7 +36,7 @@ webhb/
   selfstore.c            embedded ELF -> pldmgr, same-build check  (was self_store.c)
   tile.c                 home-screen tile install + currency check (was app_installer.c)
   fsbrowse.c             folder picker backend                     (was fs_browse.c)
-  web/whb.css, whb.js    client kit, inlined into the app's page at build time
+  web/whb.css, whb.js    client kit, inlined into the app's page at build time (tools/inline.sh)
   harness/               host build: PS5-only calls mocked (today: /harness)
   webhb.mk               bin2c, build stamp, two-stage build
 source/                  the dumper: app_scan, app_launch, dump_*, pfs, pkg, decrypt, backport
@@ -150,7 +150,31 @@ Each step builds, passes the harness in a browser, and changes no behaviour.
    `find_usb_and_setup()` (creates the default config.ini) and
    `source/routes_settings.c`. The copy routines and the abort flag stay with
    the dumper for good.
-5. **Extract the client kit** from `web/index.html`.
+5. **Extract the client kit** from `web/index.html` - done. `webhb/web/whb.js`
+   and `whb.css`, put back into the page by `tools/inline.sh` where it says
+   `/* @WHB_JS@ */` and `/* @WHB_CSS@ */` (both Makefiles; the build stamp goes
+   in afterwards). The script is text inside the page's own function, not a
+   module: the app fills in `whb.app` (its names, its views, the hooks
+   `onStatus`, `onOnline`, `onView`, `onConfig`) and calls `whbBoot()`. The kit
+   owns `api` / `post` and the token, toasts, the live console, online / offline
+   with the payload-manager launcher, the status poll (`whbPoll()`, which keeps
+   `whb.busy` and `whb.online`), the cache's paper trail, menu and views, the
+   access dialog, and the tile, self-store, copy-settings and shut-down rows.
+   `whb.css` has the tokens, header, cards, rows, switches, segmented controls,
+   inputs, buttons, banners, the modal, console, action bar, toasts and their
+   flex-gap fallback lines; the app's rules follow it.
+
+   Not a byte-identical move - the served page changed - so it was verified in
+   a browser: `harness/stylecheck.js` (`make -C harness styles`) compares the
+   computed style of every element across all views and dialogs, and a drive
+   through the kit's controls read the same before and after.
+
+   Loose ends: the markup the kit works on (it expects some forty ids, listed
+   at the top of `whb.js`) and the flex-gap probe in the page's head are still
+   the page's - a second app copies them. The folder picker's script stayed
+   with the dumper because it also moves dumps; its styles are in the kit. The
+   fallback lines carry `:not(.drive-free)` in the kit too: taking it out would
+   change their specificity.
 6. **Generalise the config store** - done. `webhb/config.c` keeps the values
    of keys an app registers (`whb_cfg_key_t`: ini name, web name, type, range,
    default, the comment for config.ini, and the flags `WHB_CFG_SECRET` - never
