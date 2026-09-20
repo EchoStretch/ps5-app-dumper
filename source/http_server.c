@@ -992,9 +992,14 @@ static void handle_mkdir(int fd, const params_t *p)
    nothing else, so the settings tab can ask without waking a system service. */
 static void handle_tile_state(int fd)
 {
-    char json[64];
-    snprintf(json, sizeof(json), "{\"installed\":%s}",
-             tile_is_current(g_port) ? "true" : "false");
+    /* "installed" without "current" is a tile from an older build, or one
+       that points at a port this server is not on */
+    int current = tile_is_current(g_port);
+
+    char json[96];
+    snprintf(json, sizeof(json), "{\"installed\":%s,\"current\":%s}",
+             (current || tile_exists()) ? "true" : "false",
+             current ? "true" : "false");
     send_json(fd, 200, json);
 }
 
@@ -1046,6 +1051,9 @@ static void handle_manifest(int fd)
     uint32_t sum = 2166136261u;   /* FNV-1a */
     for (size_t i = 0; i < web_index_html_len; i++)
         sum = (sum ^ web_index_html[i]) * 16777619u;
+
+    /* tells, in the live console, whether a browser uses the cache at all */
+    write_log(g_log_path, "Web UI: cache manifest requested (page %08x)", (unsigned)sum);
 
     char body[160];
     int n = snprintf(body, sizeof(body),
@@ -1296,6 +1304,12 @@ int http_server_run(int port)
     local_ipv4(ip, sizeof(ip));
     printf_notification("PS5 App Dumper: open http://%s:%d", ip, port);
     write_log(g_log_path, "Web UI listening on http://%s:%d", ip, port);
+
+    /* Said, not done: installing goes through the app-install service, and
+       that only ever happens because the user asked for it. */
+    if (tile_exists() && !tile_is_current(port))
+        write_log(g_log_path, "Tile: the home-screen shortcut is out of date - "
+                              "update it under Options > Advanced");
 
     while (g_running) {
         struct sockaddr_in peer;

@@ -131,6 +131,12 @@ static int file_equals(const char *path, const void *data, size_t size)
     return same;
 }
 
+int tile_exists(void)
+{
+    struct stat st;
+    return stat(TILE_PARAM, &st) == 0;
+}
+
 int tile_is_current(int port)
 {
     char json[512];

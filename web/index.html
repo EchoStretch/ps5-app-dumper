@@ -826,6 +826,7 @@ footer{
 
   <footer>PS5 APP DUMPER &middot; EchoStretch &middot; GPL-3.0 &middot;
     <button type="button" id="quit" class="linkish">shut down payload</button>
+    <div id="buildline" style="margin-top:6px;opacity:.75">page build <span id="build">@BUILD@</span> &middot; cache: <span id="cachestate">–</span></div>
   </footer>
 </div>
 
@@ -2193,14 +2194,78 @@ $("refresh").addEventListener("click", function(){
 
 $("offline-start").addEventListener("click", startPayload);
 
-/* A changed page is fetched in the background while the cached one is
-   already on screen; switch over as soon as it is there. */
-if(window.applicationCache){
-  window.applicationCache.addEventListener("updateready", function(){
-    try { window.applicationCache.swapCache(); } catch(e){}
-    if(!state.busy) location.reload();
-  });
+/* ---------------- application cache, with a paper trail ----------------
+   The cache works out of sight, and on the console there are no developer
+   tools to look into it. So every step is written into the live console,
+   and kept across the reload that an update triggers - otherwise the most
+   interesting lines would vanish with the page that logged them. */
+var BUILD = "@BUILD@".charAt(0) === "@" ? "dev" : "@BUILD@";
+var CACHELOG_KEY = "ps5-app-dumper.cachelog";
+var CACHE_STATES = ["uncached", "idle", "checking", "downloading", "update ready", "obsolete"];
+
+function cacheLog(msg){
+  var now = new Date(), two = function(v){ return v < 10 ? "0" + v : "" + v; };
+  var line = "Cache [" + two(now.getHours()) + ":" + two(now.getMinutes()) + ":" + two(now.getSeconds()) +
+             ", build " + BUILD + "] " + msg;
+  appendLog([line]);
+  try {
+    var kept = JSON.parse(localStorage.getItem(CACHELOG_KEY) || "[]");
+    kept.push(line);
+    localStorage.setItem(CACHELOG_KEY, JSON.stringify(kept.slice(-25)));
+  } catch(e){}
 }
+
+function showCacheState(){
+  var ac = window.applicationCache;
+  $("cachestate").textContent = ac ? (CACHE_STATES[ac.status] || ac.status) : "not supported";
+}
+
+$("build").textContent = BUILD;
+
+(function(){
+  /* what earlier loads of this page went through */
+  try {
+    var kept = JSON.parse(localStorage.getItem(CACHELOG_KEY) || "[]");
+    if(kept.length) appendLog(kept.map(function(l){ return "(earlier) " + l; }));
+  } catch(e){}
+
+  var ac = window.applicationCache;
+  if(!ac){
+    cacheLog("this browser has no application cache - the page only opens while the payload runs");
+    showCacheState();
+    return;
+  }
+
+  /* "checking" usually fires before this script runs, hence the status */
+  cacheLog("page loaded, cache status: " + (CACHE_STATES[ac.status] || ac.status));
+
+  var said = {
+    checking:    "asking the payload for the manifest",
+    noupdate:    "manifest unchanged - the cached page is current",
+    downloading: "manifest is new - downloading the page",
+    cached:      "page stored for the first time - it now opens without the payload",
+    obsolete:    "the payload no longer offers a manifest - cache dropped",
+    error:       "could not reach the manifest (payload down?) - staying with the cached page"
+  };
+  Object.keys(said).forEach(function(name){
+    ac.addEventListener(name, function(){ cacheLog(said[name]); showCacheState(); });
+  });
+
+  /* A changed page is fetched in the background while the cached one is
+     already on screen; switch over as soon as it is there. */
+  ac.addEventListener("updateready", function(){
+    showCacheState();
+    try { ac.swapCache(); } catch(e){}
+    if(state.busy){
+      cacheLog("a new page is ready - it shows after the dump, on the next reload");
+      return;
+    }
+    cacheLog("a new page is ready - reloading to show it");
+    location.reload();
+  });
+
+  showCacheState();
+})();
 
 $("q-start").addEventListener("click", startQueue);
 $("q-clear").addEventListener("click", clearQueueResult);
@@ -2218,23 +2283,31 @@ $("c-browse").addEventListener("click", openPicker);
 
 /* The tile only opens this page in the console browser; the payload still
    has to be running. Asked for once, never polled. */
-function showTileState(installed){
-  $("c-tile").textContent = installed ? "Reinstall" : "Install";
-  $("tile-hint").textContent = installed
-    ? "The \"App Dumper\" tile is on the home screen. It opens this page while the payload runs."
-    : "Adds an \"App Dumper\" tile that opens this page";
+function showTileState(installed, current){
+  var outdated = installed && !current;
+  $("c-tile").textContent = outdated ? "Update" : installed ? "Reinstall" : "Install";
+  $("c-tile").classList.toggle("warn", outdated);
+  $("tile-hint").textContent = outdated
+    ? "The tile on the home screen is from an older version, or points at another port. Update it."
+    : installed
+      ? "The \"App Dumper\" tile is on the home screen. It opens this page, and can start the payload if it is not running."
+      : "Adds an \"App Dumper\" tile that opens this page";
 }
-api("/api/tile").then(function(r){ showTileState(!!r.installed); }).catch(function(){});
+api("/api/tile").then(function(r){
+  showTileState(!!r.installed, !!r.current);
+  if(r.installed && !r.current)
+    toast("The home-screen tile is out of date - update it under Options > Advanced.", "bad");
+}).catch(function(){});
 
 $("c-tile").addEventListener("click", function(){
   var b = $("c-tile");
   b.disabled = true;
   b.textContent = "Installing…";
   post("/api/tile").then(function(){
-    showTileState(true);
+    showTileState(true, true);
     toast("Shortcut installed - look for \"App Dumper\" on the home screen.", "ok");
   }).catch(function(e){
-    showTileState(false);
+    api("/api/tile").then(function(r){ showTileState(!!r.installed, !!r.current); }).catch(function(){});
     toast("Shortcut not installed: " + e.message, "bad");
   }).then(function(){ b.disabled = false; });
 });

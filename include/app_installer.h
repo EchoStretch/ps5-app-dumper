@@ -38,4 +38,9 @@ int tile_install(int port, char *err, size_t err_size);
    file system only, so it is safe to call from a polled endpoint. */
 int tile_is_current(int port);
 
+/* 1 when a tile is on the console at all, current or not. Together with
+   tile_is_current() that tells a tile left behind by an older build - or
+   pointing at another port - from no tile. */
+int tile_exists(void);
+
 #endif /* APP_INSTALLER_H */

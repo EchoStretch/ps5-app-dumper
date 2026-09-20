@@ -26,8 +26,14 @@ all: $(ELF)
 
 CFILES := $(filter-out $(WEB_GEN) $(TILE_GEN),$(wildcard source/*.c)) $(WEB_GEN) $(TILE_GEN)
 
+# The page carries a stamp of when it was embedded, so a look at the footer
+# tells which version a browser - or its cache - is showing.
+BUILD_ID := $(shell git rev-parse --short HEAD 2>/dev/null || echo nogit)-$(shell date +%m%d-%H%M)
+
 $(WEB_GEN): $(WEB_PAGE) tools/bin2c.sh
-	./tools/bin2c.sh $(WEB_PAGE) web_index_html > $@
+	sed "s/@BUILD@/$(BUILD_ID)/g" $(WEB_PAGE) > $(WEB_GEN).html
+	./tools/bin2c.sh $(WEB_GEN).html web_index_html > $@
+	rm -f $(WEB_GEN).html
 
 $(TILE_GEN): $(TILE_ICON) tools/bin2c.sh
 	./tools/bin2c.sh $(TILE_ICON) tile_icon0_png > $@
@@ -37,7 +43,7 @@ $(ELF): $(CFILES)
 	strip $@
 
 clean:
-	rm -f $(ELF) $(WEB_GEN) $(TILE_GEN)
+	rm -f $(ELF) $(WEB_GEN) $(WEB_GEN).html $(TILE_GEN)
 
 test: $(ELF)
 	$(PS5_DEPLOY) -h $(PS5_HOST) -p $(PS5_PORT) $^
