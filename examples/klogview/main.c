@@ -178,12 +178,12 @@ static const whb_app_t *klogview_app(void)
 {
     static whb_app_t app = {
         .name          = "Klog Viewer",
-        .short_name    = "Klog",
+        .short_name    = "Klog Viewer",
         .version       = KLOGVIEW_VERSION,
         .process_name  = "klogview.elf",
         .data_dirname  = "klogview",
         .elf_basename  = "klogview",
-        .tile_title_id = NULL,     /* no tile: it is a tool for an afternoon */
+        .tile_title_id = "KLOG00001",
         .default_port  = 8181,     /* out of the way of the dumper's 8081-8090 */
     };
 

@@ -9,7 +9,7 @@
 <link rel="icon" type="image/png" href="/icon.png">
 <link rel="manifest" href="/app.webmanifest">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Klog">
+<meta name="apple-mobile-web-app-title" content="Klog Viewer">
 <script>
 /* Flexbox `gap` cannot be asked for with @supports (grid has it too), so it
    is measured: two empty children in a column are as tall as the gap. */
@@ -101,6 +101,13 @@ body{padding-bottom:24px}
             <div class="hint">Every line also goes to logs/klog.txt in the payload's data folder.</div>
           </div>
           <label class="sw"><input type="checkbox" id="c-save"><span></span></label>
+        </div>
+        <div class="row">
+          <div class="txt">
+            <div class="label">Home-screen shortcut</div>
+            <div class="hint" id="tile-hint">Adds a tile that opens this page</div>
+          </div>
+          <button type="button" class="mini" id="c-tile">Install</button>
         </div>
         <div class="row" id="row-store">
           <div class="txt">
@@ -212,7 +219,7 @@ $("c-save").addEventListener("change", function(){
 });
 
 whb.app = {
-  elf: "klogview", shortName: "Klog", storage: "klogview",
+  elf: "klogview", shortName: "Klog Viewer", storage: "klogview",
   busyText: "", afterBusy: "",
   views: { "#settings": "view-settings" }, settingsView: "view-settings",
   onLog: onLog,

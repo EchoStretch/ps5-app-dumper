@@ -37,6 +37,7 @@ Good to know:
 - Telling a running copy by its file name (`/api/whb/self`) rather than by what
   the dumper's status looks like - otherwise this payload would have asked
   the dumper to quit.
-- A kit that leaves alone what a page does not have (no tile row here), and
+- A kit that leaves alone what a page does not have (it had no tile row at
+  first), and
   `whb.app.onLog` to see each line on its way into the console.
 - `log_basename`, `lockedFrom`: two names that used to be the dumper's.
