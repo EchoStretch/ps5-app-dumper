@@ -210,9 +210,11 @@ Steps 1-3 already pay off for the dumper alone.
 ## Decide before anything is published
 
 - **Name and route prefix** (`webhb`, `/api/whb/...`).
-- **Copyright headers.** The files written in this fork carry the repo's
-  "Copyright (C) 2025 EchoStretch" header for consistency, which is not
-  accurate for code that did not come from there. GPLv3 applies either way.
+- **Copyright headers** - decided 2026-09-20: the files written in this fork
+  name both, "Copyright (C) 2025 EchoStretch" and "Copyright (C) 2026 slopmaster33"
+  (`webhb/`, the job / queue / store / library / scan / launch modules and
+  their headers). Upstream's files that were only changed here keep their
+  header as it is. GPLv3 applies either way.
 - **Access control** - built, `webhb/access.c`. Reads are open; a POST needs a
   token unless it comes from 127.0.0.1 (the console's browser, and the next
   copy asking this one to quit). The start toast shows a six-digit code,
