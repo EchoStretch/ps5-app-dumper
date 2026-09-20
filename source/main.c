@@ -19,7 +19,6 @@ along with this program; see the file COPYING. If not, see
 #include <unistd.h>
 #include <sys/param.h>
 #include <sys/sysctl.h>
-#include <sys/syscall.h>
 #include <sys/user.h>
 
 #include "app_launch.h"
@@ -27,6 +26,7 @@ along with this program; see the file COPYING. If not, see
 #include "http_server.h"
 #include "ps4_dumper.h"
 #include "ps5_dumper.h"
+#include "single_instance.h"
 #include "utils.h"
 
 #define VERSION "1.11"
@@ -100,14 +100,8 @@ static void log_host_process(void)
 
 int main(void)
 {
-    /* Name our main thread so this payload is identifiable at runtime.
-       Sent over elfldr we get no process of our own — we run inside
-       whichever host process elfldr loaded us into, so without this
-       ki_comm reports that host's generic name (e.g. "payload.elf") and
-       anything listing processes or listening sockets can't tell which
-       payload this actually is. Best-effort: harmless if the syscall
-       fails. */
-    syscall(SYS_thr_set_name, -1, "ps5-app-dumper");
+    /* first of all, so that whatever happens next can be attributed */
+    instance_claim_name();
 
     /* before anything talks to the system services */
     app_launch_init();
@@ -124,6 +118,16 @@ int main(void)
 
     g_enable_logging = cfg.enable_logging;
     g_split_mode = cfg.split;
+
+    /* Sending the payload again replaces the copy that is running, rather
+       than putting a second one next to it on the next free port - unless
+       that copy is dumping, which a careless resend must not destroy. */
+    int busy_port = 0;
+    if (instance_take_over(cfg.web_port, &busy_port) != 0) {
+        printf_notification("PS5 App Dumper is already running and busy with a dump\n"
+                            "It stays as it is: port %d", busy_port);
+        return 0;
+    }
 
     if (!cfg.enable_webui || cfg.auto_start)
         return run_headless(&cfg);
