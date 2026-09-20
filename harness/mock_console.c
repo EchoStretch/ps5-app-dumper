@@ -135,6 +135,7 @@ static void fill_lib(library_entry_t *e, int i)
     e->on_disc = title_on_disc(LIB[i].id);
     e->is_disc = LIB[i].disc;
     e->has_pic = 1;
+    e->installed_pct = title_installed_percent(LIB[i].id);
     if (!strcmp(LIB[i].id, "PPSA07777")) strcpy(e->mounted_from, "/mnt/usb0/homebrew/PPSA07777-app0");
     e->is_running = (running_now(id) && !strcmp(id, LIB[i].id)) || title_runs_from_folder(LIB[i].id);
 }
@@ -156,6 +157,9 @@ int library_find(const char *id, library_entry_t *out)
 
 int library_pic_path(const char *id, char *o, size_t n) { (void)id; snprintf(o, n, "%s", g_art); return 0; }
 int library_icon_path(const char *id, char *o, size_t n) { (void)id; if (n) o[0] = 0; return -1; }
+
+/* Spyro is still coming off its disc */
+int title_installed_percent(const char *id) { return (id && !strcmp(id, "CUSA07211")) ? 63 : 100; }
 
 /* up two seconds after its launch, and never mounted */
 int title_runs_from_folder(const char *id)

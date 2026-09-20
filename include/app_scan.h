@@ -75,6 +75,10 @@ typedef struct {
        (ShadowMount's mount.lnk next to app.pkg): the folder it runs from.
        Such a title has nothing to dump while the redirect is in place. */
     char mounted_from[160];
+    /* How much of the package is on the console, 0-100; 100 only when all
+       of it is. -1 when that cannot be told. A title can be started long
+       before it is complete - a dump of it would have holes. */
+    int  installed_pct;
 } library_entry_t;
 
 #define LIBRARY_SCAN_MAX 128
@@ -116,5 +120,8 @@ int target_is_known(const char *mount);
    /mnt/sandbox/<id>_000/app0 but nothing under pfsmnt - so there is nothing
    to dump, and waiting for a mount would never end. 1 when that is the case. */
 int title_runs_from_folder(const char *title_id);
+
+/* See library_entry_t.installed_pct. */
+int title_installed_percent(const char *title_id);
 
 #endif /* APP_SCAN_H */

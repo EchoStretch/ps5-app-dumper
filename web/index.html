@@ -322,6 +322,7 @@ section.card{position:relative}
 .tag.pkg{color:var(--ink-faint)}
 .tag.disc.out{opacity:.6;border-style:dashed}
 .tag.mount{color:var(--green)}
+.tag.inst{color:var(--amber);border-style:dashed}
 .tag.all{color:var(--ink-faint);margin-right:0}
 .tag.all.on{color:var(--ink);background:rgba(47,157,255,.22);border-color:var(--accent)}
 button.tag{font:inherit;font-family:var(--mono);font-size:9px;letter-spacing:.1em;background:none;cursor:pointer;line-height:inherit}
@@ -1037,6 +1038,12 @@ function mediaTag(media, discIn){
 function mountTag(from){
   return from ? '<span class="tag mount" title="Runs from ' + esc(from) + ' instead of its package - nothing to dump">MOUNT</span>' : "";
 }
+/* A title can be played before all of it is on the console; a dump of it
+   would have holes. -1 / undefined: not known. */
+function installing(t){ return typeof t.installed === "number" && t.installed >= 0 && t.installed < 100; }
+function installTag(t){
+  return installing(t) ? '<span class="tag inst" title="Only ' + t.installed + ' % of this title is on the console yet - a dump now would be incomplete">INSTALLING ' + t.installed + '%</span>' : "";
+}
 var toastTimer;
 function toast(msg, kind){
   var t = $("toast");
@@ -1092,7 +1099,7 @@ function renderApps(){
 
   var sig = state.apps.map(function(a){
     var known = libraryEntry(a.titleId);
-    return a.dir + "|" + a.title + "|" + a.version + "|" + a.hasIcon + "|" + a.media + a.discIn +
+    return a.dir + "|" + a.title + "|" + a.version + "|" + a.hasIcon + "|" + a.media + a.discIn + "|" + a.installed +
            "|" + !!(known && known.hasPic) + "|" + !!known + "|" + state.canLaunch;
   }).join("~");
 
@@ -1119,7 +1126,7 @@ function renderApps(){
       '<span class="meta">' +
         '<span class="hero-state"><i class="dot"></i>Running now</span>' +
         '<span class="name">' + esc(a.title) + '</span>' +
-        '<span class="id">' + tag + mediaTag(a.media, a.discIn) + esc(a.titleId) + (a.version ? " &middot; " + esc(a.version) : "") + '</span>' +
+        '<span class="id">' + tag + mediaTag(a.media, a.discIn) + installTag(a) + esc(a.titleId) + (a.version ? " &middot; " + esc(a.version) : "") + '</span>' +
       '</span></div>' +
       '<div class="hero-bar">' +
         '<span class="hero-pick">' + (state.apps.length > 1 ? "tap to select" : "ready to dump") + '</span>' +
@@ -1171,7 +1178,7 @@ function renderLibrary(){
   var list = state.library.filter(function(t){ return !mounted[t.titleId]; });
 
   var sig = (state.canLaunch === false ? "nolaunch~" : "") + list.map(function(t){
-    return t.titleId + "|" + t.title + "|" + t.isRunning + "|" + t.media + t.discIn + "|" + (t.mountedFrom || "");
+    return t.titleId + "|" + t.title + "|" + t.isRunning + "|" + t.media + t.discIn + "|" + (t.mountedFrom || "") + "|" + t.installed;
   }).join("~") + "#" + state.library.length;
   if(sig === libSig) return;
   libSig = sig;
@@ -1202,7 +1209,7 @@ function renderLibrary(){
     html += '<div class="tile lib" data-search="' + esc((t.title + " " + t.titleId).toLowerCase()) + '">' + icon +
       '<span class="meta">' +
         '<span class="name">' + esc(t.title) + '</span>' +
-        '<span class="id">' + tag + mediaTag(t.media, t.discIn) + mountTag(t.mountedFrom) + esc(t.titleId) +
+        '<span class="id">' + tag + mediaTag(t.media, t.discIn) + mountTag(t.mountedFrom) + installTag(t) + esc(t.titleId) +
           (t.source && t.source !== "internal" ? " &middot; " + esc(t.source) : "") + '</span>' +
       '</span>' +
       '<span class="lib-acts">' +
@@ -1379,6 +1386,8 @@ function toggleQueued(titleId){
     if(state.queue.length >= QUEUE_MAX){ toast("A queue holds at most " + QUEUE_MAX + " titles.", "bad"); return; }
     var t = null;
     (state.library || []).forEach(function(l){ if(l.titleId === titleId) t = l; });
+    if(t && installing(t))
+      toast(t.title + " is only " + t.installed + " % installed - queued anyway, but a dump before it is complete will have holes.", "bad");
     if(t && t.mountedFrom){
       toast(t.title + " is a mount: it runs from " + t.mountedFrom + " instead of its package, so there is nothing to dump.", "bad");
       return;

@@ -22,6 +22,7 @@ along with this program; see the file COPYING. If not, see
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <pthread.h>
+#include <time.h>
 
 #include "app_scan.h"
 #include "utils.h"
@@ -588,6 +589,91 @@ static int library_seen(const library_entry_t *list, int count, const char *titl
 }
 
 /* Fills an entry for a title found below one of the app roots. */
+/* ------------------------------------------------------------------ */
+/*  How much of a package has arrived                                  */
+/* ------------------------------------------------------------------ */
+
+/* <root>/<id>/app.pbm, as found on FW 12.00 for PS4 and PS5 titles alike:
+     0x000  "pdbm", the title id, a version string
+     0x022  number of 64 KiB blocks in app.pkg, little endian
+     0x100  one bit per block, set once the block is on the console
+     ...    a 32-byte digest
+   Every file looked at was exactly 256 + ceil(blocks / 8) + 32 bytes. A
+   title installing from disc had 63 % of its bits set, finished ones all. */
+#define PBM_HEADER 256
+#define PBM_DIGEST 32
+
+static int pbm_percent(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+
+    unsigned char head[PBM_HEADER];
+    int pct = -1;
+
+    if (fread(head, 1, sizeof(head), f) == sizeof(head) && memcmp(head, "pdbm", 4) == 0) {
+        uint32_t blocks = (uint32_t)head[0x22] | ((uint32_t)head[0x23] << 8) |
+                          ((uint32_t)head[0x24] << 16) | ((uint32_t)head[0x25] << 24);
+        uint64_t set = 0, seen = 0;
+        unsigned char buf[8192];
+        size_t n;
+
+        while (blocks && seen < blocks && (n = fread(buf, 1, sizeof(buf), f)) > 0) {
+            for (size_t i = 0; i < n && seen < blocks; i++)
+                for (int bit = 0; bit < 8 && seen < blocks; bit++, seen++)
+                    if (buf[i] & (1u << bit)) set++;
+        }
+
+        /* a file that does not hold what its header promises tells nothing */
+        if (blocks && seen == blocks) {
+            pct = (int)(set * 100 / blocks);
+            if (pct == 100 && set != blocks) pct = 99;
+        }
+    }
+
+    fclose(f);
+    return pct;
+}
+
+/* The listing is polled; the bitmap is only read again when it changed. */
+static struct { char id[16]; time_t mtime; off_t size; int pct; } g_pbm_cache[64];
+static pthread_mutex_t g_pbm_mtx = PTHREAD_MUTEX_INITIALIZER;
+
+static int installed_percent_at(const char *root, const char *title_id)
+{
+    char path[320];
+    snprintf(path, sizeof(path), "%s/%s/app.pbm", root, title_id);
+
+    struct stat st;
+    if (stat(path, &st) != 0) return -1;
+
+    pthread_mutex_lock(&g_pbm_mtx);
+    int slot = -1, spare = -1;
+    for (int i = 0; i < 64; i++) {
+        if (!strcmp(g_pbm_cache[i].id, title_id)) { slot = i; break; }
+        if (spare < 0 && !g_pbm_cache[i].id[0]) spare = i;
+    }
+    if (slot >= 0 && g_pbm_cache[slot].mtime == st.st_mtime && g_pbm_cache[slot].size == st.st_size) {
+        int pct = g_pbm_cache[slot].pct;
+        pthread_mutex_unlock(&g_pbm_mtx);
+        return pct;
+    }
+    pthread_mutex_unlock(&g_pbm_mtx);
+
+    int pct = pbm_percent(path);
+
+    pthread_mutex_lock(&g_pbm_mtx);
+    if (slot < 0) slot = spare;
+    if (slot >= 0) {
+        snprintf(g_pbm_cache[slot].id, sizeof(g_pbm_cache[slot].id), "%s", title_id);
+        g_pbm_cache[slot].mtime = st.st_mtime;
+        g_pbm_cache[slot].size  = st.st_size;
+        g_pbm_cache[slot].pct   = pct;
+    }
+    pthread_mutex_unlock(&g_pbm_mtx);
+    return pct;
+}
+
 /* The folder a title is redirected to, read from <root>/<id>/mount.lnk - a
    single line, the path. Empty when there is no such file. */
 static void read_mount_link(const char *root, const char *title_id, char *out, size_t out_size)
@@ -612,6 +698,7 @@ static void library_fill(library_entry_t *e, const char *title_id, const char *r
 {
     memset(e, 0, sizeof(*e));
     read_mount_link(root, title_id, e->mounted_from, sizeof(e->mounted_from));
+    e->installed_pct = installed_percent_at(root, title_id);
     strncpy(e->title_id, title_id, sizeof(e->title_id) - 1);
     strncpy(e->source, label, sizeof(e->source) - 1);
     e->is_ps4 = (strncmp(title_id, "CUSA", 4) == 0);
@@ -655,6 +742,17 @@ int library_scan(library_entry_t *out, int max)
     }
 
     return count;
+}
+
+int title_installed_percent(const char *title_id)
+{
+    if (!is_title_id(title_id)) return -1;
+
+    for (int r = 0; g_app_roots[r].path; r++) {
+        int pct = installed_percent_at(g_app_roots[r].path, title_id);
+        if (pct >= 0) return pct;
+    }
+    return -1;
 }
 
 int library_find(const char *title_id, library_entry_t *out)

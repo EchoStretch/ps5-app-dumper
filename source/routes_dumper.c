@@ -146,11 +146,12 @@ static void handle_devices(int fd, const params_t *p)
         sb_json_str(&sb, apps[i].version);
         sb_puts(&sb, ",\"patchDir\":");
         sb_json_str(&sb, apps[i].patch_dir);
-        sb_printf(&sb, ",\"isPs4\":%s,\"hasIcon\":%s,\"media\":\"%s\",\"discIn\":%s}",
+        sb_printf(&sb, ",\"isPs4\":%s,\"hasIcon\":%s,\"media\":\"%s\",\"discIn\":%s,\"installed\":%d}",
                   apps[i].is_ps4 ? "true" : "false",
                   apps[i].has_icon ? "true" : "false",
                   apps[i].is_disc ? "disc" : "pkg",
-                  apps[i].on_disc ? "true" : "false");
+                  apps[i].on_disc ? "true" : "false",
+                  title_installed_percent(apps[i].title_id));
     }
 
     sb_puts(&sb, "],\"targets\":[");
@@ -524,6 +525,7 @@ static void handle_library(int fd, const params_t *p)
                   lib[i].is_running ? "true" : "false",
                   lib[i].is_disc ? "disc" : "pkg",
                   lib[i].on_disc ? "true" : "false");
+        sb_printf(&sb, ",\"installed\":%d", lib[i].installed_pct);
         sb_puts(&sb, ",\"mountedFrom\":");
         sb_json_str(&sb, lib[i].mounted_from);
         sb_puts(&sb, "}");

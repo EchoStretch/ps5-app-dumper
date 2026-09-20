@@ -114,11 +114,20 @@ static void *worker(void *arg)
     g_ps4_backport_level = req->cfg.ps4_backport_level;
     g_ps5_backport_level = req->cfg.ps5_backport_level;
 
+    /* A title can be played long before all of it is on the console. It is
+       dumped all the same when asked to - the bitmap may have blocks that
+       never come, such as languages not chosen - but the log says so. */
+    int installed = title_installed_percent(req->app.title_id);
+
     /* every dump writes a log of its own; without a drive for our folder
        it falls back to one next to the dump */
     log_use_dump(req->app.title_id);
     if (!get_app_data_path()[0])
         snprintf(g_log_path, sizeof(g_log_path), "%s/log.txt", req->dest);
+
+    if (installed >= 0 && installed < 100)
+        write_log(g_log_path, "WARNING: %s is only %d %% installed - this dump will be incomplete",
+                  req->app.title_id, installed);
 
     dump_info_t info = {
         .title_id = req->app.title_id,
