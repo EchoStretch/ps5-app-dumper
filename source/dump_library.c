@@ -60,7 +60,26 @@ typedef struct {
 static int skip_dir(const char *name)
 {
     return name[0] == '.' || name[0] == '$' ||
-           !strcmp(name, "System Volume Information") || !strcmp(name, "logs");
+           !strcmp(name, "System Volume Information") || !strcmp(name, "logs") ||
+           /* a console's save data export: folders named after title ids, and no dumps */
+           !strcmp(name, "SAVEDATA");
+}
+
+/* A title id is not enough of a name: save data, screenshots and other tools
+   file things under it too. A dump is a folder with our info file next to it,
+   or with a game's insides - sce_sys, an eboot.bin. Anything else is neither
+   listed nor ever moved. */
+static int looks_like_dump(const char *dest, const char *folder)
+{
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s" DUMP_INFO_SUFFIX, dest, folder);
+    if (file_exists(path)) return 1;
+
+    snprintf(path, sizeof(path), "%s/%s/sce_sys", dest, folder);
+    if (dir_exists(path)) return 1;
+
+    snprintf(path, sizeof(path), "%s/%s/eboot.bin", dest, folder);
+    return file_exists(path);
 }
 
 /* "bytes": 123 - the one number the library wants from an info file */
@@ -131,7 +150,8 @@ static void walk(scan_ctx_t *c, const char *rel, int depth)
 
         if (dump_folder_name_ok(ent->d_name)) {
             /* a dump is never looked into: it is somebody's game, not a place for more */
-            if (strlen(rel) < sizeof(((dumplib_entry_t *)0)->dir)) add_entry(c, rel, ent->d_name);
+            if (strlen(rel) < sizeof(((dumplib_entry_t *)0)->dir) && looks_like_dump(path, ent->d_name))
+                add_entry(c, rel, ent->d_name);
         } else if (depth < SCAN_DEPTH && !skip_dir(ent->d_name)) {
             walk(c, child, depth + 1);
         }
@@ -265,6 +285,7 @@ int dumplib_move(const char *mount, const char *dir, const char *folder,
     #define FAIL(...) do { if (err && err_size) snprintf(err, err_size, __VA_ARGS__); free(req); return -1; } while (0)
 
     if (!dir_exists(req->src))           FAIL("the dump is not there any more");
+    if (!looks_like_dump(from_dir, folder)) FAIL("that folder is not a dump - it is left alone");
     if (!strcmp(req->src, req->dst))     FAIL("it is in that folder already");
     if (dir_exists(req->dst) || file_exists(req->dst))
         FAIL("%s already holds a %s - move or remove that one first", dest_dir, folder);
