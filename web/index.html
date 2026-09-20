@@ -1129,7 +1129,8 @@ function renderApps(){
         '<span class="id">' + tag + mediaTag(a.media, a.discIn) + installTag(a) + esc(a.titleId) + (a.version ? " &middot; " + esc(a.version) : "") + '</span>' +
       '</span></div>' +
       '<div class="hero-bar">' +
-        '<span class="hero-pick">' + (state.apps.length > 1 ? "tap to select" : "ready to dump") + '</span>' +
+        '<span class="hero-pick"' + (installing(a) ? ' style="color:var(--amber)"' : "") + '>' +
+          (installing(a) ? "still installing - not ready to dump" : state.apps.length > 1 ? "tap to select" : "ready to dump") + '</span>' +
         (known && state.canLaunch ? '<button class="mini" type="button" data-queue="' + esc(a.titleId) + '"></button>' : "") +
       '</div></div>';
   });
@@ -1386,8 +1387,10 @@ function toggleQueued(titleId){
     if(state.queue.length >= QUEUE_MAX){ toast("A queue holds at most " + QUEUE_MAX + " titles.", "bad"); return; }
     var t = null;
     (state.library || []).forEach(function(l){ if(l.titleId === titleId) t = l; });
-    if(t && installing(t))
-      toast(t.title + " is only " + t.installed + " % installed - queued anyway, but a dump before it is complete will have holes.", "bad");
+    if(t && installing(t)){
+      toast(t.title + " is still installing (" + t.installed + " %) - it can be queued once it is done.", "bad");
+      return;
+    }
     if(t && t.mountedFrom){
       toast(t.title + " is a mount: it runs from " + t.mountedFrom + " instead of its package, so there is nothing to dump.", "bad");
       return;
@@ -2058,10 +2061,13 @@ function updateAction(){
 
   if(!go.classList.contains("arm")) go.textContent = "Start dump";
 
-  var ready = !!(app && state.target);
+  var ready = !!(app && state.target) && !(app && installing(app));
   go.disabled = !ready;
 
   if(state.launching)           sum.textContent = "Waiting for " + state.launching.title + " to start…";
+  else if(app && installing(app))
+    sum.innerHTML = "<b>" + esc(app.title) + '</b> <span style="color:var(--amber)">is still installing (' + app.installed +
+                    " %) - a dump now would be incomplete. It can be dumped once it is done.</span>";
   else if(!state.apps.length)   sum.textContent = "Start a title, or queue several.";
   else if(!app)                 sum.textContent = "Select an app.";
   else if(!state.targets.length)sum.textContent = "Plug in a USB drive.";

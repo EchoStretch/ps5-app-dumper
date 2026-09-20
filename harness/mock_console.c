@@ -8,7 +8,7 @@
      PPSA01234  Astro's Playroom      nothing special
      PPSA04567  Spider-Man            a disc game; its disc goes in 25 s after start
      CUSA07211  Spyro                 a PS4 title
-     CUSA00900  Bloodborne            900 TB - can never fit (free-space check)
+     CUSA00900  Bloodborne            900 TB - can never fit; and only 63 % installed
      PPSA09999  Broken Title          launches, but never mounts (mount timeout)
      PPSA07777  Folder Game           runs from a folder: up, but nothing to mount
 
@@ -158,8 +158,9 @@ int library_find(const char *id, library_entry_t *out)
 int library_pic_path(const char *id, char *o, size_t n) { (void)id; snprintf(o, n, "%s", g_art); return 0; }
 int library_icon_path(const char *id, char *o, size_t n) { (void)id; if (n) o[0] = 0; return -1; }
 
-/* Spyro is still coming off its disc */
-int title_installed_percent(const char *id) { return (id && !strcmp(id, "CUSA07211")) ? 63 : 100; }
+/* Bloodborne is still coming off its disc - and refused for that before its
+   size is even looked at */
+int title_installed_percent(const char *id) { return (id && !strcmp(id, "CUSA00900")) ? 63 : 100; }
 
 /* up two seconds after its launch, and never mounted */
 int title_runs_from_folder(const char *id)
