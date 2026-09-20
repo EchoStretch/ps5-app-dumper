@@ -1,4 +1,5 @@
 source/web_assets.c
+source/tile_assets.c
 *.elf
 dist/
 .claude/worktrees/
