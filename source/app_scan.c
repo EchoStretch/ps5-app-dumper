@@ -596,7 +596,8 @@ static int library_seen(const library_entry_t *list, int count, const char *titl
 /* <root>/<id>/app.pbm, as found on FW 12.00 for PS4 and PS5 titles alike:
      0x000  "pdbm", the title id, a version string
      0x022  number of 64 KiB blocks in app.pkg, little endian
-     0x100  one bit per block, set once the block is on the console
+     0x100  one bit per block, highest bit of a byte first, set once the
+            block is on the console
      ...    a 32-byte digest
    Every file looked at was exactly 256 + ceil(blocks / 8) + 32 bytes. A
    title installing from disc had 63 % of its bits set, finished ones all. */
@@ -621,7 +622,7 @@ static int pbm_percent(const char *path)
         while (blocks && seen < blocks && (n = fread(buf, 1, sizeof(buf), f)) > 0) {
             for (size_t i = 0; i < n && seen < blocks; i++)
                 for (int bit = 0; bit < 8 && seen < blocks; bit++, seen++)
-                    if (buf[i] & (1u << bit)) set++;
+                    if (buf[i] & (0x80u >> bit)) set++;
         }
 
         /* a file that does not hold what its header promises tells nothing */
