@@ -1,6 +1,6 @@
 # webhb - carving the web-homebrew core out of the dumper
 
-Status: steps 1 to 4 are done (server split, `whb_app_t` and the four modules moved, harness in the repo, log / notifications / storage out of `utils.c`); `webhb/` no longer includes a single header of the dumper. The rest is a proposal. Working name `webhb`; everything stays in
+Status: steps 1 to 4 and 6 are done (server split, `whb_app_t` and the four modules moved, harness in the repo, log / notifications / storage out of `utils.c`, the config store, `whb_start()` / `whb_serve()`); `webhb/` no longer includes a single header of the dumper, and no route that is not about dumping is left outside it. Open: the client kit (step 5) and the second payload (step 7). Working name `webhb`; everything stays in
 this repository until a second payload has proven the interface.
 
 ## Why
@@ -28,8 +28,10 @@ webhb/
   routes.c               built-in routes (see below) + the route table
   log.c                  log ring, write_log, general and per-job log files
   notify.c               printf_notification(_quiet)
-  storage.c              drive detection, <drive>/<app>/ folder, legacy migration
+  storage.c              the data folder <root>/homebrew/<app>, legacy migration
+  drives.c               target_scan(): the drives and the console's own storage
   config.c               key=value store with registered keys (type, range, default)
+  start.c                whb_start(): name, hello, settings, takeover
   instance.c             process name, single-instance takeover   (was single_instance.c)
   selfstore.c            embedded ELF -> pldmgr, same-build check  (was self_store.c)
   tile.c                 home-screen tile install + currency check (was app_installer.c)
@@ -39,7 +41,8 @@ webhb/
   webhb.mk               bin2c, build stamp, two-stage build
 source/                  the dumper: app_scan, app_launch, dump_*, pfs, pkg, decrypt, backport
   routes_dumper.c        the ~560 lines of dumper routes
-  main.c                 fills in whb_app_t, registers routes, calls whb_run()
+  dumper_config.c        the dumper's keys for the config store, dumper_config_t as a copy
+  main.c                 whb_start(), headless / auto_start, routes, whb_serve()
 ```
 
 ## The interface
@@ -78,11 +81,14 @@ As it stands after step 2, `webhb/include/webhb.h` has the struct (with
 `short_name` where this sketch first had `tile_title`: the tile and a phone's
 home screen want the same thing, a name that fits under an icon), plus
 `whb_app_set()`, `whb_app()`, `whb_busy()`, `whb_elf_name()` and
-`whb_routes_init()`. `whb_run()` has to wait: the port comes out of config.ini
-and headless mode branches off in between, so `main.c` still drives the
-start-up itself until the config store has moved (step 6). The request type
-`whb_req_t` and the `whb_` names for the server functions are not in yet
-either - handlers are still `(int fd, const params_t *p)`.
+`whb_routes_init()`. `whb_run()` became two calls, because headless mode
+branches off in between: `whb_start(app)` (name, hello, settings, takeover of
+an idle copy; 1 when a busy copy stays) and `whb_serve(port)` (built-in
+routes, then the server; port 0 takes the one from the settings). The struct
+gained `on_start` - what must be set up before anything talks to the system
+services - and `busy_with` ("a dump") for messages. The request type
+`whb_req_t` and the `whb_` names for the server functions are not in yet -
+handlers are still `(int fd, const params_t *p)`.
 
 `busy()` is the one callback the core needs: single-instance takeover, `quit`
 and the cached page's reload all ask it instead of knowing about dumps.
@@ -145,7 +151,33 @@ Each step builds, passes the harness in a browser, and changes no behaviour.
    `source/routes_settings.c`. The copy routines and the abort flag stay with
    the dumper for good.
 5. **Extract the client kit** from `web/index.html`.
-6. **Generalise the config store** (registered keys instead of one struct).
+6. **Generalise the config store** - done. `webhb/config.c` keeps the values
+   of keys an app registers (`whb_cfg_key_t`: ini name, web name, type, range,
+   default, the comment for config.ini, and the flags `WHB_CFG_SECRET` - never
+   served, never taken from a request -, `WHB_CFG_LOCAL` - only 127.0.0.1 may
+   change it - and `WHB_CFG_SUBDIR` - a folder below a mount point). Loading,
+   saving, "changed while no drive was there", `/api/config` and
+   `/api/config/console` follow from the table. The keys the core acts on
+   itself (`enable_logging`, `web_port`, `require_code` / `access_code` /
+   `access_token`) are macros (`WHB_CFG_STD_*`) the app places in its table,
+   because the table's order is the order of `/api/config` and that answer had
+   to stay byte-identical; an app that leaves them out logs, serves on its
+   `default_port` and gets a new code with every start. The dumper's table is
+   `source/dumper_config.c`; `dumper_config_t` stayed, as a copy taken with
+   `cfg_snapshot()`, so job, queue and the dumpers did not change.
+   `target_scan()` / `target_is_known()` moved to `webhb/drives.c`, which let
+   `/api/browse` and `/api/mkdir` join the built-in routes;
+   `source/routes_settings.c` and `find_usb_and_setup()` are gone. config.ini
+   is written in the table's order now - its text changed, its meaning did not.
+   Verified by the snapshot (61 requests, identical), a side by side run of
+   old and new on clamps, folder checks, hand-edited files and a restart, and
+   a link of the core alone: `sceKernelSendNotificationRequest`, `self_elf`
+   and what `tile.c` / `drives.c` define are all it lacks on the host.
+
+   Loose ends: an empty folder setting is still written as `homebrew`
+   (`if_empty`), as before, so "the root of the drive" does not survive a
+   restart. The legacy `read_*_config()` readers in `utils.c` are dead code
+   from upstream and were left alone.
 7. **Prove it with a second payload** - small and wanted anyway, e.g. a klog
    viewer. If that takes an evening, the interface is right.
 
