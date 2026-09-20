@@ -43,6 +43,8 @@ Before a dump starts, single or queued, its size is compared with the free space
 
 **Keeping it in Payload Manager:** a payload sent over the network is gone after a reboot. Under *Menu > Settings* the page can store the running version in pldmgr as `ps5-app-dumper_v<version>.elf`; pldmgr reads the version it shows from that file name. The build embeds a copy of the ELF for this, which is why it is built in two stages.
 
+**Rest mode:** the payload survives it. The console switches its network off when it goes to rest, and takes the USB drives with it; the web UI waits, listens on the same port again once the network is back and says so with a notification, and the settings return to the drive when it is mounted again. Do not send the console to rest while a dump to a USB drive is running: the drive goes away under it.
+
 **Port:** the first port tried is `8081`, because the homebrew launcher normally holds `8080`. If it is busy the payload walks up to nine ports further and announces the one it settled on. Set `web_port` in `config.ini` to pick another.
 
 **Home-screen shortcut:** open **Menu > Settings** and press **Install** next to *Home-screen shortcut* to put an "App Dumper" tile on the console's home screen. The tile opens the web interface in the console's browser. It is a shortcut only: it does **not** start the payload, so load the payload first as usual. The tile remembers the port the web interface was using when it was installed; if that changes, press **Reinstall**. Installing is refused while a dump or a queue is running. To remove the tile, delete it from the home screen like any other title.
@@ -95,7 +97,7 @@ The web console stands on **webhb**, the web-homebrew core that grew in this rep
 
 ### Working on it without a console
 
-`harness/` builds the web server, the dump job, the queue and the dump store for the host and runs them against a pretend console: `make -C harness run`, then open `http://127.0.0.1:8099/`. It needs no SDK. See `harness/README.md` for what it can and cannot show.
+`harness/` builds the web server, the dump job, the queue and the dump store for the host and runs them against a pretend console: `make -C harness run`, then open `http://127.0.0.1:8099/`. It needs no SDK. `make -C harness snapshot` records every route's answer and `make -C harness styles` the computed style of every element in every view - two ways to show that a change which was not meant to be seen cannot be seen. See `harness/README.md` for what it can and cannot show.
 
 ## Usage
 
@@ -176,15 +178,20 @@ Every dump leaves a small `<folder>.dump-info.json` next to its folder: the titl
 | `enable_webui` | `1` | Serve the web interface instead of dumping right away |
 | `auto_start` | `0` | Dump the running title right at launch; the web UI comes up as well |
 | `web_port` | `8081` | First TCP port tried for the web interface |
-| `dump_subdir` | `homebrew` | Folder below the drive that receives the dump |
+| `dump_subdir` | `homebrew/ps5-app-dumper/dumps` | Folder below a drive's mount point that receives the dump |
+| `dump_subdir_console` | `homebrew/ps5-app-dumper/dumps` | The same below `/data`, when dumping to the console itself |
 | `queue_delay` | `30` | Seconds a queued title gets to load before its dump starts, 5-600 |
 | `enable_decrypter` | `1` | Decrypt SELF/SPRX files while dumping |
 | `enable_elf2fself` | `0` | Re-sign decrypted executables as FSELF |
 | `enable_backport` | `0` | Patch SDK versions down — advanced, may break the dump |
 | `ps4_backport_level` | `4` | PS4 SDK target, 1-6 |
 | `ps5_backport_level` | `1` | PS5 SDK target, 1-10 |
-| `enable_logging` | `1` | Write `log.txt` next to the dump |
+| `enable_logging` | `1` | Write `logs/dumper.log` and one log per dump in the data folder |
 | `split` | `3` | PS4 layout: 0 none, 1 app, 2 patch, 3 both |
+| `require_code` | `1` | Other devices need the code from the TV before they may change anything; can only be switched in the console's own browser |
+| `access_code`, `access_token` | made up | The six-digit code and what a device keeps after entering it. Delete both lines to lock every device out again and get a new code |
+
+The web UI writes the file; hand edits are picked up on the next start, and a value out of range is pulled into it rather than refused.
 
 ---
 
