@@ -40,6 +40,8 @@ along with this program; see the file COPYING. If not, see
 #include "app_launch.h"
 #include "dump_job.h"
 #include "dump_queue.h"
+#include "self_store.h"
+#include "version.h"
 #include "utils.h"
 
 #define MAX_CONNECTIONS   8
@@ -907,6 +909,27 @@ static void handle_library_icon(int fd, const params_t *p)
     send_file(fd, path, "image/png");
 }
 
+/* What this copy is, and whether it carries an ELF it could store. */
+static void handle_self(int fd)
+{
+    char json[192];
+    snprintf(json, sizeof(json),
+             "{\"version\":\"" DUMPER_VERSION "\",\"file\":\"" DUMPER_ELF_NAME "\",\"canStore\":%s}",
+             self_store_available() ? "true" : "false");
+    send_json(fd, 200, json);
+}
+
+static void handle_self_store(int fd)
+{
+    char err[192] = {0};
+    if (self_store_to_pldmgr(err, sizeof(err)) != 0) {
+        send_error(fd, 409, err[0] ? err : "could not store the payload");
+        return;
+    }
+
+    send_json(fd, 200, "{\"stored\":true,\"file\":\"" DUMPER_ELF_NAME "\"}");
+}
+
 static void handle_library_pic(int fd, const params_t *p)
 {
     const char *title = param_get(p, "title", NULL);
@@ -1091,6 +1114,8 @@ static void route(int fd, const char *method, const char *path, const params_t *
     else if (is_get  && !strcmp(path, "/api/library")) handle_library(fd);
     else if (is_get  && !strcmp(path, "/api/libicon")) handle_library_icon(fd, p);
     else if (is_get  && !strcmp(path, "/api/libpic"))  handle_library_pic(fd, p);
+    else if (is_get  && !strcmp(path, "/api/self"))    handle_self(fd);
+    else if (is_post && !strcmp(path, "/api/self/store")) handle_self_store(fd);
     else if (is_post && !strcmp(path, "/api/launch"))  handle_launch(fd, p);
     else if (is_get  && !strcmp(path, "/api/size"))    handle_size(fd, p);
     else if (is_get  && !strcmp(path, "/api/browse"))  handle_browse(fd, p);

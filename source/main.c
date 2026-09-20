@@ -30,9 +30,10 @@ along with this program; see the file COPYING. If not, see
 #include "ps4_dumper.h"
 #include "ps5_dumper.h"
 #include "single_instance.h"
+#include "version.h"
 #include "utils.h"
 
-#define VERSION "1.11"
+#define VERSION DUMPER_VERSION
 
 /* ------------------------------------------------------------------ */
 /*  Headless mode - dump the running title and exit                    */

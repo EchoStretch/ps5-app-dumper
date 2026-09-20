@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#07090d">
 <title>PS5 App Dumper</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%230d1726'/><rect x='2' y='2' width='60' height='60' rx='12' fill='none' stroke='%232f9dff' stroke-opacity='.55' stroke-width='2'/><g fill='none' stroke='%232f9dff' stroke-width='4.4' stroke-linecap='round' stroke-linejoin='round'><path d='M32 14v22'/><path d='M23.5 28.5 32 37l8.5-8.5'/><path d='M15 40v6.5a3.5 3.5 0 0 0 3.5 3.5h27a3.5 3.5 0 0 0 3.5-3.5V40'/></g></svg>">
 <script>
 /* Flexbox `gap` cannot be asked for with @supports (grid has it too), so it
    is measured: two empty children in a column are as tall as the gap. */
@@ -643,7 +644,7 @@ footer{
       </div>
       <div>
         <h1>PS5 App <span>Dumper</span></h1>
-        <div class="sub" id="sub">Web console &middot; v1.11</div>
+        <div class="sub" id="sub">Web console</div>
       </div>
       <div class="link">
         <span class="live on" id="conn"><i class="dot"></i><span id="conntext">Connected</span></span>
@@ -814,6 +815,13 @@ footer{
               </div>
               <button type="button" class="mini" id="c-tile">Install</button>
             </div>
+            <div class="row" id="row-store">
+              <div class="txt">
+                <div class="label">Keep this version in Payload Manager</div>
+                <div class="hint" id="store-hint">Stores this payload in pldmgr, so it can be started from there - and from the home-screen shortcut.</div>
+              </div>
+              <button type="button" class="mini" id="c-store">Save</button>
+            </div>
             <div class="row">
               <div class="txt"><div class="label">Config file</div><div class="hint" id="cfgpath">not available</div></div>
             </div>
@@ -826,7 +834,7 @@ footer{
 
   <footer>PS5 APP DUMPER &middot; EchoStretch &middot; GPL-3.0 &middot;
     <button type="button" id="quit" class="linkish">shut down payload</button>
-    <div id="buildline" style="margin-top:6px;opacity:.75">page build <span id="build">@BUILD@</span> &middot; cache: <span id="cachestate">–</span></div>
+    <div id="buildline" style="margin-top:6px;opacity:.75"><span id="ver"></span>page build <span id="build">@BUILD@</span> &middot; cache: <span id="cachestate">–</span></div>
   </footer>
 </div>
 
@@ -1956,6 +1964,20 @@ var LAUNCHERS = [
 ];
 var launcher = null;
 
+/* "…_v1.12.elf" -> [1, 12]; a name without a version counts as the oldest. */
+function payloadVersion(path){
+  var m = /[_-]v?(\d+(?:\.\d+)*)[^\/]*$/i.exec(path);
+  return m ? m[1].split(".").map(Number) : [];
+}
+function newestPayload(paths){
+  return paths.slice().sort(function(a, b){
+    var x = payloadVersion(a), y = payloadVersion(b);
+    for(var i = 0; i < Math.max(x.length, y.length); i++)
+      if((x[i] || 0) !== (y[i] || 0)) return (y[i] || 0) - (x[i] || 0);
+    return y.length - x.length;
+  })[0];
+}
+
 function launcherUrl(l, path){ return "http://" + location.hostname + ":" + l.port + path; }
 
 function findLauncher(){
@@ -1972,7 +1994,8 @@ function findLauncher(){
                                        "upload it there once and this page can start it.)";
         return;
       }
-      launcher = { name: l.name, url: launcherUrl(l, l.start(paths[paths.length - 1])), file: paths[paths.length - 1].split("/").pop() };
+      var best = newestPayload(paths);
+      launcher = { name: l.name, url: launcherUrl(l, l.start(best)), file: best.split("/").pop() };
       $("offline-start").textContent = "Start it with " + l.name;
       $("offline-start").title = launcher.file;
       $("offline-start").hidden = false;
@@ -2421,6 +2444,49 @@ $("quit").addEventListener("click", function(){
 });
 
 $("sub").textContent = "Web console · " + location.host;
+
+/* ---------------- this copy: version, and a place in Payload Manager ---------------- */
+var self = null;
+
+function showStoreState(stored){
+  var can = !!(self && self.canStore);
+  $("c-store").disabled = !can;
+  $("c-store").textContent = stored ? "Save again" : "Save";
+  $("store-hint").textContent = !self ? "…"
+    : !can ? "This copy was started from a stored file, so it is in a payload manager already."
+    : stored ? self.file + " is in Payload Manager. The home-screen shortcut can start it when the payload is not running."
+             : "Stores this payload as " + self.file + " in pldmgr, so it can be started from there - and from the home-screen shortcut.";
+}
+
+/* pldmgr is asked directly whether it has this very file */
+function checkStored(){
+  if(!self) return;
+  fetch("http://" + location.hostname + ":8084/list_payloads").then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
+    var paths = (d && d.payloads) || [];
+    showStoreState(paths.some(function(p){ return typeof p === "string" && p.split("/").pop() === self.file; }));
+  }).catch(function(){ showStoreState(false); });
+}
+
+api("/api/self").then(function(r){
+  self = r;
+  $("sub").textContent = "Web console · v" + r.version + " · " + location.host;
+  $("ver").textContent = "v" + r.version + " · ";
+  showStoreState(false);
+  checkStored();
+}).catch(function(){});
+
+$("c-store").addEventListener("click", function(){
+  var b = $("c-store");
+  b.disabled = true;
+  b.textContent = "Saving…";
+  post("/api/self/store").then(function(r){
+    toast(r.file + " stored in Payload Manager", "ok");
+    showStoreState(true);
+  }).catch(function(e){
+    toast("Not stored: " + e.message, "bad");
+    showStoreState(false);
+  });
+});
 
 try { state.showAllOptions = !!localStorage.getItem(SHOWALL_KEY); } catch(e){}
 restoreQueue();
