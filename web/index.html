@@ -722,8 +722,7 @@ footer{
             <span class="unit">sec</span>
           </div>
           <div class="q-go">
-            <button type="button" class="act ghost" id="q-empty">Empty</button>
-            <button type="button" class="act go" id="q-start">Start queue</button>
+            <button type="button" class="act ghost" id="q-empty">Empty the queue</button>
           </div>
         </div>
         <div class="q-foot" id="queue-done" hidden>
@@ -1442,11 +1441,6 @@ function renderQueue(){
     var live = document.getElementById("q-live");
     if(live && cur) live.textContent = queuePhase(cur);
   }
-
-  var startBtn = $("q-start");
-  startBtn.disabled = state.busy || !state.target;
-  if(!startBtn.classList.contains("arm"))
-    startBtn.textContent = "Start queue (" + state.queue.length + ")";
 }
 
 function queuePhase(item){
@@ -1461,7 +1455,7 @@ function queuePhase(item){
 
 var queueArm;
 function startQueue(){
-  var b = $("q-start");
+  var b = $("btn-go");
   if(!state.queue.length || state.busy) return;
   if(!state.target){ toast("Select a destination drive first.", "bad"); return; }
 
@@ -1471,7 +1465,7 @@ function startQueue(){
     b.classList.add("arm");
     b.textContent = "Closes the running game - confirm";
     clearTimeout(queueArm);
-    queueArm = setTimeout(function(){ b.classList.remove("arm"); renderQueue(); }, 5000);
+    queueArm = setTimeout(function(){ b.classList.remove("arm"); updateAction(); }, 5000);
     return;
   }
   clearTimeout(queueArm);
@@ -1495,7 +1489,7 @@ function startQueue(){
     pollStatus();
   }).catch(function(e){
     toast(e.message, "bad");
-    renderQueue();
+    updateAction();
   });
 }
 
@@ -1722,6 +1716,31 @@ function updatePlatformOptions(){
 }
 var optPlatSig = null;
 
+/* Titles waiting in the editor turn the big button into "Start queue". */
+function queueMode(){ return state.queue.length > 0 && !queueOnConsole(); }
+
+/* What the queue will do, in the space that otherwise describes the dump:
+   the titles in order, and where they go. */
+function queueSummary(){
+  var q = state.queue, shown = q.slice(0, 3).map(function(t){ return "<b>" + esc(t.title || t.titleId) + "</b>"; });
+  var text = "Queue · " + shown.join(" → ") + (q.length > 3 ? " → +" + (q.length - 3) + " more" : "");
+
+  if(!state.targets.length) return text + ' <span style="color:var(--red)">· plug in a USB drive</span>';
+  if(!state.target)         return text + ' <span style="color:var(--red)">· select a destination drive</span>';
+
+  var sub = $("c-subdir").value.trim();
+  text += " → <b>" + esc(state.target + (sub ? "/" + sub : "")) + "</b>";
+
+  var notes = [];
+  var own = q.filter(function(t){ return t.own; }).length;
+  var discs = q.filter(function(t){ return t.media === "disc"; }).length;
+  if(own) notes.push(own + " with own settings");
+  if(discs > 1) notes.push(discs + " discs - it waits for each swap");
+  var first = q[0], inTheWay = state.apps.some(function(a){ return a.titleId !== first.titleId; });
+  if(inTheWay) notes.push("closes the running game");
+  return text + (notes.length ? ' <span style="color:var(--ink-faint)">· ' + esc(notes.join(" · ")) + "</span>" : "");
+}
+
 function updateAction(){
   var go = $("btn-go"), stop = $("btn-stop"), reload = $("btn-reload"), sum = $("summary");
   var app = selectedApp();
@@ -1762,6 +1781,16 @@ function updateAction(){
   stop.textContent = "Stop";
   go.style.display = "";
   reload.style.display = "none";
+
+  if(queueMode()){
+    go.disabled = !state.target;
+    if(!go.classList.contains("arm")) go.textContent = "Start queue (" + state.queue.length + ")";
+    sum.innerHTML = queueSummary();
+    return;
+  }
+
+  go.classList.remove("arm");
+  go.textContent = "Start dump";
 
   var ready = !!(app && state.target);
   go.disabled = !ready;
@@ -2179,7 +2208,8 @@ function pkUse(){
 fillLevels();
 wireSettings();
 
-$("btn-go").addEventListener("click", start);
+/* one button for both: with titles queued it starts the queue */
+$("btn-go").addEventListener("click", function(){ if(queueMode()) startQueue(); else start(); });
 $("btn-stop").addEventListener("click", stop);
 $("btn-reload").addEventListener("click", function(){
   $("progress").classList.remove("show");
@@ -2267,7 +2297,6 @@ $("build").textContent = BUILD;
   showCacheState();
 })();
 
-$("q-start").addEventListener("click", startQueue);
 $("q-clear").addEventListener("click", clearQueueResult);
 $("q-empty").addEventListener("click", function(){
   state.queue = [];
