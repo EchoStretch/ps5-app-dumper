@@ -382,6 +382,20 @@ int target_scan(target_entry_t *out, int max)
     return count;
 }
 
+static int is_title_id(const char *name);
+
+int title_runs_from_folder(const char *title_id)
+{
+    if (!is_title_id(title_id)) return 0;
+
+    char path[160];
+    snprintf(path, sizeof(path), "%s/%s-app0", SANDBOX_PATH, title_id);
+    if (dir_exists(path)) return 0;
+
+    snprintf(path, sizeof(path), "/mnt/sandbox/%s_000/app0", title_id);
+    return dir_exists(path);
+}
+
 int target_is_known(const char *mount)
 {
     if (!mount || !mount[0]) return -1;
@@ -593,7 +607,7 @@ static void library_fill(library_entry_t *e, const char *title_id, const char *l
 
     char mounted[320];
     snprintf(mounted, sizeof(mounted), "%s/%s-app0", SANDBOX_PATH, e->title_id);
-    e->is_running = dir_exists(mounted);
+    e->is_running = dir_exists(mounted) || title_runs_from_folder(e->title_id);
     e->on_disc = title_on_disc(e->title_id);
     e->is_disc = e->on_disc || title_is_disc_game(e->title_id);
 }

@@ -10,6 +10,7 @@
      CUSA07211  Spyro                 a PS4 title
      CUSA00900  Bloodborne            900 TB - can never fit (free-space check)
      PPSA09999  Broken Title          launches, but never mounts (mount timeout)
+     PPSA07777  Folder Game           runs from a folder: up, but nothing to mount
 
    A launch takes 5 s to show up as a mount, a close takes 3 s to let go, and
    launching while the old title is still held answers "still open", as the
@@ -40,6 +41,7 @@ static struct { const char *id, *title, *ver; int disc; } LIB[] = {
     { "CUSA07211", "Spyro Reignited Trilogy",   "01.03",      0 },
     { "CUSA00900", "Bloodborne",                "01.09",      0 },
     { "PPSA09999", "Broken Title",              "01.000.000", 0 },
+    { "PPSA07777", "Folder Game",               "01.000.000", 0 },
 };
 #define NLIB ((int)(sizeof(LIB) / sizeof(LIB[0])))
 
@@ -133,7 +135,7 @@ static void fill_lib(library_entry_t *e, int i)
     e->on_disc = title_on_disc(LIB[i].id);
     e->is_disc = LIB[i].disc;
     e->has_pic = 1;
-    e->is_running = running_now(id) && !strcmp(id, LIB[i].id);
+    e->is_running = (running_now(id) && !strcmp(id, LIB[i].id)) || title_runs_from_folder(LIB[i].id);
 }
 
 int library_scan(library_entry_t *out, int max)
@@ -153,6 +155,16 @@ int library_find(const char *id, library_entry_t *out)
 
 int library_pic_path(const char *id, char *o, size_t n) { (void)id; snprintf(o, n, "%s", g_art); return 0; }
 int library_icon_path(const char *id, char *o, size_t n) { (void)id; if (n) o[0] = 0; return -1; }
+
+/* up two seconds after its launch, and never mounted */
+int title_runs_from_folder(const char *id)
+{
+    pthread_mutex_lock(&g_mtx);
+    int up = id && !strcmp(id, "PPSA07777") && !strcmp(g_running, id) && !g_gone_at &&
+             time(NULL) >= g_visible_at - 100000 + 2;
+    pthread_mutex_unlock(&g_mtx);
+    return up;
+}
 
 int target_scan(target_entry_t *out, int max)
 {
@@ -224,7 +236,7 @@ int app_launch_title(const char *id, int close_running, char *err, size_t n)
     }
     strcpy(g_running, id);
     g_gone_at = 0;
-    g_visible_at = time(NULL) + (!strcmp(id, "PPSA09999") ? 100000 : 5);
+    g_visible_at = time(NULL) + ((!strcmp(id, "PPSA09999") || !strcmp(id, "PPSA07777")) ? 100000 : 5);
     pthread_mutex_unlock(&g_mtx);
 
     printf("[console] launching %s\n", id);

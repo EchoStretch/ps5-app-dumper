@@ -100,6 +100,20 @@ static int title_mounted(void *arg)
     return app_find((const char *)arg, &app) == 0;
 }
 
+/* The package mount, or the certainty that there will be none. A title that
+   runs from a folder shows its sandbox at once; it has to stay that way for a
+   while before it is believed, in case a package mount is merely late. */
+typedef struct { const char *dir, *title_id; int folder_seen; } mount_wait_t;
+
+static int mounted_or_never(void *arg)
+{
+    mount_wait_t *mw = arg;
+    if (title_mounted((void *)mw->dir)) return 1;
+
+    mw->folder_seen = title_runs_from_folder(mw->title_id) ? mw->folder_seen + 1 : 0;
+    return mw->folder_seen >= 10;
+}
+
 #define WAIT_STOPPED (-1)
 #define WAIT_SKIPPED (-2)
 
@@ -188,8 +202,15 @@ static int bring_up(int index, const char *title_id, const char *dir, int settle
         if (gap < 0) return gap;
     }
 
-    int rc = wait_until(MOUNT_TIMEOUT, title_mounted, (void *)dir);
+    mount_wait_t mw = { dir, title_id, 0 };
+    int rc = wait_until(MOUNT_TIMEOUT, mounted_or_never, &mw);
     if (rc < 0) return rc;
+    if (rc == 1 && !title_mounted((void *)dir)) {
+        set_item(index, QITEM_FAILED, "runs from a folder instead of its package - a dump is mounted "
+                                      "over it (ShadowMount?), so there is nothing to dump");
+        write_log(g_log_path, "Queue: %s runs without a package mount - skipped", title_id);
+        return 1;
+    }
     if (rc == 0) {
         set_item(index, QITEM_FAILED,
                  "the game did not come up within %d seconds", MOUNT_TIMEOUT);

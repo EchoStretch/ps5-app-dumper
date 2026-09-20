@@ -106,4 +106,11 @@ int target_scan(target_entry_t *out, int max);
 /* Returns 0 when mount is one of the mount points target_scan() reports. */
 int target_is_known(const char *mount);
 
+/* A title can run without its package: ShadowMount redirects a title to a
+   dump it found (seen: a mount.lnk next to app.pkg, /system_ex/app/<id>
+   null-mounted from <usb>/homebrew/<id>-app0). The game then gets its
+   /mnt/sandbox/<id>_000/app0 but nothing under pfsmnt - so there is nothing
+   to dump, and waiting for a mount would never end. 1 when that is the case. */
+int title_runs_from_folder(const char *title_id);
+
 #endif /* APP_SCAN_H */

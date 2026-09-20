@@ -1308,7 +1308,11 @@ function endLaunchWait(found){
   renderLaunchBanner();
 
   if(!pending) return;
-  if(found) toast(pending.title + " is running", "ok");
+  if(found === "folder"){
+    toast(pending.title + " is running, but from a folder instead of its package - a dump is mounted over it (ShadowMount?), so there is nothing to dump.", "bad");
+    loadLibrary();
+  }
+  else if(found) toast(pending.title + " is running", "ok");
   else toast(pending.title + " did not come up - start it from the console.", "bad");
 }
 
@@ -2279,7 +2283,8 @@ function pollStatus(){
 }
 
 function loadDevices(){
-  return api("/api/devices").then(function(d){
+  var asked = state.launching ? state.launching.titleId : null;
+  return api("/api/devices" + (asked ? "?waiting=" + encodeURIComponent(asked) : "")).then(function(d){
     state.apps = d.apps || [];
     state.targets = d.targets || [];
     state.incomplete = d.incomplete || [];
@@ -2300,6 +2305,14 @@ function loadDevices(){
     }
 
     if(d.config) applyConfig(d.config);
+
+    /* Up, but with no package behind it: a game that was dumped before and
+       is served from a folder. Believed on the second answer in a row, in
+       case a package mount is merely late. */
+    if(state.launching && asked === state.launching.titleId){
+      state.launching.folderSeen = d.waitingRunsFromFolder ? (state.launching.folderSeen || 0) + 1 : 0;
+      if(state.launching.folderSeen >= 2) endLaunchWait("folder");
+    }
 
     /* the title we launched has finished mounting */
     if(state.launching){

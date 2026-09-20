@@ -114,7 +114,6 @@ static void handle_status(int fd, const params_t *q)
 
 static void handle_devices(int fd, const params_t *p)
 {
-    (void)p;
     /* Pick up a drive that was plugged in or pulled after the payload
        started. Only a change of place may touch the settings - rereading them
        on every poll would throw away what the user just changed. */
@@ -208,6 +207,13 @@ static void handle_devices(int fd, const params_t *p)
     json_config(&sb, &cfg_now);
 
     sb_printf(&sb, ",\"configOnConsole\":%s", storage_is_internal() ? "true" : "false");
+
+    /* the page is waiting for a title it started: tell it when that title
+       is up without a package mount, which no amount of waiting changes */
+    const char *waiting = param_get(p, "waiting", NULL);
+    if (waiting)
+        sb_printf(&sb, ",\"waitingRunsFromFolder\":%s",
+                  title_runs_from_folder(waiting) ? "true" : "false");
     sb_puts(&sb, ",\"configPath\":");
     const char *hb = get_app_data_path();
     if (hb && hb[0]) {
