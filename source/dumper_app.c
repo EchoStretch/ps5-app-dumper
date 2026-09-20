@@ -25,9 +25,9 @@ along with this program; see the file COPYING. If not, see
 #include "dump_library.h"
 #include "version.h"
 
-/* embedded at build time by tools/bin2c.sh (see the Makefile) */
-extern const unsigned char tile_icon0_png[];
-extern const size_t        tile_icon0_png_len;
+/* embedded at build time (webhb/webhb.mk) */
+extern const unsigned char app_icon_png[];
+extern const size_t        app_icon_png_len;
 
 int dumper_busy(void)
 {
@@ -55,7 +55,7 @@ const whb_app_t *dumper_app(void)
     /* the generated lengths are variables, not constants */
     app.page     = web_index_html;
     app.page_len = web_index_html_len;
-    app.icon_png = tile_icon0_png;
-    app.icon_len = tile_icon0_png_len;
+    app.icon_png = app_icon_png;
+    app.icon_len = app_icon_png_len;
     return &app;
 }

@@ -170,9 +170,7 @@ Each step builds, passes the harness in a browser, and changes no behaviour.
    computed style of every element across all views and dialogs, and a drive
    through the kit's controls read the same before and after.
 
-   Loose ends: the markup the kit works on (it expects some forty ids, listed
-   at the top of `whb.js`) and the flex-gap probe in the page's head are still
-   the page's - a second app copies them. The folder picker's script stayed
+   Loose end: the folder picker's script stayed
    with the dumper because it also moves dumps; its styles are in the kit. The
    fallback lines carry `:not(.drive-free)` in the kit too: taking it out would
    change their specificity.
@@ -216,12 +214,15 @@ Each step builds, passes the harness in a browser, and changes no behaviour.
    arrive, a resent copy replaces only its own predecessor, the dumper on
    8081 is not touched.
 
-   Still the app's to copy: the markup the kit works on (header, offline
-   banner, unlock dialog, toast, the settings rows) and the flex-gap probe in
-   the head. The dumper's own Makefile and harness do not use `webhb.mk` /
-   `host/stubs.c` yet - they predate them and work.
-
-Steps 1-3 already pay off for the dumper alone.
+   The loose ends this step had were tied up the same night: the markup the
+   kit works on comes from the kit (`webhb/web/*.html`, put in where a page
+   says `<!-- @WHB:name@ -->` - head, chips, offline, row-tile, row-store,
+   access, foot, unlock, toast), so a page with a tile writes one line for it;
+   the viewer has a tile; the dumper's Makefile stands on `webhb.mk` like any
+   other app (its generated files moved from `source/` to `build/`); the
+   payload says on the TV that it came through rest mode. The dumper's harness
+   keeps its own pretend console - it fakes titles, drives and a tile that is
+   out of date, which `webhb/host/stubs.c` has no reason to.
 
 ## Decide before anything is published
 

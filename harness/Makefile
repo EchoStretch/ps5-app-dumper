@@ -15,7 +15,7 @@ REAL := $(filter-out %/tile.c %/instance.c %/drives.c %/start.c,$(wildcard $(ROO
         $(ROOT)/source/dump_job.c $(ROOT)/source/dump_queue.c $(ROOT)/source/dump_store.c $(ROOT)/source/dump_library.c \
         $(ROOT)/source/utils.c
 
-GEN  := $(OUT)/web_assets.c $(OUT)/tile_assets.c
+GEN  := $(OUT)/web_assets.c $(OUT)/icon_assets.c
 
 # short timeouts keep a queue run watchable; the stored-file check is pointed
 # at a folder the fake Payload Manager really writes to
@@ -31,9 +31,9 @@ $(OUT)/web_assets.c: $(ROOT)/web/index.html $(wildcard $(ROOT)/webhb/web/*) $(RO
 	$(ROOT)/tools/inline.sh $< $(ROOT)/webhb/web > $(OUT)/index.html
 	$(ROOT)/tools/bin2c.sh $(OUT)/index.html web_index_html > $@
 
-$(OUT)/tile_assets.c: $(ROOT)/assets/tile/icon0.png $(ROOT)/tools/bin2c.sh
+$(OUT)/icon_assets.c: $(ROOT)/assets/tile/icon0.png $(ROOT)/tools/bin2c.sh
 	@mkdir -p $(OUT)
-	$(ROOT)/tools/bin2c.sh $< tile_icon0_png > $@
+	$(ROOT)/tools/bin2c.sh $< app_icon_png > $@
 
 $(OUT)/sim: mock_console.c self_blob.c $(REAL) $(GEN)
 	$(CC) $(CFLAGS) -o $@ $^

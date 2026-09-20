@@ -63,7 +63,8 @@ all:
 	@echo "PS5_PAYLOAD_SDK is undefined - only 'make sim' works without it" >&2; false
 endif
 
-# ---- the same program on this machine
+# ---- the same program on this machine (WHB_NO_SIM: the app has a harness of its own)
+ifndef WHB_NO_SIM
 HOSTCC ?= cc
 
 sim: $(WHB_OUT)/sim
@@ -76,6 +77,7 @@ $(WHB_OUT)/sim: $(WHB_SOURCES) $(filter-out $(WHB_CONSOLE_ONLY),$(WHB_CORE)) $(W
 run: $(WHB_OUT)/sim
 	@mkdir -p $(WHB_OUT)/run
 	cd $(WHB_OUT)/run && WHB_PORT=$(WHB_PORT) ../sim
+endif
 
 clean:
 	rm -rf $(WHB_OUT) $(WHB_APP).elf

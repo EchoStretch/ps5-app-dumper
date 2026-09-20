@@ -1,3 +1,4 @@
+build/
 source/web_assets.c
 source/tile_assets.c
 source/self_elf.c
