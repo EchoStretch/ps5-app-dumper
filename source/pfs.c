@@ -58,6 +58,10 @@ static int copy_chunk(int pfs_fd, uint64_t src_off, const char *dst_path,
 
     uint64_t copied = 0;
     while (size) {
+        /* a single file can run to tens of gigabytes; a stop has to reach
+           it here, not after the last block */
+        if (abort_requested()) break;
+
         size_t chunk = (size > BUFFER_SIZE) ? BUFFER_SIZE : (size_t)size;
         if (lseek(pfs_fd, src_off + copied, SEEK_SET) < 0) break;
         if (read(pfs_fd, buf, chunk) != (ssize_t)chunk) break;
@@ -99,6 +103,8 @@ static void parse_dir(int pfs_fd, const struct pfs_header_t *hdr,
         uint64_t end = pos + node->size;
 
         while (pos < end) {
+            if (abort_requested()) return;
+
             struct dirent_t ent;
             if (lseek(pfs_fd, pos, SEEK_SET) < 0 ||
                 read(pfs_fd, &ent, sizeof(ent)) != sizeof(ent))

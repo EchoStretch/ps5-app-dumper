@@ -1445,8 +1445,13 @@ function renderQueue(){
   }
 }
 
+function jobStopping(){ return !!(state.job && state.job.stage === "Stopping"); }
+
 function queuePhase(item){
   var label = STATE_LABEL[item.state] || item.state, wait = state.squeue.wait;
+
+  /* a stop or skip is under way - the percentage would say the opposite */
+  if(item.state === "dumping" && jobStopping()) return "stopping…";
 
   if(item.state === "dumping" && state.job && state.job.totalBytes)
     return label + " " + Math.min(100, Math.floor(state.job.copiedBytes / state.job.totalBytes * 100)) + "%";
@@ -1762,9 +1767,11 @@ function updateAction(){
     reload.style.display = "none";
     if(!stop.classList.contains("arm")) stop.textContent = "Stop queue";
     /* with more to come, giving up one dump must not cost the rest */
-    var skip = $("btn-skip"), dumping = !!cur && cur.state === "dumping";
+    var skip = $("btn-skip"), dumping = !!cur && cur.state === "dumping" && !jobStopping();
     skip.style.display = dumping ? "" : "none";
     if(!dumping){ skip.classList.remove("arm"); skip.textContent = "Stop this dump"; }
+    stop.disabled = jobStopping();
+    if(jobStopping() && !stop.classList.contains("arm")) stop.textContent = "Stopping…";
     sum.innerHTML = "Queue <b>" + (sq.current + 1) + "/" + sq.items.length + "</b>" +
                     (cur ? " · <b>" + esc(cur.title) + "</b> — " +
                       (cur.state === "waiting_disc" ? '<span style="color:var(--violet)">insert its disc</span>'
@@ -1779,13 +1786,16 @@ function updateAction(){
     go.style.display = "none";
     stop.style.display = "";
     reload.style.display = "none";
-    sum.innerHTML = "Dumping <b>" + esc(state.job && state.job.title ? state.job.title : "") + "</b> → <b>" +
+    stop.disabled = jobStopping();
+    if(jobStopping() && !stop.classList.contains("arm")) stop.textContent = "Stopping…";
+    sum.innerHTML = (jobStopping() ? "Stopping " : "Dumping ") + "<b>" + esc(state.job && state.job.title ? state.job.title : "") + "</b> → <b>" +
                     esc(state.job ? state.job.dest : "") + "</b>";
     return;
   }
 
   stop.style.display = "none";
   stop.classList.remove("arm");
+  stop.disabled = false;
   stop.textContent = "Stop";
   go.style.display = "";
   reload.style.display = "none";
@@ -2020,7 +2030,7 @@ function pollStatus(){
       else if(d.job.state === "failed") toast(d.job.message || "Dump failed", "bad");
     }
     /* a queue moves through phases without the busy flag ever changing */
-    if(wasBusy !== state.busy || queueActive() || wasQueue) updateAction();
+    if(wasBusy !== state.busy || queueActive() || wasQueue || jobStopping()) updateAction();
     else renderQueue();
   }).catch(function(){
     if(++state.failures >= 2) setOnline(false);
@@ -2107,7 +2117,7 @@ function stop(){
   clearTimeout(armTimer);
   b.disabled = true;
   post("/api/abort").then(function(){
-    toast("Stopping after the current file…");
+    toast("Stopping the dump…");
   }).catch(function(e){
     toast(e.message, "bad");
   }).then(function(){ b.disabled = false; });
@@ -2133,7 +2143,7 @@ function stopThisDump(){
   b.textContent = "Stop this dump";
   b.disabled = true;
   post("/api/queue/skip").then(function(){
-    toast("Stopping this dump after the current file - the queue goes on…");
+    toast("Stopping this dump - the queue goes on with the next title…");
   }).catch(function(e){
     toast(e.message, "bad");
   }).then(function(){ b.disabled = false; });

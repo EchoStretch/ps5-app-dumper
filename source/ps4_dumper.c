@@ -140,6 +140,8 @@ static int decrypt_if_needed(const char *sandbox_root, const char *title_id,
                              const char *logpath)
 {
     if (!do_decrypt) return 0;
+    /* no point in decrypting a dump the user just gave up on */
+    if (abort_requested()) return 0;
 
     char src_dir[1024];
     snprintf(src_dir, sizeof(src_dir), "%s/%s-%s", sandbox_root, title_id, suffix);

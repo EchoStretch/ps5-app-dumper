@@ -53,7 +53,8 @@ typedef struct {
 int  job_start(const char *app_dir, const char *mount,
                const dumper_config_t *cfg, char *err, size_t err_size);
 
-/* Asks the running job to stop at the next file boundary. */
+/* Asks the running job to stop. The copy routines look for this between
+   blocks, so it takes effect within moments even inside a huge file. */
 void job_abort(void);
 
 /* Snapshot of the current job, safe to call from any thread. */
