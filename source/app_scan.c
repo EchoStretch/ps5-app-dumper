@@ -518,9 +518,15 @@ int title_is_disc_game(const char *title_id)
     pthread_mutex_unlock(&g_disc_mtx);
     if (known) return 1;
 
-    /* A disc install keeps a bitmap of what was copied off the disc. Seen in
-       PS4 kernel logs; unconfirmed on PS5, hence only one signal of three. */
+    /* The console keeps a disc_info.dat with the metadata of every title that
+       was installed from a disc, and of no other. Checked on FW 12.00 with
+       two disc installs (one with its disc out) against two package titles. */
     char path[96];
+    snprintf(path, sizeof(path), "/system_data/priv/appmeta/%s/disc_info.dat", title_id);
+    if (file_exists(path)) return 1;
+
+    /* What was assumed before that was known; seen in PS4 kernel logs, never
+       on this PS5. Costs nothing to keep. */
     snprintf(path, sizeof(path), "/system_data/playgo/%s/bdcopy.pbm", title_id);
     return file_exists(path) ? 1 : 0;
 }
