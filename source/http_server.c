@@ -256,24 +256,31 @@ static const char *status_text(int code)
     return "OK";
 }
 
-static void send_response(int fd, int code, const char *content_type,
-                          const void *body, size_t len, const char *extra_headers)
+static void send_response_cc(int fd, int code, const char *content_type,
+                             const void *body, size_t len,
+                             const char *cache_control, const char *extra_headers)
 {
     char head[512];
     int n = snprintf(head, sizeof(head),
                      "HTTP/1.1 %d %s\r\n"
                      "Content-Type: %s\r\n"
                      "Content-Length: %zu\r\n"
-                     "Cache-Control: no-store\r\n"
+                     "Cache-Control: %s\r\n"
                      "Connection: close\r\n"
                      "%s"
                      "\r\n",
-                     code, status_text(code), content_type, len,
+                     code, status_text(code), content_type, len, cache_control,
                      extra_headers ? extra_headers : "");
 
     if (n <= 0) return;
     if (send_all(fd, head, (size_t)n) != 0) return;
     if (len) send_all(fd, body, len);
+}
+
+static void send_response(int fd, int code, const char *content_type,
+                          const void *body, size_t len, const char *extra_headers)
+{
+    send_response_cc(fd, code, content_type, body, len, "no-store", extra_headers);
 }
 
 static void send_json(int fd, int code, const char *json)
@@ -1022,8 +1029,37 @@ static void handle_quit(int fd)
 
 static void handle_index(int fd)
 {
-    send_response(fd, 200, "text/html; charset=utf-8",
-                  web_index_html, web_index_html_len, NULL);
+    /* "no-store" would keep the page out of the browser's application cache,
+       which is what lets the home-screen tile open it while the payload is
+       not running. The manifest below takes care of freshness. */
+    send_response_cc(fd, 200, "text/html; charset=utf-8",
+                     web_index_html, web_index_html_len, "no-cache", NULL);
+}
+
+/* The application cache manifest. A browser that knows the mechanism - the
+   PS5's does - keeps the page and serves it even when nothing answers on
+   this port; the page then says so and offers to start the payload. The
+   comment line carries a checksum of the page: any change to it makes the
+   browser fetch the new one. Everything else always goes to the network. */
+static void handle_manifest(int fd)
+{
+    uint32_t sum = 2166136261u;   /* FNV-1a */
+    for (size_t i = 0; i < web_index_html_len; i++)
+        sum = (sum ^ web_index_html[i]) * 16777619u;
+
+    char body[160];
+    int n = snprintf(body, sizeof(body),
+                     "CACHE MANIFEST\n"
+                     "# page %08x-%zu\n"
+                     "\n"
+                     "CACHE:\n"
+                     "/\n"
+                     "\n"
+                     "NETWORK:\n"
+                     "*\n",
+                     (unsigned)sum, web_index_html_len);
+
+    send_response(fd, 200, "text/cache-manifest", body, (size_t)n, NULL);
 }
 
 static void route(int fd, const char *method, const char *path, const params_t *p)
@@ -1032,6 +1068,7 @@ static void route(int fd, const char *method, const char *path, const params_t *
     int is_post = (strcmp(method, "POST") == 0);
 
     if (is_get && (!strcmp(path, "/") || !strcmp(path, "/index.html"))) handle_index(fd);
+    else if (is_get  && !strcmp(path, "/cache.appcache")) handle_manifest(fd);
     else if (is_get  && !strcmp(path, "/api/status"))  handle_status(fd, p);
     else if (is_get  && !strcmp(path, "/api/devices")) handle_devices(fd);
     else if (is_get  && !strcmp(path, "/api/config"))  handle_config_get(fd);

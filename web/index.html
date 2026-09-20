@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" manifest="/cache.appcache">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -247,6 +247,13 @@ section.card{
 .card.locked .body,.card.locked .head button{pointer-events:none}
 .card.locked::after{content:"";position:absolute;top:0;right:0;bottom:0;left:0;cursor:not-allowed}
 section.card{position:relative}
+
+/* shown when the page was opened from the cache and nothing answers */
+.banner.offline{margin:0 0 18px;background:rgba(255,176,32,.1);border-color:rgba(255,176,32,.45);padding:13px 15px}
+.banner.offline .spin{border-color:rgba(255,176,32,.3);border-top-color:var(--amber)}
+.offline-txt{flex:1;min-width:0;font-size:13.5px;line-height:1.45}
+.offline-txt b{display:block;font-size:14.5px;letter-spacing:.02em;margin-bottom:1px}
+.banner.offline .mini{margin-left:12px}
 
 /* ---------------- app grid ---------------- */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(238px,1fr));gap:10px}
@@ -642,6 +649,15 @@ footer{
       </div>
     </div>
   </header>
+
+  <div class="banner offline" id="offline" hidden>
+    <span class="spin" id="offline-spin" hidden></span>
+    <span class="offline-txt">
+      <b>PS5 App Dumper is not running.</b>
+      <span id="offline-msg">This page comes from the browser's cache. Start the payload the way you usually do - it connects by itself.</span>
+    </span>
+    <button type="button" class="mini" id="offline-start" hidden>Start it</button>
+  </div>
 
   <main>
     <div class="col">
@@ -1862,6 +1878,71 @@ function setOnline(ok){
   var el = $("conn");
   el.className = "live " + (ok ? "on" : "off");
   $("conntext").textContent = ok ? "Connected" : "Disconnected";
+
+  $("offline").hidden = ok;
+  if(ok){
+    /* back from the dead: whatever is on screen predates the payload */
+    $("offline-spin").hidden = true;
+    $("offline-msg").textContent = OFFLINE_HINT;
+    loadDevices(); loadLibrary();
+  } else {
+    findLauncher();
+  }
+}
+
+/* ---------------- starting the payload from the cached page ----------------
+   A browser cannot hand an ELF to the loader on port 9021 - that speaks raw
+   TCP. What it can do is ask something that speaks HTTP and starts payloads.
+   This is a convenience on top, never a requirement: with no launcher
+   around the banner just says how things stand. Further ones go in here. */
+var OFFLINE_HINT = "This page comes from the browser's cache. Start the payload the way you usually do - it connects by itself.";
+var PAYLOAD_FILE = "ps5-app-dumper.elf";
+var LAUNCHERS = [
+  { name: "Payload Manager", port: 8084, probe: "/version",
+    start: "/loadpayload:" + PAYLOAD_FILE,
+    missing: "Payload Manager does not know " + PAYLOAD_FILE + " - upload it there once, then this button works." }
+];
+var launcher = null;
+
+function launcherUrl(l, path){ return "http://" + location.hostname + ":" + l.port + path; }
+
+function findLauncher(){
+  launcher = null;
+  $("offline-start").hidden = true;
+
+  LAUNCHERS.forEach(function(l){
+    fetch(launcherUrl(l, l.probe)).then(function(r){
+      if(!r.ok || launcher || state.online) return;
+      launcher = l;
+      $("offline-start").textContent = "Start it with " + l.name;
+      $("offline-start").hidden = false;
+    }).catch(function(){ /* not there - that is fine */ });
+  });
+}
+
+function startPayload(){
+  if(!launcher) return;
+  var b = $("offline-start"), l = launcher;
+
+  b.disabled = true;
+  $("offline-spin").hidden = false;
+  $("offline-msg").textContent = "Asking " + l.name + " to start the payload…";
+
+  fetch(launcherUrl(l, l.start)).then(function(r){
+    b.disabled = false;
+    if(r.ok){
+      /* the status poll notices it on its own and takes the banner away */
+      $("offline-msg").textContent = "Started - waiting for it to come up…";
+      return;
+    }
+    $("offline-spin").hidden = true;
+    $("offline-msg").textContent = r.status === 400 ? l.missing
+      : l.name + " could not start it (HTTP " + r.status + ").";
+  }).catch(function(e){
+    b.disabled = false;
+    $("offline-spin").hidden = true;
+    $("offline-msg").textContent = l.name + " did not answer: " + e.message;
+  });
 }
 
 function pollStatus(){
@@ -1936,7 +2017,10 @@ function loadDevices(){
     if(state.app && !state.busy) fetchSize(state.app);
     renderApps(); renderDrives(); updateAction();
     renderLibrary();
-  }).catch(function(e){ toast("Could not read the console state: " + e.message, "bad"); });
+  }).catch(function(e){
+    /* while the payload is down the banner says it all */
+    if(state.online) toast("Could not read the console state: " + e.message, "bad");
+  });
 }
 
 /* ---------------- actions ---------------- */
@@ -2097,6 +2181,17 @@ $("refresh").addEventListener("click", function(){
   jobs.push(loadLibrary());
   Promise.all(jobs).then(function(){ toast("Rescanned"); });
 });
+
+$("offline-start").addEventListener("click", startPayload);
+
+/* A changed page is fetched in the background while the cached one is
+   already on screen; switch over as soon as it is there. */
+if(window.applicationCache){
+  window.applicationCache.addEventListener("updateready", function(){
+    try { window.applicationCache.swapCache(); } catch(e){}
+    if(!state.busy) location.reload();
+  });
+}
 
 $("q-start").addEventListener("click", startQueue);
 $("q-clear").addEventListener("click", clearQueueResult);
