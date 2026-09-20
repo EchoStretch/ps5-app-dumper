@@ -301,31 +301,38 @@ button.tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 /* ---------------- running title ---------------- */
 #apps{padding-bottom:0}
 .hero{
-  position:relative;display:flex;align-items:center;gap:14px;min-height:118px;padding:14px;
   border:1px solid var(--line);border-radius:11px;overflow:hidden;cursor:pointer;
-  background:var(--panel-2) center/cover no-repeat;margin-bottom:10px;
-  transition:border-color .16s,box-shadow .16s
+  background:var(--panel-2);margin-bottom:10px;transition:border-color .16s,box-shadow .16s
 }
 .hero:last-child{margin-bottom:0}
-/* keeps the text readable on any key art */
-.hero::before{
-  content:"";position:absolute;top:0;right:0;bottom:0;left:0;
-  background:linear-gradient(90deg,rgba(7,9,13,.94) 0%,rgba(7,9,13,.78) 46%,rgba(7,9,13,.3) 100%)
-}
-.hero > *{position:relative}
 .hero:hover{border-color:rgba(47,157,255,.55)}
 .hero:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .hero[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 1px rgba(47,157,255,.45),0 10px 30px -18px rgba(47,157,255,.9)}
+.hero-art{
+  position:relative;display:flex;align-items:center;gap:14px;min-height:118px;padding:14px;
+  background:#0a0e14 center/cover no-repeat
+}
+/* keeps the title readable on any key art */
+.hero-art::before{
+  content:"";position:absolute;top:0;right:0;bottom:0;left:0;
+  background:linear-gradient(90deg,rgba(7,9,13,.94) 0%,rgba(7,9,13,.8) 50%,rgba(7,9,13,.35) 100%)
+}
+.hero-art > *{position:relative}
 .hero .ico{width:84px;height:84px;border-radius:10px;box-shadow:0 8px 22px -10px #000}
-.hero .meta .name{font-size:19px;white-space:normal;line-height:1.2}
+.hero .meta .name{font-size:19px;white-space:normal;line-height:1.2;text-shadow:0 1px 8px rgba(0,0,0,.8)}
 .hero .meta .id{margin-top:6px}
 .hero-state{
   display:inline-flex;align-items:center;font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;
   text-transform:uppercase;color:var(--green);margin-bottom:5px
 }
 .hero-state .dot{margin-right:7px;animation:pulse 2s ease-in-out infinite}
-.hero-acts{display:flex;flex-direction:column;align-items:flex-end;flex:none}
-.hero-pick{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);margin-top:8px}
+/* controls sit on a plain strip below the art: whatever picture a game
+   brings, the button never has to compete with it */
+.hero-bar{
+  display:flex;align-items:center;padding:9px 14px;border-top:1px solid var(--line-soft);
+  background:var(--panel-2)
+}
+.hero-pick{flex:1;font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
 .hero[aria-pressed="true"] .hero-pick{color:var(--accent)}
 
 /* ---------------- queue ---------------- */
@@ -606,7 +613,7 @@ footer{
 .no-flexgap .seg > * + *:not(.spacer):not(.link):not(.drive-free):not(.banner-btn){margin-left:4px}
 .no-flexgap .verdict > * + *:not(.spacer):not(.link):not(.drive-free):not(.banner-btn){margin-left:10px}
 .no-flexgap .actions .inner > * + *:not(.spacer):not(.link):not(.drive-free):not(.banner-btn){margin-left:11px}
-.no-flexgap .hero > * + *{margin-left:14px}
+.no-flexgap .hero-art > * + *{margin-left:14px}
 /* a bare text node is no sibling element, so these get their margin directly */
 .no-flexgap .tabs .num,.no-flexgap .live #conntext{margin-left:6px}
 @media(max-width:900px){.no-flexgap section.card{margin-bottom:18px}.no-flexgap .col > * + *{margin-top:0}}
@@ -949,18 +956,18 @@ function renderApps(){
     /* the console keeps wide key art for most titles - it makes the card */
     var art = known && known.hasPic
       ? ' style="background-image:url(/api/libpic?title=' + encodeURIComponent(a.titleId) + ')"' : "";
-    html += '<div class="hero" role="button" tabindex="0" data-dir="' + esc(a.dir) + '" aria-pressed="' + sel + '"' + art +
+    html += '<div class="hero" role="button" tabindex="0" data-dir="' + esc(a.dir) + '" aria-pressed="' + sel + '"' +
       ' aria-label="' + esc(a.title + " (" + a.titleId + "), running") + '">' +
-      icon +
+      '<div class="hero-art"' + art + '>' + icon +
       '<span class="meta">' +
         '<span class="hero-state"><i class="dot"></i>Running now</span>' +
         '<span class="name">' + esc(a.title) + '</span>' +
         '<span class="id">' + tag + mediaTag(a.media, a.discIn) + esc(a.titleId) + (a.version ? " &middot; " + esc(a.version) : "") + '</span>' +
-      '</span>' +
-      '<span class="hero-acts">' +
-        (known && state.canLaunch ? '<button class="mini" type="button" data-queue="' + esc(a.titleId) + '"></button>' : "") +
+      '</span></div>' +
+      '<div class="hero-bar">' +
         '<span class="hero-pick">' + (state.apps.length > 1 ? "tap to select" : "ready to dump") + '</span>' +
-      '</span></div>';
+        (known && state.canLaunch ? '<button class="mini" type="button" data-queue="' + esc(a.titleId) + '"></button>' : "") +
+      '</div></div>';
   });
   box.innerHTML = html;
 
