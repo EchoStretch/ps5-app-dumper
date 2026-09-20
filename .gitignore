@@ -5,3 +5,4 @@ source/self_elf.c
 dist/
 .claude/worktrees/
 harness/out/
+examples/*/build/

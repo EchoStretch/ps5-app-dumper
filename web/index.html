@@ -2445,6 +2445,7 @@ document.addEventListener("keydown", function(e){ if(e.key === "Escape" && !$("p
 whb.app = {
   elf: "ps5-app-dumper", shortName: "App Dumper", storage: "ps5-app-dumper",
   busyText: "A dump is running.", afterBusy: "after the dump",
+  lockedFrom: "start, stop or delete anything",
   views: { "#settings": "view-settings", "#dumps": "view-dumps" }, settingsView: "view-settings",
   onView: function(page){ if(page === "view-dumps") loadDumps(); },
   onOnline: function(){ loadDevices(); loadLibrary(); },

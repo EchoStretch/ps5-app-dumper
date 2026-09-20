@@ -42,6 +42,7 @@ const whb_app_t *dumper_app(void)
         .version       = DUMPER_VERSION,
         .process_name  = "ps5-app-dumper.elf",
         .data_dirname  = "ps5-app-dumper",
+        .log_basename  = "dumper",
         .elf_basename  = "ps5-app-dumper",
         .tile_title_id = "APDU00001",
         .default_port  = 8081,   /* 8080 usually belongs to websrv */

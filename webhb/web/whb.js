@@ -12,6 +12,8 @@
  *    shortName     "App Dumper" - what the home-screen tile is called
  *    storage       prefix of this page's localStorage keys
  *    busyText      "A dump is running." - why the payload cannot be shut down
+ *    lockedFrom    "start, stop or delete anything" - what a locked device may
+ *                  not do; "change anything" when left out
  *    afterBusy     "after the dump" - when a new page shows, if not at once
  *    views         { "#settings": "view-settings", ... } - the pages behind
  *                  the menu, by location.hash
@@ -20,6 +22,7 @@
  *    onOnline()    the payload answers again: load everything anew
  *    onStatus(d, wasBusy)  the rest of /api/status, once a second
  *    onConfig(c)   the settings changed behind the app's back
+ *    onLog(el, line)  a line is about to go into the live console
  *
  *  Elements every page must have, by id: toast, conn, conntext, offline,
  *  offline-msg, offline-spin, offline-start, lockchip, unlock, ul-code,
@@ -118,6 +121,7 @@ function appendLog(lines){
     else if(low.indexOf("complete") >= 0 || low.indexOf("success") >= 0) d.className = "g";
     else if(low.indexOf("warn") >= 0 || low.indexOf("not found") >= 0) d.className = "a";
     d.textContent = l;
+    if(whb.app.onLog) whb.app.onLog(d, l);
     box.appendChild(d);
   });
 
@@ -353,7 +357,7 @@ function showAccess(){
     $("c-require").checked = !!a.required;
     $("c-require").disabled = !a.local;
     $("require-hint").textContent = a.local
-      ? "Phones and PCs may look, but have to enter the code from the TV before they can start, stop or delete anything."
+      ? "Phones and PCs may look, but have to enter the code from the TV before they can " + (whb.app.lockedFrom || "change anything") + "."
       : "Can only be changed in the console's own browser. " + (a.required
           ? "Devices like this one enter the code from the TV once."
           : "Right now every device on the network may change things.");
@@ -415,10 +419,10 @@ function showStoreState(stored){
   b.textContent = stored === "same" ? "Saved" : stored === "other" ? "Update" : stored === "unknown" ? "Save again" : "Save";
   $("store-hint").textContent = !self ? "…"
     : !can ? "This copy was started from a stored file, so it is in a payload manager already."
-    : stored === "same"  ? "Payload Manager holds exactly this build as " + self.file + ". The home-screen shortcut can start it when the payload is not running."
+    : stored === "same"  ? "Payload Manager holds exactly this build as " + self.file + "." + ($("c-tile") ? " The home-screen shortcut can start it when the payload is not running." : "")
     : stored === "other" ? "Payload Manager holds a different build of v" + self.version + ". Update it to keep what is running now."
     : stored === "unknown" ? self.file + " is in Payload Manager; whether it is this build could not be told."
-    : "Stores this payload as " + self.file + " in pldmgr, so it can be started from there - and from the home-screen shortcut.";
+    : "Stores this payload as " + self.file + " in pldmgr, so it can be started from there" + ($("c-tile") ? " - and from the home-screen shortcut." : ".");
 }
 
 /* pldmgr says whether it has a file of this name; whether that file is this

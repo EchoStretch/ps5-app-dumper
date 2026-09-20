@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en" manifest="/cache.appcache">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#07090d">
+<title>Klog Viewer</title>
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="/icon.png">
+<link rel="manifest" href="/app.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Klog">
+<script>
+/* Flexbox `gap` cannot be asked for with @supports (grid has it too), so it
+   is measured: two empty children in a column are as tall as the gap. */
+(function(){
+  var f = document.createElement("div");
+  f.style.cssText = "display:flex;flex-direction:column;row-gap:1px;position:absolute;visibility:hidden";
+  f.appendChild(document.createElement("div"));
+  f.appendChild(document.createElement("div"));
+  document.documentElement.appendChild(f);
+  if(f.scrollHeight !== 1) document.documentElement.className += " no-flexgap";
+  document.documentElement.removeChild(f);
+})();
+</script>
+<style>
+/* @WHB_CSS@ */
+
+/* ---- what is the viewer's own: a console that gets the room ---- */
+body{padding-bottom:24px}
+#logbox{height:62vh;min-height:300px;font-size:12px}
+#logbox div.hide{display:none}
+#logbox div.mark{color:var(--accent);border-top:1px solid var(--line-soft);margin-top:4px;padding-top:5px}
+.tools{display:flex;align-items:center;gap:8px;padding:10px 13px;border-top:1px solid var(--line-soft)}
+.tools input[type=text]{flex:1;max-width:none;min-width:0}
+.tools .count{font-family:var(--mono);font-size:11px;color:var(--ink-faint);white-space:nowrap}
+.no-flexgap .tools > * + *{margin-left:8px}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <div class="mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#2f9dff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 7h9"/><path d="M5 12h14"/><path d="M5 17h6"/>
+        </svg>
+      </div>
+      <div>
+        <h1>Klog <span>Viewer</span></h1>
+        <div class="sub" id="sub">Web console</div>
+      </div>
+      <div class="link">
+        <button type="button" class="live lock" id="lockchip" hidden title="This device may look, but not change anything yet">Locked</button>
+        <span class="live on" id="conn"><i class="dot"></i><span id="conntext">Connected</span></span>
+        <button type="button" class="live menu" id="menubtn" aria-label="Menu" aria-expanded="false"><i class="bars" aria-hidden="true"><b></b><b></b><b></b></i><span>Menu</span></button>
+        <div class="menu-pop" id="menupop" hidden>
+          <button type="button" data-go="">Log</button>
+          <button type="button" data-go="#settings">Settings</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="banner offline" id="offline" hidden>
+    <span class="spin" id="offline-spin" hidden></span>
+    <span class="offline-txt">
+      <b>Klog Viewer is not running.</b>
+      <span id="offline-msg">This page comes from the browser's cache. Start the payload the way you usually do - it connects by itself.</span>
+    </span>
+    <button type="button" class="mini" id="offline-start" hidden>Start it</button>
+  </div>
+
+  <main>
+    <section class="card">
+      <div class="head"><h2>Kernel log</h2><span class="spacer"></span>
+        <button class="ghost act" id="clearlog" style="padding:5px 11px;font-size:11px;letter-spacing:.1em">Clear</button>
+      </div>
+      <div id="logbox"><div class="empty">waiting for the kernel to say something…</div></div>
+      <div class="tools">
+        <input type="text" id="k-filter" placeholder="show only lines containing…" spellcheck="false" autocomplete="off">
+        <span class="count" id="k-count"></span>
+        <button type="button" class="mini" id="k-mark" title="Puts a line of your own into the log, to find this moment again">Mark</button>
+      </div>
+    </section>
+  </main>
+
+  <div class="page" id="view-settings" hidden>
+    <div class="pagehead">
+      <button type="button" class="mini" data-back="1">&larr; Back</button>
+      <h2>Settings</h2>
+    </div>
+
+    <section class="card">
+      <div class="head"><h2>Payload</h2></div>
+      <div class="body">
+        <div class="row">
+          <div class="txt">
+            <div class="label">Write the log to a file</div>
+            <div class="hint">Every line also goes to logs/klog.txt in the payload's data folder.</div>
+          </div>
+          <label class="sw"><input type="checkbox" id="c-save"><span></span></label>
+        </div>
+        <div class="row" id="row-store">
+          <div class="txt">
+            <div class="label">Keep this version in Payload Manager</div>
+            <div class="hint" id="store-hint">Stores this payload in pldmgr, so it can be started from there.</div>
+          </div>
+          <button type="button" class="mini" id="c-store">Save</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="head"><h2>Access</h2></div>
+      <div class="body">
+        <div class="row">
+          <div class="txt">
+            <div class="label">Ask other devices for a code</div>
+            <div class="hint" id="require-hint">Phones and PCs may look, but have to enter the code from the TV before they can change anything.</div>
+          </div>
+          <label class="sw"><input type="checkbox" id="c-require" disabled><span></span></label>
+        </div>
+        <div class="row" id="row-access" hidden>
+          <div class="txt">
+            <div class="label">Code for other devices</div>
+            <div class="hint">Phones and PCs enter it once before they may change anything. The console's own browser never has to.</div>
+          </div>
+          <span id="access-code" style="font-family:var(--mono);font-size:18px;letter-spacing:.18em;color:var(--accent)"></span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <footer>KLOG VIEWER &middot; a webhb example &middot; GPL-3.0 &middot;
+    <button type="button" id="quit" class="linkish">shut down payload</button>
+    <div style="margin-top:6px;opacity:.75"><span id="ver"></span>page build <span id="build">@BUILD@</span> &middot; cache: <span id="cachestate">–</span></div>
+  </footer>
+</div>
+
+<div class="picker" id="unlock" hidden>
+  <div class="picker-box" role="dialog" aria-modal="true" aria-label="Enter the code from the TV" style="max-width:400px">
+    <div class="picker-head">
+      <span>Code from the TV</span>
+      <span class="spacer"></span>
+      <button type="button" class="ghost act" id="ul-close" style="padding:5px 11px;font-size:11px;letter-spacing:.1em">Close</button>
+    </div>
+    <div class="picker-path" style="white-space:normal;line-height:1.5">Looking is free. To change something from this device, enter the six-digit code the console showed when the payload started.</div>
+    <div class="picker-new">
+      <input type="text" id="ul-code" placeholder="000000" maxlength="6" inputmode="numeric" pattern="[0-9]*" spellcheck="false" autocomplete="one-time-code">
+      <button type="button" class="mini" id="ul-go">Unlock</button>
+    </div>
+    <div class="picker-foot">
+      <span class="picker-dest" id="ul-msg"></span>
+      <span class="spacer"></span>
+      <button type="button" class="act ghost" id="ul-show">Show the code on the TV</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* @WHB_JS@ */
+
+/* ---------------- the viewer's own ---------------- */
+var shown = 0, total = 0;
+
+function matches(line){
+  var f = $("k-filter").value.toLowerCase();
+  return !f || line.toLowerCase().indexOf(f) >= 0;
+}
+function count(){
+  $("k-count").textContent = $("k-filter").value ? shown + " of " + total : total + " lines";
+}
+/* every line the kit puts into the console passes through here */
+function onLog(el, line){
+  total++;
+  if(line.indexOf("========") === 0) el.className = "mark";
+  if(matches(line)) shown++; else el.className += " hide";
+  count();
+}
+function refilter(){
+  shown = total = 0;
+  Array.prototype.forEach.call($("logbox").children, function(el){
+    if(el.classList.contains("empty")) return;
+    total++;
+    var ok = matches(el.textContent);
+    el.classList.toggle("hide", !ok);
+    if(ok) shown++;
+  });
+  count();
+}
+
+function applyConfig(c){ $("c-save").checked = !!c.saveToFile; }
+function loadConfig(){ api("/api/config").then(applyConfig).catch(function(){}); }
+
+$("k-filter").addEventListener("input", refilter);
+$("clearlog").addEventListener("click", function(){ shown = total = 0; count(); });
+$("k-mark").addEventListener("click", function(){
+  post("/api/klog/mark", { text: $("k-filter").value || "mark" }).catch(function(e){ toast(e.message, "bad"); });
+});
+$("c-save").addEventListener("change", function(){
+  post("/api/config", { saveToFile: $("c-save").checked ? 1 : 0 }).then(function(r){
+    applyConfig(r.config);
+    toast(r.config.saveToFile ? "Writing to logs/klog.txt" : "No longer writing to a file", "ok");
+  }).catch(function(e){ toast(e.message, "bad"); loadConfig(); });
+});
+
+whb.app = {
+  elf: "klogview", shortName: "Klog", storage: "klogview",
+  busyText: "", afterBusy: "",
+  views: { "#settings": "view-settings" }, settingsView: "view-settings",
+  onLog: onLog,
+  onOnline: loadConfig,
+  onConfig: applyConfig
+};
+whbBoot();
+
+loadConfig();
+whbPoll();
+setInterval(whbPoll, 1000);
+})();
+</script>
+</body>
+</html>

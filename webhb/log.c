@@ -92,7 +92,8 @@ void log_ring_walk(unsigned since, log_line_cb cb, void *ctx)
    back here when it is over. */
 void log_use_general(void)
 {
-    if (get_app_data_path()[0]) snprintf(g_log_path, sizeof(g_log_path), "%s/logs/dumper.log", get_app_data_path());
+    if (get_app_data_path()[0]) snprintf(g_log_path, sizeof(g_log_path), "%s/logs/%s.log", get_app_data_path(),
+                                            whb_app()->log_basename ? whb_app()->log_basename : whb_app()->data_dirname);
 }
 
 void log_use_dump(const char *title_id)

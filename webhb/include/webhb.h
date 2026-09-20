@@ -37,6 +37,7 @@ typedef struct {
        name ends in ".elf"; the kernel keeps 19 characters of it. */
     const char *process_name;    /* "ps5-app-dumper.elf"                            */
     const char *data_dirname;    /* "ps5-app-dumper" -> <drive>/ps5-app-dumper      */
+    const char *log_basename;    /* "dumper" -> logs/dumper.log; NULL: data_dirname */
     /* Payload managers show no version of their own for an uploaded file -
        pldmgr reads it out of the file name ("_v1.12"), so the stored name is
        <elf_basename>_v<version>.elf. */
