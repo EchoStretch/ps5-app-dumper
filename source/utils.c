@@ -111,97 +111,224 @@ void request_abort(void) { g_abort_requested = 1; }
 void clear_abort(void)   { g_abort_requested = 0; }
 int  abort_requested(void) { return g_abort_requested; }
 
-/* Moves a file that older versions kept in <drive>/homebrew into our own
+/* ------------------------------------------------------------------ */
+/*  Where our own files live                                           */
+/* ------------------------------------------------------------------ */
+
+/* <root>/homebrew/<data_dirname>, the usual place for a homebrew's files, on
+   a USB drive or on the console itself. A drive wins when it carries a
+   config.ini: that one travels with the stick and can be edited on a PC.
+   Without such a drive the console's own storage is used, so settings, the
+   access code and logs no longer depend on something being plugged in. */
+#ifndef INTERNAL_ROOT          /* the host harness points this at a scratch folder */
+#define INTERNAL_ROOT "/data"
+#endif
+
+static const char *const g_usb_mounts[] = {
+    "/mnt/usb0", "/mnt/usb1", "/mnt/usb2", "/mnt/usb3",
+    "/mnt/usb4", "/mnt/usb5", "/mnt/usb6", "/mnt/usb7"
+};
+#define USB_MOUNTS ((int)(sizeof(g_usb_mounts) / sizeof(g_usb_mounts[0])))
+
+static int file_exists_config_here(void);
+static int g_data_on_usb = -1;   /* index into g_usb_mounts, -1: not on a drive */
+
+const char *storage_internal_root(void) { return INTERNAL_ROOT; }
+
+static void data_dir_of(const char *root, char *out, size_t out_size)
+{
+    snprintf(out, out_size, "%s/homebrew/%s", root, whb_app()->data_dirname);
+}
+
+static int can_write_in(const char *dir)
+{
+    char probe[256];
+    snprintf(probe, sizeof(probe), "%s/.probe", dir);
+
+    int fd = open(probe, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd == -1) return 0;
+    int ok = (write(fd, "PROBE", 5) == 5);
+    close(fd);
+    unlink(probe);
+    return ok;
+}
+
+/* Moves a file an older version kept elsewhere on the same drive into our
    folder. A rename within one drive; on failure the old file simply stays
-   where it is and defaults take over. */
-static void adopt_legacy_file(const char *legacy_dir, const char *name)
+   where it is. */
+static void adopt_legacy(const char *legacy_dir, const char *name, const char *appdir)
 {
     char from[256], to[256];
     snprintf(from, sizeof(from), "%s/%s", legacy_dir, name);
-    snprintf(to,   sizeof(to),   "%s/%s", g_app_data, name);
+    snprintf(to,   sizeof(to),   "%s/%s", appdir, name);
 
-    if (file_exists(to) || !file_exists(from)) return;
+    struct stat st;
+    if (stat(to, &st) == 0 || stat(from, &st) != 0) return;
     if (rename(from, to) == 0)
-        write_log(g_log_path, "Moved %s into %s", from, g_app_data);
+        write_log(g_log_path, "Moved %s into %s", from, appdir);
 }
 
-int find_usb_and_setup(void) {
-    const char *possible_mounts[] = {
-        "/mnt/usb0", "/mnt/usb1", "/mnt/usb2", "/mnt/usb3",
-        "/mnt/usb4", "/mnt/usb5", "/mnt/usb6", "/mnt/usb7"
-    };
-    const int num_mounts = sizeof(possible_mounts) / sizeof(possible_mounts[0]);
+/* Two older layouts: everything in <drive>/homebrew (up to v1.11), then a
+   folder of our own at the top of the drive. */
+static void adopt_older_layouts(const char *root, const char *appdir)
+{
+    char top[128], homebrew[128];
+    snprintf(top,      sizeof(top),      "%s/%s", root, whb_app()->data_dirname);
+    snprintf(homebrew, sizeof(homebrew), "%s/homebrew", root);
 
-    for (int i = 0; i < num_mounts; ++i) {
-        const char *root = possible_mounts[i];
-        char homebrew[128], appdir[128], testfile[256], config[256], legacy[256];
+    /* only a drive that has something to move gets our folder */
+    char probe[256];
+    int found = 0;
+    const char *places[] = { top, homebrew };
+    for (int k = 0; k < 2 && !found; k++) {
+        snprintf(probe, sizeof(probe), "%s/config.ini", places[k]);
+        if (file_exists(probe)) found = 1;
+        snprintf(probe, sizeof(probe), "%s/disc_titles.txt", places[k]);
+        if (file_exists(probe)) found = 1;
+    }
+    if (!found) return;
+    mkdirs(appdir);
 
-        snprintf(homebrew, sizeof(homebrew), "%s/homebrew", root);
-        snprintf(appdir,   sizeof(appdir),   "%s/%s", root, whb_app()->data_dirname);
-        snprintf(testfile, sizeof(testfile), "%s/.probe_usb", appdir);
-        snprintf(config,   sizeof(config),   "%s/config.ini", appdir);
-        snprintf(legacy,   sizeof(legacy),   "%s/config.ini", homebrew);
+    adopt_legacy(top, "config.ini", appdir);
+    adopt_legacy(top, "disc_titles.txt", appdir);
+    adopt_legacy(top, "logs", appdir);
+    rmdir(top);   /* goes only when nothing else was in it */
 
-        g_enable_logging = read_logging_config();
+    adopt_legacy(homebrew, "config.ini", appdir);
+    adopt_legacy(homebrew, "disc_titles.txt", appdir);
+}
 
+static void use_data_dir(const char *appdir, int usb_index, int writable)
+{
+    snprintf(g_app_data, sizeof(g_app_data), "%s", appdir);
+    g_data_on_usb = usb_index;
+
+    if (!writable) { g_log_path[0] = '\0'; return; }   /* nowhere to write a log to */
+
+    char logs[192];
+    snprintf(logs, sizeof(logs), "%s/logs", appdir);
+    mkdirs(logs);
+    log_use_general();
+}
+
+/* Which USB drive brings settings of its own, -1 for none. ro_dir gets the
+   folder to read them from when the drive cannot be written to. */
+static int usb_with_config(char *appdir, size_t appdir_size, int *writable)
+{
+    for (int i = 0; i < USB_MOUNTS; i++) {
+        const char *root = g_usb_mounts[i];
         if (!dir_exists(root)) continue;
 
-        /* Our own folder holds the settings, the disc list and the logs.
-           "homebrew" is shared by many tools; it stays the default place
-           for dumps, but nothing is created there until a dump needs it. */
-        mkdirs(appdir);
+        char dir[128], config[256];
+        data_dir_of(root, dir, sizeof(dir));
+        adopt_older_layouts(root, dir);
 
-        int fd = open(testfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-        if (fd != -1) {
-            if (write(fd, "PROBE", 5) == 5) {
-                close(fd);
-                unlink(testfile);
-
-                strncpy(g_usb_homebrew, homebrew, sizeof(g_usb_homebrew) - 1);
-                g_usb_homebrew[sizeof(g_usb_homebrew) - 1] = '\0';
-                strncpy(g_app_data, appdir, sizeof(g_app_data) - 1);
-                g_app_data[sizeof(g_app_data) - 1] = '\0';
-
-                char logs[192];
-                snprintf(logs, sizeof(logs), "%s/logs", appdir);
-                mkdirs(logs);
-                log_use_general();
-
-                adopt_legacy_file(homebrew, "config.ini");
-                adopt_legacy_file(homebrew, "disc_titles.txt");
-
-                if (!file_exists(config)) {
-                    dumper_config_t defaults;
-                    config_defaults(&defaults);
-                    config_save(&defaults);
-                }
-
-                if (g_enable_logging && g_log_path[0]) {
-                    write_log(g_log_path,
-                              "USB detected (writable) at %s – %s",
-                              root, detect_fs_type(root));
-                }
-
-                return i;
-            }
-            close(fd);
-            unlink(testfile);
+        snprintf(config, sizeof(config), "%s/config.ini", dir);
+        if (file_exists(config)) {
+            snprintf(appdir, appdir_size, "%s", dir);
+            *writable = 1;   /* as far as known; checked when it is taken up */
+            return i;
         }
 
-        /* a drive we cannot write to can still hand us its settings */
-        const char *ro_dir = file_exists(config) ? appdir : file_exists(legacy) ? homebrew : NULL;
-        if (ro_dir) {
-            printf_notification("USB (read-only fallback): %s", root);
-            strncpy(g_usb_homebrew, homebrew, sizeof(g_usb_homebrew) - 1);
-            g_usb_homebrew[sizeof(g_usb_homebrew) - 1] = '\0';
-            strncpy(g_app_data, ro_dir, sizeof(g_app_data) - 1);
-            g_app_data[sizeof(g_app_data) - 1] = '\0';
-            g_log_path[0] = '\0';   /* nowhere to write a log to */
-
+        /* a drive we cannot write to can still hand us its settings, from
+           wherever an older version left them */
+        const char *old[2]; char top[128], homebrew[128];
+        snprintf(top,      sizeof(top),      "%s/%s", root, whb_app()->data_dirname);
+        snprintf(homebrew, sizeof(homebrew), "%s/homebrew", root);
+        old[0] = top; old[1] = homebrew;
+        for (int k = 0; k < 2; k++) {
+            snprintf(config, sizeof(config), "%s/config.ini", old[k]);
+            if (!file_exists(config)) continue;
+            snprintf(appdir, appdir_size, "%s", old[k]);
+            *writable = 0;
             return i;
         }
     }
+    return -1;
+}
 
+/* Decides where our files live right now. Returns 1 when that is somewhere
+   else than before - the settings then want reading again. */
+int storage_refresh(void)
+{
+    char before[sizeof(g_app_data)];
+    snprintf(before, sizeof(before), "%s", g_app_data);
+
+    /* the first drive found stays the home of headless dumps */
+    g_usb_homebrew[0] = '\0';
+    for (int i = 0; i < USB_MOUNTS && !g_usb_homebrew[0]; i++)
+        if (dir_exists(g_usb_mounts[i]))
+            snprintf(g_usb_homebrew, sizeof(g_usb_homebrew), "%s/homebrew", g_usb_mounts[i]);
+
+    char appdir[128];
+    int writable = 0;
+    int usb = usb_with_config(appdir, sizeof(appdir), &writable);
+
+    if (usb >= 0) {
+        if (strcmp(appdir, before) != 0) {
+            if (writable) writable = can_write_in(appdir);
+            use_data_dir(appdir, usb, writable);
+            if (!writable) printf_notification("USB (read-only fallback): %s", g_usb_mounts[usb]);
+            write_log(g_log_path, "Settings and logs: %s (the drive's own config.ini wins)", appdir);
+        }
+        return strcmp(g_app_data, before) != 0;
+    }
+
+    /* no drive with settings: the console itself */
+    data_dir_of(INTERNAL_ROOT, appdir, sizeof(appdir));
+    if (strcmp(appdir, before) == 0) return 0;   /* polled: no probe writes */
+    mkdirs(appdir);
+    if (can_write_in(appdir)) {
+        if (strcmp(appdir, before) != 0) {
+            use_data_dir(appdir, -1, 1);
+            write_log(g_log_path, "Settings and logs: %s", appdir);
+        }
+        return strcmp(g_app_data, before) != 0;
+    }
+
+    /* no usable internal storage either: the first drive we can write to */
+    for (int i = 0; i < USB_MOUNTS; i++) {
+        if (!dir_exists(g_usb_mounts[i])) continue;
+        data_dir_of(g_usb_mounts[i], appdir, sizeof(appdir));
+        mkdirs(appdir);
+        if (!can_write_in(appdir)) continue;
+        if (strcmp(appdir, before) != 0) use_data_dir(appdir, i, 1);
+        return strcmp(g_app_data, before) != 0;
+    }
+
+    g_app_data[0] = '\0';
+    g_data_on_usb = -1;
+    return before[0] != '\0';
+}
+
+static int file_exists_config_here(void)
+{
+    char path[256];
+    if (!g_app_data[0]) return 1;   /* nowhere to create one */
+    snprintf(path, sizeof(path), "%s/config.ini", g_app_data);
+    return file_exists(path);
+}
+
+int storage_is_internal(void)
+{
+    return g_app_data[0] && g_data_on_usb < 0;
+}
+
+/* Kept for the headless mode, which dumps to <drive>/homebrew and so needs a
+   drive: the index of the first USB drive, -1 while there is none. */
+int find_usb_and_setup(void)
+{
+    g_enable_logging = read_logging_config();
+    storage_refresh();
+
+    if (!file_exists_config_here()) {
+        dumper_config_t defaults;
+        config_defaults(&defaults);
+        config_save(&defaults);
+    }
+
+    for (int i = 0; i < USB_MOUNTS; i++)
+        if (dir_exists(g_usb_mounts[i])) return i;
     return -1;
 }
 
@@ -403,7 +530,10 @@ void config_defaults(dumper_config_t *cfg)
     cfg->enable_webui       = 1;
     cfg->web_port           = whb_app()->default_port;
     cfg->auto_start         = 0;
-    strncpy(cfg->dump_subdir, "homebrew", sizeof(cfg->dump_subdir) - 1);
+    /* a folder of their own, next to our settings - "homebrew" itself is
+       shared by many tools */
+    snprintf(cfg->dump_subdir, sizeof(cfg->dump_subdir), "homebrew/%s/dumps", whb_app()->data_dirname);
+    snprintf(cfg->dump_subdir_console, sizeof(cfg->dump_subdir_console), "homebrew/%s/dumps", whb_app()->data_dirname);
     cfg->queue_delay        = 30;
     cfg->require_code       = 1;
     cfg->access_code[0]     = '\0';
@@ -484,6 +614,8 @@ void config_load(dumper_config_t *cfg)
         else if (!strcmp(key, "require_code"))       cfg->require_code       = atoi(val) ? 1 : 0;
         else if (!strcmp(key, "access_code"))        snprintf(cfg->access_code, sizeof(cfg->access_code), "%s", val);
         else if (!strcmp(key, "access_token"))       snprintf(cfg->access_token, sizeof(cfg->access_token), "%s", val);
+        else if (!strcmp(key, "dump_subdir_console"))
+            snprintf(cfg->dump_subdir_console, sizeof(cfg->dump_subdir_console), "%s", val);
         else if (!strcmp(key, "dump_subdir")) {
             strncpy(cfg->dump_subdir, val, sizeof(cfg->dump_subdir) - 1);
             cfg->dump_subdir[sizeof(cfg->dump_subdir) - 1] = '\0';
@@ -492,13 +624,31 @@ void config_load(dumper_config_t *cfg)
     fclose(f);
 }
 
+static int config_write(const dumper_config_t *cfg, const char *path);
+
 int config_save(const dumper_config_t *cfg)
 {
     if (!cfg) return -1;
 
     char path[512];
     if (config_path(path, sizeof(path)) != 0) return -1;
+    return config_write(cfg, path);
+}
 
+int config_save_internal(const dumper_config_t *cfg, char *path, size_t path_size)
+{
+    if (!cfg) return -1;
+
+    char dir[160], file[200];
+    data_dir_of(INTERNAL_ROOT, dir, sizeof(dir));
+    mkdirs(dir);
+    snprintf(file, sizeof(file), "%s/config.ini", dir);
+    if (path && path_size) snprintf(path, path_size, "%s", file);
+    return config_write(cfg, file);
+}
+
+static int config_write(const dumper_config_t *cfg, const char *path)
+{
     FILE *f = fopen(path, "w");
     if (!f) return -1;
 
@@ -526,8 +676,10 @@ int config_save(const dumper_config_t *cfg)
         "access_token = %s\n"
         "\n"
         "; === Destination ===\n"
-        "; dump_subdir -> folder below the mount point that receives the dump\n"
+        "; dump_subdir         -> folder below a drive's mount point that receives the dump\n"
+        "; dump_subdir_console -> the same below /data, when dumping to the console itself\n"
         "dump_subdir = %s\n"
+        "dump_subdir_console = %s\n"
         "\n"
         "; === Dump Queue ===\n"
         "; queue_delay -> seconds a queued title gets to load before it is dumped (5-600)\n"
@@ -567,6 +719,7 @@ int config_save(const dumper_config_t *cfg)
         cfg->enable_webui, cfg->auto_start, cfg->web_port,
         cfg->require_code, cfg->access_code, cfg->access_token,
         cfg->dump_subdir[0] ? cfg->dump_subdir : "homebrew",
+        cfg->dump_subdir_console[0] ? cfg->dump_subdir_console : "homebrew",
         cfg->queue_delay,
         cfg->enable_decrypter,
         cfg->enable_backport, cfg->ps4_backport_level, cfg->ps5_backport_level,

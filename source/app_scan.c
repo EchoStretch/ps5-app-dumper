@@ -360,6 +360,25 @@ int target_scan(target_entry_t *out, int max)
         count++;
     }
 
+    /* The console itself, last: never the obvious choice while a drive is
+       there, but a place to dump to when none is. */
+    if (count < max) {
+        const char *root = storage_internal_root();
+        mkdirs(root);
+
+        struct statfs sf;
+        if (dir_exists(root) && statfs(root, &sf) == 0 && !(sf.f_flags & MNT_RDONLY)) {
+            target_entry_t *t = &out[count++];
+            memset(t, 0, sizeof(*t));
+            strncpy(t->mount, root, sizeof(t->mount) - 1);
+            strncpy(t->fs, sf.f_fstypename, sizeof(t->fs) - 1);
+            t->writable    = 1;
+            t->internal    = 1;
+            t->total_bytes = (uint64_t)sf.f_blocks * sf.f_bsize;
+            t->free_bytes  = (uint64_t)sf.f_bavail * sf.f_bsize;
+        }
+    }
+
     return count;
 }
 

@@ -88,6 +88,11 @@ static void finish(job_state_t state, const char *fmt, ...)
 
 /* Space left for the dump. Returns -1 when the drive will not say, which is
    no reason to refuse - the copy reports the real error then. */
+/* what a dump to the console's own storage has to leave free */
+#ifndef INTERNAL_RESERVE       /* the host harness makes this small */
+#define INTERNAL_RESERVE (10ull << 30)
+#endif
+
 static int free_bytes(const char *path, uint64_t *out)
 {
     struct statfs sf;
@@ -144,12 +149,22 @@ static void *worker(void *arg)
     /* Found out now rather than hours in: a dump that runs the drive full
        leaves nothing usable behind. */
     uint64_t avail = 0;
-    if (estimate && free_bytes(req->dest, &avail) == 0 && estimate > avail) {
+    /* The console's storage is shared with its games and the system; it is
+       never filled to the brim. */
+    int on_console = strncmp(req->dest, storage_internal_root(), strlen(storage_internal_root())) == 0;
+    uint64_t reserve = on_console ? INTERNAL_RESERVE : 0;
+
+    if (estimate && free_bytes(req->dest, &avail) == 0 && estimate + reserve > avail) {
         write_log(g_log_path, "Web UI: %s needs %llu MB, %s has %llu MB free",
                   req->app.dir, (unsigned long long)(estimate >> 20),
                   req->dest, (unsigned long long)(avail >> 20));
-        finish(JOB_FAILED, "Not enough space: the dump needs %.1f GB, the drive has %.1f GB free",
-               estimate / 1073741824.0, avail / 1073741824.0);
+        if (on_console)
+            finish(JOB_FAILED, "Not enough space on the console: the dump needs %.1f GB and %d GB have to "
+                               "stay free, but only %.1f GB are left", estimate / 1073741824.0,
+                   (int)(INTERNAL_RESERVE >> 30), avail / 1073741824.0);
+        else
+            finish(JOB_FAILED, "Not enough space: the dump needs %.1f GB, the drive has %.1f GB free",
+                   estimate / 1073741824.0, avail / 1073741824.0);
         info.state = "failed";
         info.finished = time(NULL);
         dump_info_write(req->dest, req->app.is_ps4, req->cfg.split, &info);
@@ -205,8 +220,11 @@ int job_is_active(void)
 
 void job_dest_path(const char *mount, const dumper_config_t *cfg, char *out, size_t out_size)
 {
-    if (cfg->dump_subdir[0]) snprintf(out, out_size, "%s/%s", mount, cfg->dump_subdir);
-    else                     snprintf(out, out_size, "%s", mount);
+    /* each kind of destination remembers a folder of its own */
+    const char *subdir = strcmp(mount, storage_internal_root()) == 0
+                       ? cfg->dump_subdir_console : cfg->dump_subdir;
+    if (subdir[0]) snprintf(out, out_size, "%s/%s", mount, subdir);
+    else           snprintf(out, out_size, "%s", mount);
 }
 
 int job_start(const char *app_dir, const char *mount,

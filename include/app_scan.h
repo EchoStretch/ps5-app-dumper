@@ -42,6 +42,7 @@ typedef struct {
     char     mount[64];   /* "/mnt/usb0"                */
     char     fs[24];      /* "exfatfs", "ufs", ...      */
     int      writable;
+    int      internal;    /* the console's own storage, not a drive */
     uint64_t total_bytes;
     uint64_t free_bytes;
 } target_entry_t;

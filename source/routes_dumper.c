@@ -115,10 +115,10 @@ static void handle_status(int fd, const params_t *q)
 static void handle_devices(int fd, const params_t *p)
 {
     (void)p;
-    /* Pick up a drive that was plugged in after the payload started. Only a
-       drive that actually turned up may touch the settings - rereading them
+    /* Pick up a drive that was plugged in or pulled after the payload
+       started. Only a change of place may touch the settings - rereading them
        on every poll would throw away what the user just changed. */
-    if (!get_app_data_path()[0] && find_usb_and_setup() >= 0) cfg_drive_appeared();
+    if (!dumper_busy() && storage_refresh()) cfg_drive_appeared();
 
     app_entry_t *apps = calloc(APP_SCAN_MAX, sizeof(*apps));
     target_entry_t *targets = calloc(TARGET_SCAN_MAX, sizeof(*targets));
@@ -162,8 +162,8 @@ static void handle_devices(int fd, const params_t *p)
         sb_json_str(&sb, targets[i].mount);
         sb_puts(&sb, ",\"fs\":");
         sb_json_str(&sb, targets[i].fs);
-        sb_printf(&sb, ",\"writable\":%s,\"totalBytes\":%llu,\"freeBytes\":%llu}",
-                  targets[i].writable ? "true" : "false",
+        sb_printf(&sb, ",\"writable\":%s,\"internal\":%s,\"totalBytes\":%llu,\"freeBytes\":%llu}",
+                  targets[i].writable ? "true" : "false", targets[i].internal ? "true" : "false",
                   (unsigned long long)targets[i].total_bytes,
                   (unsigned long long)targets[i].free_bytes);
     }
@@ -207,6 +207,7 @@ static void handle_devices(int fd, const params_t *p)
     sb_puts(&sb, "],\"config\":");
     json_config(&sb, &cfg_now);
 
+    sb_printf(&sb, ",\"configOnConsole\":%s", storage_is_internal() ? "true" : "false");
     sb_puts(&sb, ",\"configPath\":");
     const char *hb = get_app_data_path();
     if (hb && hb[0]) {

@@ -163,10 +163,21 @@ int target_scan(target_entry_t *out, int max)
     out->writable = 1;
     out->total_bytes = 512ull << 30;
     out->free_bytes  = 300ull << 30;
-    return 1;
+    if (max < 2) return 1;
+
+    /* the console's own storage: plenty of room, but not for everything */
+    memset(&out[1], 0, sizeof(out[1]));
+    snprintf(out[1].mount, sizeof(out[1].mount), "%s", storage_internal_root());
+    mkdirs(out[1].mount);
+    strcpy(out[1].fs, "ufs");
+    out[1].writable = 1;
+    out[1].internal = 1;
+    out[1].total_bytes = 825ull << 30;
+    out[1].free_bytes  = 120ull << 30;
+    return 2;
 }
 
-int target_is_known(const char *m) { return (m && !strcmp(m, g_usb)) ? 0 : -1; }
+int target_is_known(const char *m) { return (m && (!strcmp(m, g_usb) || !strcmp(m, storage_internal_root()))) ? 0 : -1; }
 
 /* ------------------------------------------------------------------ */
 /*  app_launch.h                                                       */
@@ -277,6 +288,7 @@ int main(int argc, char **argv)
     setvbuf(stdout, NULL, _IOLBF, 0);
 
     whb_app_set(dumper_app());
+    find_usb_and_setup();   /* no /mnt/usbX here: settings go to the pretend console */
     whb_routes_init();
     routes_settings_init();
     routes_dumper_init();

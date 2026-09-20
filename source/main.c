@@ -113,12 +113,16 @@ static void *auto_dump_thread(void *arg)
     } else if (app_scan(apps, APP_SCAN_MAX) <= 0) {
         problem = "no game is running";
     } else {
-        /* the writable drive with the most room, as the web UI picks it */
+        /* the writable drive with the most room, as the web UI picks it;
+           the console's own storage only when there is no drive at all */
         int count = target_scan(targets, TARGET_SCAN_MAX), best = -1;
-        for (int i = 0; i < count; i++)
-            if (targets[i].writable &&
-                (best < 0 || targets[i].free_bytes > targets[best].free_bytes))
+        for (int i = 0; i < count; i++) {
+            if (!targets[i].writable) continue;
+            if (best < 0 || (targets[best].internal && !targets[i].internal) ||
+                (targets[best].internal == targets[i].internal &&
+                 targets[i].free_bytes > targets[best].free_bytes))
                 best = i;
+        }
 
         if (best < 0)
             problem = "no drive to dump to";

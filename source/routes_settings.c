@@ -76,12 +76,14 @@ void json_config(sb_t *sb, const dumper_config_t *cfg)
         "\"ps4BackportLevel\":%d,\"ps5BackportLevel\":%d,"
         "\"enableElf2fself\":%d,\"enableLogging\":%d,\"split\":%d,"
         "\"enableWebui\":%d,\"webPort\":%d,\"autoStart\":%d,"
-        "\"queueDelay\":%d,\"requireCode\":%d,\"dumpSubdir\":",
+        "\"queueDelay\":%d,\"requireCode\":%d,\"dumpSubdirConsole\":",
         cfg->enable_decrypter, cfg->enable_backport,
         cfg->ps4_backport_level, cfg->ps5_backport_level,
         cfg->enable_elf2fself, cfg->enable_logging, cfg->split,
         cfg->enable_webui, cfg->web_port, cfg->auto_start,
         cfg->queue_delay, cfg->require_code);
+    sb_json_str(sb, cfg->dump_subdir_console);
+    sb_puts(sb, ",\"dumpSubdir\":");
     sb_json_str(sb, cfg->dump_subdir);
     sb_puts(sb, "}");
 }
@@ -128,16 +130,26 @@ static void handle_config_post(int fd, const params_t *p)
         cfg.require_code = param_get_int(p, "requireCode", cfg.require_code) ? 1 : 0;
     }
 
-    const char *subdir = param_get(p, "dumpSubdir", NULL);
-    if (subdir) {
-        /* a destination folder must stay below the mount point */
-        if (strstr(subdir, "..") || subdir[0] == '/') {
+    /* a destination folder must stay below the mount point */
+    const struct { const char *param; char *field; size_t size; } folders[] = {
+        { "dumpSubdir",        cfg.dump_subdir,         sizeof(cfg.dump_subdir) },
+        { "dumpSubdirConsole", cfg.dump_subdir_console, sizeof(cfg.dump_subdir_console) },
+    };
+    for (size_t i = 0; i < sizeof(folders) / sizeof(folders[0]); i++) {
+        const char *given = param_get(p, folders[i].param, NULL);
+        if (!given) continue;
+
+        /* typed by hand: a slash at the end means nothing */
+        char subdir[64];
+        snprintf(subdir, sizeof(subdir), "%s", given);
+        for (size_t n = strlen(subdir); n && subdir[n - 1] == '/'; n--) subdir[n - 1] = '\0';
+
+        if (given[0] == '/' || !fs_path_is_safe(subdir)) {
             pthread_mutex_unlock(&g_cfg_mtx);
             send_error(fd, 400, "invalid destination folder");
             return;
         }
-        strncpy(cfg.dump_subdir, subdir, sizeof(cfg.dump_subdir) - 1);
-        cfg.dump_subdir[sizeof(cfg.dump_subdir) - 1] = '\0';
+        snprintf(folders[i].field, folders[i].size, "%s", subdir);
     }
 
     g_cfg = cfg;
@@ -162,6 +174,30 @@ static void handle_config_post(int fd, const params_t *p)
     send_sb(fd, 200, &sb);
 }
 
+/* Puts a copy of the settings on the console, for the day the drive that
+   carries them is not plugged in. While it is, the drive's own still win. */
+static void handle_config_to_console(int fd, const params_t *p)
+{
+    (void)p;
+    pthread_mutex_lock(&g_cfg_mtx);
+    dumper_config_t cfg = g_cfg;
+    pthread_mutex_unlock(&g_cfg_mtx);
+
+    char path[256] = {0};
+    if (config_save_internal(&cfg, path, sizeof(path)) != 0) {
+        send_error(fd, 500, "could not write the settings to the console");
+        return;
+    }
+    write_log(g_log_path, "Settings copied to %s", path);
+
+    sb_t sb;
+    sb_init(&sb);
+    sb_puts(&sb, "{\"saved\":true,\"path\":");
+    sb_json_str(&sb, path);
+    sb_puts(&sb, "}");
+    send_sb(fd, 200, &sb);
+}
+
 /* Resolves the drive to browse: the caller-named mount if it is one of ours,
    otherwise the drive holding config.ini. Returns NULL when none is usable. */
 static const char *browse_mount(const params_t *p)
@@ -171,10 +207,19 @@ static const char *browse_mount(const params_t *p)
     return NULL;
 }
 
+/* What is on a stick is no secret to the network it is plugged into; what is
+   on the console is only shown to those who may change things anyway. */
+static int may_browse(int fd, const params_t *p, const char *mount)
+{
+    if (strcmp(mount, storage_internal_root()) != 0) return 1;
+    return http_peer_is_local(fd) || whb_access_token_ok(param_get(p, "token", NULL));
+}
+
 static void handle_browse(int fd, const params_t *p)
 {
     const char *mount = browse_mount(p);
     if (!mount) { send_error(fd, 400, "unknown drive"); return; }
+    if (!may_browse(fd, p, mount)) { send_error(fd, 401, "enter the code shown on the TV first"); return; }
 
     const char *rel = param_get(p, "path", "");
     if (!fs_path_is_safe(rel)) { send_error(fd, 400, "invalid path"); return; }
@@ -237,6 +282,7 @@ void routes_settings_init(void)
 
     http_route("GET",  "/api/config",           handle_config_get);
     http_route("POST", "/api/config",           handle_config_post);
+    http_route("POST", "/api/config/console",   handle_config_to_console);
     http_route("GET",  "/api/browse",           handle_browse);
     http_route("POST", "/api/mkdir",            handle_mkdir);
 }

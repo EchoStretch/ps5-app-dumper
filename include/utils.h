@@ -73,10 +73,19 @@ int  read_backport_config(void);
 int  read_split_config(void);          // NEW: 0-3 split mode
 const char* get_usb_homebrew_path(void);   /* <drive>/homebrew - where a headless dump goes */
 
-/* <drive>/<the app's data_dirname>: config.ini, the disc list and logs/.
-   Empty until a drive turned up. Files older versions kept in
-   <drive>/homebrew are moved over the first time. */
+/* <root>/homebrew/<the app's data_dirname>: config.ini, the disc list and
+   logs/. On the USB drive that carries a config.ini, otherwise on the console
+   itself (/data). Files older versions kept elsewhere on a drive are moved
+   over the first time. */
 const char* get_app_data_path(void);
+
+/* Looks again where our files live - a drive may have come or gone. Returns
+   1 when the place changed, and the settings want reading again. */
+int storage_refresh(void);
+/* 1 when settings and logs are on the console rather than on a drive. */
+int storage_is_internal(void);
+/* "/data": the console's own storage, offered as a dump destination too. */
+const char *storage_internal_root(void);
 
 /* Which file write_log() goes to: the general one, or one per dump. */
 void log_use_general(void);
@@ -113,7 +122,8 @@ typedef struct {
     int  enable_webui;         /* 1 -> serve the web UI instead of dumping right away */
     int  web_port;
     int  auto_start;           /* 1 -> legacy behaviour: dump the running app and exit */
-    char dump_subdir[64];      /* folder below the mount point, e.g. "homebrew" */
+    char dump_subdir[64];      /* dump folder below a drive's mount point */
+    char dump_subdir_console[64]; /* the same below /data, the console's own storage */
     int  queue_delay;          /* seconds a queued title gets to load before its dump */
     /* access control of the web UI (webhb/access.c); never served over HTTP
        with the rest of the settings */
@@ -126,6 +136,9 @@ void config_defaults(dumper_config_t *cfg);
 void config_load(dumper_config_t *cfg);
 int  config_save(const dumper_config_t *cfg);
 int  config_path(char *out, size_t out_size);
+/* Writes the settings to the console's storage as well, for the day no drive
+   is plugged in. Returns 0 and the file's path, -1 on failure. */
+int config_save_internal(const dumper_config_t *cfg, char *path, size_t path_size);
 
 /* ------------------------------------------------------------------ */
 /*  Cooperative abort, honoured by the copy routines                   */
