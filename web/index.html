@@ -115,6 +115,7 @@ h1 span{color:var(--accent)}
   color:var(--ink-dim);background:rgba(13,17,23,.7);white-space:nowrap
 }
 .dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex:none}
+.live.lock{cursor:pointer;color:var(--amber,#ffb020);border-color:rgba(255,176,32,.45);-webkit-appearance:none;appearance:none}
 .live.on .dot{animation:pulse 2s ease-in-out infinite}
 .live.off{color:var(--red);border-color:rgba(255,77,94,.35)}
 .live.off .dot{background:var(--red);animation:none}
@@ -664,6 +665,7 @@ footer{
         <div class="sub" id="sub">Web console</div>
       </div>
       <div class="link">
+        <button type="button" class="live lock" id="lockchip" hidden title="This device may look, but not change anything yet">Locked</button>
         <span class="live on" id="conn"><i class="dot"></i><span id="conntext">Connected</span></span>
       </div>
     </div>
@@ -985,14 +987,14 @@ function toast(msg, kind){
 }
 /* Other devices than the console have to show once that they can see the TV:
    the code from there buys a token, and every POST carries it from then on. */
-var TOKEN_KEY = "whb.token";
+var TOKEN_KEY = "whb.token", refusedTap = false;
 function accessToken(){
   try { return localStorage.getItem(TOKEN_KEY) || ""; } catch(e){ return ""; }
 }
 function api(path, opts){
   return fetch(path, opts).then(function(r){
     return r.json().catch(function(){ return {}; }).then(function(body){
-      if(r.status === 401 && path !== "/api/unlock") openUnlock();
+      if(r.status === 401 && path !== "/api/unlock"){ refusedTap = true; openUnlock(); }
       if(!r.ok){
         var err = new Error(body.error || ("HTTP " + r.status));
         err.body = body;
@@ -2573,8 +2575,13 @@ $("c-subdir").addEventListener("input", updateAction);
 $("c-browse").addEventListener("click", openPicker);
 
 /* ---------------- access ---------------- */
+/* A locked device is told so right away, not only when a tap is refused. */
+var unlockOffered = false;
 function showAccess(){
   api("/api/access?token=" + encodeURIComponent(accessToken())).then(function(a){
+    var locked = !!(a.required && !a.unlocked);
+    $("lockchip").hidden = !locked;
+    if(locked && !unlockOffered){ unlockOffered = true; openUnlock(); }
     var row = $("row-access");
     row.hidden = !(a.required && a.unlocked && a.code);
     $("access-code").textContent = a.code || "";
@@ -2599,11 +2606,13 @@ function tryUnlock(){
     try { localStorage.setItem(TOKEN_KEY, r.token); } catch(e){}
     closeUnlock();
     showAccess();
-    toast("Unlocked - do that again, please.", "ok");
+    toast(refusedTap ? "Unlocked - press it again, please." : "Unlocked.", "ok");
+    refusedTap = false;
   }).catch(function(e){
     $("ul-msg").textContent = e.message;
   }).then(function(){ $("ul-go").disabled = false; });
 }
+$("lockchip").addEventListener("click", openUnlock);
 $("ul-go").addEventListener("click", tryUnlock);
 $("ul-code").addEventListener("keydown", function(e){ if(e.key === "Enter" || e.keyCode === 13) tryUnlock(); });
 $("ul-close").addEventListener("click", closeUnlock);
