@@ -21,12 +21,13 @@
  *    onStatus(d, wasBusy)  the rest of /api/status, once a second
  *    onConfig(c)   the settings changed behind the app's back
  *
- *  Elements it expects, by id: toast, logbox, clearlog, conn, conntext,
- *  offline, offline-msg, offline-spin, offline-start, build, cachestate,
- *  menubtn, menupop, lockchip, unlock, ul-code, ul-msg, ul-go, ul-show,
- *  ul-close, c-require, require-hint, row-access, access-code, c-cfgcopy,
- *  c-tile, tile-hint, c-store, store-hint, quit, sub, ver - and main,
- *  .actions and [data-back] for the views.
+ *  Elements every page must have, by id: toast, conn, conntext, offline,
+ *  offline-msg, offline-spin, offline-start, lockchip, unlock, ul-code,
+ *  ul-msg, ul-go, ul-show, ul-close - and a <main>. The rest is served when
+ *  it is there: logbox + clearlog (live console), menubtn + menupop +
+ *  [data-back] (views), c-require + require-hint + row-access + access-code
+ *  (access settings), c-cfgcopy, c-tile + tile-hint, c-store + store-hint,
+ *  quit, sub, ver, build, cachestate, .actions.
  * ------------------------------------------------------------------ */
 var whb = {
   app: { elf: "payload", shortName: "Homebrew", storage: "whb", busyText: "The payload is busy.",
@@ -37,6 +38,10 @@ var whb = {
 };
 
 var $ = function(id){ return document.getElementById(id); };
+/* A page need not have every row the kit can serve - no tile, no place in a
+   payload manager, no menu. What is not there is left alone. */
+function on(id, type, fn){ var e = $(id); if(e) e.addEventListener(type, fn); }
+function put(id, text){ var e = $(id); if(e) e.textContent = text; }
 
 /* ---------------- helpers ---------------- */
 function bytes(n){
@@ -100,6 +105,7 @@ function post(path, data){
 function appendLog(lines){
   if(!lines || !lines.length) return;
   var box = $("logbox");
+  if(!box) return;
   var empty = box.querySelector(".empty");
   if(empty) box.removeChild(empty);
 
@@ -263,6 +269,7 @@ function cacheLog(msg){
 
 function showCacheState(){
   var ac = window.applicationCache;
+  if(!$("cachestate")) return;
   $("cachestate").textContent = ac ? (CACHE_STATES[ac.status] || ac.status) : "not supported";
 }
 
@@ -321,13 +328,14 @@ function showView(){
   var page = VIEWS[location.hash] || null;
   for(var h in VIEWS) if(VIEWS.hasOwnProperty(h)) $(VIEWS[h]).hidden = VIEWS[h] !== page;
   document.querySelector("main").hidden = !!page;
-  document.querySelector(".actions").hidden = !!page;
+  if(document.querySelector(".actions")) document.querySelector(".actions").hidden = !!page;
   closeMenu();
   if(page === whb.app.settingsView) showAccess();
   if(whb.app.onView) whb.app.onView(page);
   if(page) window.scrollTo(0, 0);
 }
 function closeMenu(){
+  if(!$("menupop")) return;
   $("menupop").hidden = true;
   $("menubtn").setAttribute("aria-expanded", "false");
 }
@@ -341,6 +349,7 @@ function showAccess(){
     $("lockchip").hidden = !locked;
     if(locked && !unlockOffered){ unlockOffered = true; openUnlock(); }
     /* whether others need a code is for the console's own browser to decide */
+    if(!$("c-require")) return;
     $("c-require").checked = !!a.required;
     $("c-require").disabled = !a.local;
     $("require-hint").textContent = a.local
@@ -382,6 +391,7 @@ function tryUnlock(){
 /* The tile only opens this page in the console browser; the payload still
    has to be running. Asked for once, never polled. */
 function showTileState(installed, current){
+  if(!$("c-tile")) return;
   var outdated = installed && !current;
   $("c-tile").textContent = outdated ? "Update" : installed ? "Reinstall" : "Install";
   $("c-tile").classList.toggle("warn", outdated);
@@ -398,6 +408,7 @@ var self = null;
    "same" is this very build, "other" a different build under the same
    version - during development the number stays while the code moves. */
 function showStoreState(stored){
+  if(!$("c-store")) return;
   var can = !!(self && self.canStore), b = $("c-store");
   b.disabled = !can || stored === "same";
   b.classList.toggle("warn", can && stored === "other");
@@ -413,7 +424,7 @@ function showStoreState(stored){
 /* pldmgr says whether it has a file of this name; whether that file is this
    very build the payload finds out itself, reading it off the console's disk */
 function checkStored(){
-  if(!self) return;
+  if(!self || !$("c-store")) return;
   fetch("http://" + location.hostname + ":8084/list_payloads").then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
     var found = ((d && d.payloads) || []).filter(function(p){ return typeof p === "string" && p.split("/").pop() === self.file; })[0];
     if(!found){ showStoreState("none"); return; }
@@ -428,16 +439,16 @@ function checkStored(){
 /* Wires up what the kit owns and asks the first questions. Call once, after
    whb.app is filled in and the app's own functions exist. */
 function whbBoot(){
-  $("offline-start").addEventListener("click", startPayload);
+  on("offline-start", "click", startPayload);
 
-  $("build").textContent = BUILD;
+  put("build", BUILD);
   cacheStart();
 
-  $("clearlog").addEventListener("click", function(){
+  on("clearlog", "click", function(){
     $("logbox").innerHTML = '<div class="empty">console cleared</div>';
   });
 
-  $("menubtn").addEventListener("click", function(e){
+  on("menubtn", "click", function(e){
     e.stopPropagation();
     var open = $("menupop").hidden;
     $("menupop").hidden = !open;
@@ -447,7 +458,7 @@ function whbBoot(){
     });
   });
   document.addEventListener("click", closeMenu);
-  Array.prototype.forEach.call($("menupop").querySelectorAll("button"), function(b){
+  if($("menupop")) Array.prototype.forEach.call($("menupop").querySelectorAll("button"), function(b){
     b.addEventListener("click", function(){ location.hash = b.getAttribute("data-go"); closeMenu(); });
   });
   Array.prototype.forEach.call(document.querySelectorAll("[data-back]"), function(b){
@@ -455,25 +466,25 @@ function whbBoot(){
   });
   window.addEventListener("hashchange", showView);
 
-  $("c-require").addEventListener("change", function(){
+  on("c-require", "change", function(){
     var want = $("c-require").checked ? 1 : 0;
     post("/api/config", {requireCode: want}).then(function(r){
       if(whb.app.onConfig) whb.app.onConfig(r.config);
       toast(want ? "Other devices need the code again." : "Other devices may change things without a code.", want ? "ok" : "bad");
     }).catch(function(e){ toast(e.message, "bad"); }).then(showAccess);
   });
-  $("c-cfgcopy").addEventListener("click", function(){
+  on("c-cfgcopy", "click", function(){
     var b = $("c-cfgcopy");
     b.disabled = true;
     post("/api/config/console").then(function(r){
       toast("Settings copied to " + r.path, "ok");
     }).catch(function(e){ toast(e.message, "bad"); }).then(function(){ b.disabled = false; });
   });
-  $("lockchip").addEventListener("click", openUnlock);
-  $("ul-go").addEventListener("click", tryUnlock);
-  $("ul-code").addEventListener("keydown", function(e){ if(e.key === "Enter" || e.keyCode === 13) tryUnlock(); });
-  $("ul-close").addEventListener("click", closeUnlock);
-  $("ul-show").addEventListener("click", function(){
+  on("lockchip", "click", openUnlock);
+  on("ul-go", "click", tryUnlock);
+  on("ul-code", "keydown", function(e){ if(e.key === "Enter" || e.keyCode === 13) tryUnlock(); });
+  on("ul-close", "click", closeUnlock);
+  on("ul-show", "click", function(){
     post("/api/access/show").then(function(){
       $("ul-msg").textContent = "Look at the TV.";
     }).catch(function(e){ $("ul-msg").textContent = e.message; });
@@ -481,13 +492,13 @@ function whbBoot(){
   showAccess();
   showView();
 
-  api("/api/tile").then(function(r){
+  if($("c-tile")) api("/api/tile").then(function(r){
     showTileState(!!r.installed, !!r.current);
     if(r.installed && !r.current)
       toast("The home-screen tile is out of date - update it under Menu > Settings.", "bad");
   }).catch(function(){});
 
-  $("c-tile").addEventListener("click", function(){
+  on("c-tile", "click", function(){
     var b = $("c-tile");
     b.disabled = true;
     b.textContent = "Installing…";
@@ -500,7 +511,7 @@ function whbBoot(){
     }).then(function(){ b.disabled = false; });
   });
   var quitArm;
-  $("quit").addEventListener("click", function(){
+  on("quit", "click", function(){
     var b = $("quit");
     if(!b.classList.contains("arm")){
       if(whb.busy){ toast(whb.app.busyText, "bad"); return; }
@@ -523,17 +534,17 @@ function whbBoot(){
     });
   });
 
-  $("sub").textContent = "Web console · " + location.host;
+  put("sub", "Web console · " + location.host);
 
   api("/api/self").then(function(r){
     self = r;
-    $("sub").textContent = "Web console · v" + r.version + " · " + location.host;
-    $("ver").textContent = "v" + r.version + " · ";
+    put("sub", "Web console · v" + r.version + " · " + location.host);
+    put("ver", "v" + r.version + " · ");
     showStoreState("none");
     checkStored();
   }).catch(function(){});
 
-  $("c-store").addEventListener("click", function(){
+  on("c-store", "click", function(){
     var b = $("c-store");
     b.disabled = true;
     b.textContent = "Saving…";

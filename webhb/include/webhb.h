@@ -82,7 +82,8 @@ int whb_start(const whb_app_t *app);
 int whb_serve(int port);
 
 /* Registers the routes every app gets: the page and its cache manifest, the
-   icons, the web manifest, /api/self*, /api/tile, /api/quit, the settings
+   icons, the web manifest, /api/status (unless the app brought its own),
+   /api/self*, /api/tile, /api/quit, the settings
    (/api/config*), the folder picker (/api/browse, /api/mkdir) and the access
    check. Call after whb_config_init() and before http_server_run(). */
 void whb_routes_init(void);

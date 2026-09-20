@@ -262,6 +262,20 @@ static void handle_mkdir(int fd, const params_t *p)
     send_sb(fd, 200, &sb);
 }
 
+/* What the page's poll needs and every app can give: the live console's feed
+   and whether work is going on. An app with more to tell registers its own
+   /api/status before whb_serve() - the first route registered for a path is
+   the one that answers - and keeps "log" and "busy" in it. */
+static void handle_status(int fd, const params_t *p)
+{
+    sb_t sb;
+    sb_init(&sb);
+    sb_puts(&sb, "{\"log\":");
+    json_log(&sb, (unsigned)param_get_int(p, "since", 0));
+    sb_printf(&sb, ",\"busy\":%s}", whb_busy() ? "true" : "false");
+    send_sb(fd, 200, &sb);
+}
+
 static void on_listening(int port)
 {
     /* Said, not done: installing goes through the app-install service, and
@@ -284,6 +298,7 @@ void whb_routes_init(void)
     http_route("GET",  "/apple-touch-icon.png", handle_app_icon);
     http_route("GET",  "/apple-touch-icon-precomposed.png", handle_app_icon);
     http_route("GET",  "/app.webmanifest",      handle_web_manifest);
+    http_route("GET",  "/api/status",           handle_status);
     http_route("GET",  "/api/self",             handle_self);
     http_route("GET",  "/api/self/compare",     handle_self_compare);
     http_route("POST", "/api/self/store",       handle_self_store);

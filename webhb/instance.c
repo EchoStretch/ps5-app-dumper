@@ -80,19 +80,24 @@ static int local_request(int port, const char *request, char *out, size_t out_si
 }
 
 /* 1 busy, 0 idle, -1 when the port does not belong to a copy of this
-   payload. A copy is still told by the shape of the dumper's status answer
-   ("job"): copies built before there was a core answer nothing else. That
-   goes once /api/whb/status names the app. */
+   payload. Web homebrews sit on neighbouring ports and answer the same
+   routes, so a copy is told by the file name /api/self gives - it starts
+   with the app's elf_basename - and never by the shape of an answer. */
 static int instance_state(int port)
 {
     /* the status answer carries the log, which can be long */
     char *buf = malloc(32768);
     if (!buf) return -1;
 
-    int state = -1;
-    int n = local_request(port, "GET /api/status HTTP/1.0\r\n\r\n", buf, 32768);
+    char mark[96];
+    snprintf(mark, sizeof(mark), "\"file\":\"%s_v", whb_app()->elf_basename);
 
-    if (n > 0 && strstr(buf, "\"job\":") && strstr(buf, "\"busy\":"))
+    int state = -1;
+    int n = local_request(port, "GET /api/self HTTP/1.0\r\n\r\n", buf, 32768);
+    if (n <= 0 || !strstr(buf, mark)) { free(buf); return -1; }
+
+    n = local_request(port, "GET /api/status HTTP/1.0\r\n\r\n", buf, 32768);
+    if (n > 0 && strstr(buf, "\"busy\":"))
         state = strstr(buf, "\"busy\":true") ? 1 : 0;
 
     free(buf);
