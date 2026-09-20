@@ -1105,42 +1105,23 @@ footer{
 (function(){
 "use strict";
 
+/* @WHB_JS@ */
+
 /* ---------------- state ---------------- */
 var state = {
   apps: [], targets: [], config: null, configPath: null,
   app: null, target: null,
-  logSeq: 0, job: null, busy: false, sizes: {},
+  job: null, sizes: {},
   library: null, launching: null, canLaunch: true,
   queue: [],             /* titles picked in this browser, not started yet */
   queueOpen: null,       /* title id whose settings panel is open */
   queueReplace: false,   /* dump again what is on the drive already */
   presence: {},          /* title id -> "present" | "incomplete" | "absent" */
   squeue: null,          /* the queue the console is working on, or its result */
-  online: true, failures: 0,
   samples: []            /* {t, bytes} for the speed estimate */
 };
 
-var $ = function(id){ return document.getElementById(id); };
-
 /* ---------------- helpers ---------------- */
-function bytes(n){
-  if(!n && n !== 0) return "—";
-  var u = ["B","KB","MB","GB","TB"], i = 0;
-  while(n >= 1024 && i < u.length - 1){ n /= 1024; i++; }
-  return (i >= 3 ? n.toFixed(2) : i >= 2 ? n.toFixed(1) : Math.round(n)) + " " + u[i];
-}
-function clock(sec){
-  if(!isFinite(sec) || sec < 0) return "—";
-  sec = Math.round(sec);
-  var h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
-  var p = function(v){ return v < 10 ? "0"+v : ""+v; };
-  return (h ? h+":" : "") + p(m) + ":" + p(s);
-}
-function esc(s){
-  return String(s).replace(/[&<>"]/g, function(c){
-    return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];
-  });
-}
 /* discIn === false marks a disc game whose disc is not in the drive. */
 function mediaTag(media, discIn){
   if(media === "disc")
@@ -1159,44 +1140,6 @@ function mountTag(from){
 function installing(t){ return typeof t.installed === "number" && t.installed >= 0 && t.installed < 100; }
 function installTag(t){
   return installing(t) ? '<span class="tag inst" title="Only ' + t.installed + ' % of this title is on the console yet - a dump now would be incomplete">INSTALLING ' + t.installed + '%</span>' : "";
-}
-var toastTimer;
-function toast(msg, kind){
-  var t = $("toast");
-  t.textContent = msg;
-  t.className = "toast show" + (kind ? " " + kind : "");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(function(){ t.className = "toast"; }, 3600);
-}
-/* Other devices than the console have to show once that they can see the TV:
-   the code from there buys a token, and every POST carries it from then on. */
-var TOKEN_KEY = "whb.token", refusedTap = false;
-function accessToken(){
-  try { return localStorage.getItem(TOKEN_KEY) || ""; } catch(e){ return ""; }
-}
-function api(path, opts){
-  return fetch(path, opts).then(function(r){
-    return r.json().catch(function(){ return {}; }).then(function(body){
-      if(r.status === 401 && path !== "/api/unlock"){ refusedTap = true; openUnlock(); }
-      if(!r.ok){
-        var err = new Error(body.error || ("HTTP " + r.status));
-        err.body = body;
-        throw err;
-      }
-      return body;
-    });
-  });
-}
-function post(path, data){
-  var body = "", token = accessToken();
-  if(data) for(var k in data) if(data.hasOwnProperty(k))
-    body += (body ? "&" : "") + encodeURIComponent(k) + "=" + encodeURIComponent(data[k]);
-  if(token) body += (body ? "&" : "") + "token=" + encodeURIComponent(token);
-  return api(path, {
-    method: "POST",
-    headers: {"Content-Type": "application/x-www-form-urlencoded"},
-    body: body
-  });
 }
 
 /* ---------------- rendering: apps ---------------- */
@@ -1254,7 +1197,7 @@ function renderApps(){
 
   Array.prototype.forEach.call(box.querySelectorAll(".hero"), function(el){
     var pick = function(){
-      if(state.busy) return;
+      if(whb.busy) return;
       state.app = el.getAttribute("data-dir");
       markPressed(box, "data-dir", state.app);
       fetchSize(state.app);
@@ -1383,7 +1326,7 @@ function titleName(id){
 /* Starting a game closes whatever is running, so the button asks first. */
 var launchArm;
 function launch(button, titleId, force){
-  if(state.busy){ toast("A dump is running.", "bad"); return; }
+  if(whb.busy){ toast("A dump is running.", "bad"); return; }
 
   button.disabled = true;
   post("/api/launch", force ? {title: titleId, force: 1} : {title: titleId}).then(function(){
@@ -1778,7 +1721,7 @@ function queuePhase(item){
 var queueArm;
 function startQueue(){
   var b = $("btn-go");
-  if(!state.queue.length || state.busy) return;
+  if(!state.queue.length || whb.busy) return;
   if(!state.target){ toast("Select a destination drive first.", "bad"); return; }
 
   /* what cannot be taken back is asked for once: a game that is up and not
@@ -1808,7 +1751,7 @@ function startQueue(){
     state.queue = [];
     state.queueOpen = null;
     storeQueue(); markQueued();
-    state.busy = true;
+    whb.busy = true;
     $("logbox").innerHTML = "";
     state.samples = [];
     toast("Queue started: " + ids.length + " titles" +
@@ -1865,7 +1808,7 @@ function renderDrives(){
 
   Array.prototype.forEach.call(box.querySelectorAll(".drive"), function(el){
     el.addEventListener("click", function(){
-      if(state.busy || el.disabled) return;
+      if(whb.busy || el.disabled) return;
       state.target = el.getAttribute("data-mount");
       markPressed(box, "data-mount", state.target);
       markSubdirInUse();
@@ -2114,12 +2057,12 @@ function updateAction(){
   updatePlatformOptions();
 
   ["sec-apps","sec-drives","sec-options"].forEach(function(id){
-    $(id).classList.toggle("locked", state.busy);
+    $(id).classList.toggle("locked", whb.busy);
   });
 
   renderQueue();
 
-  if(state.busy && queueActive()){
+  if(whb.busy && queueActive()){
     var sq = state.squeue, cur = sq.items[sq.current];
     go.style.display = "none";
     stop.style.display = "";
@@ -2150,7 +2093,7 @@ function updateAction(){
 
   $("btn-skip").style.display = "none";
 
-  if(state.busy){
+  if(whb.busy){
     go.style.display = "none";
     stop.style.display = "";
     reload.style.display = "none";
@@ -2262,167 +2205,37 @@ function renderJob(job){
     var took = job.finished && job.started ? " · " + clock(job.finished - job.started) : "";
     verdict.className = "verdict " + kind;
     verdict.innerHTML = "<div><b>" + head + took + "</b>" + esc(job.message || "") + "</div>";
-    if(!state.busy) $("btn-reload").style.display = "";
+    if(!whb.busy) $("btn-reload").style.display = "";
   }
-}
-
-/* ---------------- console ---------------- */
-function appendLog(lines){
-  if(!lines || !lines.length) return;
-  var box = $("logbox");
-  var empty = box.querySelector(".empty");
-  if(empty) box.removeChild(empty);
-
-  var stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 24;
-
-  lines.forEach(function(l){
-    var d = document.createElement("div");
-    var low = l.toLowerCase();
-    if(low.indexOf("error") >= 0 || low.indexOf("failed") >= 0) d.className = "e";
-    else if(low.indexOf("complete") >= 0 || low.indexOf("success") >= 0) d.className = "g";
-    else if(low.indexOf("warn") >= 0 || low.indexOf("not found") >= 0) d.className = "a";
-    d.textContent = l;
-    box.appendChild(d);
-  });
-
-  while(box.childNodes.length > 400) box.removeChild(box.firstChild);
-  if(stick) box.scrollTop = box.scrollHeight;
 }
 
 /* ---------------- polling ---------------- */
-function setOnline(ok){
-  if(state.online === ok) return;
-  state.online = ok;
-  var el = $("conn");
-  el.className = "live " + (ok ? "on" : "off");
-  $("conntext").textContent = ok ? "Connected" : "Disconnected";
+/* The dumper's part of the status poll; the kit has dealt with the log, the
+   connection and whb.busy already. */
+function onStatus(d, wasBusy){
+  var wasQueue = queueActive();
+  state.job = d.job;
+  state.squeue = d.queue || null;
+  renderJob(d.job);
+  if(d.move) renderMove(d.move);
 
-  $("offline").hidden = ok;
-  if(ok){
-    /* back from the dead: whatever is on screen predates the payload */
-    $("offline-spin").hidden = true;
-    $("offline-msg").textContent = OFFLINE_HINT;
-    loadDevices(); loadLibrary();
-  } else {
-    findLauncher();
+  if(wasBusy && !whb.busy){
+    presenceFor = null;      /* what is on the drive has just changed */
+    loadDevices();
+    if(wasQueue){
+      var ok = d.queue.items.filter(function(q){ return q.state === "done"; }).length;
+      var cut = d.queue.items.some(function(q){ return q.state === "skipped"; });
+      toast("Queue " + (cut ? "stopped" : "finished") + ": " + ok + " of " + d.queue.items.length + " dumped",
+            ok === d.queue.items.length ? "ok" : "bad");
+    }
+    else if(d.job.state === "done") toast("Dump complete", "ok");
+    else if(d.job.state === "failed") toast(d.job.message || "Dump failed", "bad");
   }
+  /* a queue moves through phases without the busy flag ever changing */
+  if(wasBusy !== whb.busy || queueActive() || wasQueue || jobStopping()) updateAction();
+  else renderQueue();
 }
-
-/* ---------------- starting the payload from the cached page ----------------
-   A browser cannot hand an ELF to the loader on port 9021 - that speaks raw
-   TCP. What it can do is ask something that speaks HTTP and starts payloads.
-   This is a convenience on top, never a requirement: with no launcher
-   around the banner just says how things stand. Further ones go in here. */
-var OFFLINE_HINT = "This page comes from the browser's cache. Start the payload the way you usually do - it connects by itself.";
-/* Payload managers keep the ELF under a name of their choosing, version
-   suffix and all, so it is looked up in their list rather than assumed. */
-var PAYLOAD_PATTERN = /(^|\/)ps5-app-dumper[^\/]*\.(elf|bin)$/i;
-var LAUNCHERS = [
-  { name: "Payload Manager", port: 8084, list: "/list_payloads",
-    pick: function(d){ return (d && d.payloads) || []; },
-    start: function(path){ return "/loadpayload:" + path; } }
-];
-var launcher = null;
-
-/* "…_v1.12.elf" -> [1, 12]; a name without a version counts as the oldest. */
-function payloadVersion(path){
-  var m = /[_-]v?(\d+(?:\.\d+)*)[^\/]*$/i.exec(path);
-  return m ? m[1].split(".").map(Number) : [];
-}
-function newestPayload(paths){
-  return paths.slice().sort(function(a, b){
-    var x = payloadVersion(a), y = payloadVersion(b);
-    for(var i = 0; i < Math.max(x.length, y.length); i++)
-      if((x[i] || 0) !== (y[i] || 0)) return (y[i] || 0) - (x[i] || 0);
-    return y.length - x.length;
-  })[0];
-}
-
-function launcherUrl(l, path){ return "http://" + location.hostname + ":" + l.port + path; }
-
-function findLauncher(){
-  launcher = null;
-  $("offline-start").hidden = true;
-
-  LAUNCHERS.forEach(function(l){
-    fetch(launcherUrl(l, l.list)).then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
-      if(!d || launcher || state.online) return;
-
-      var paths = l.pick(d).filter(function(p){ return typeof p === "string" && PAYLOAD_PATTERN.test(p); });
-      if(!paths.length){
-        $("offline-msg").textContent = OFFLINE_HINT + " (" + l.name + " is running, but has no ps5-app-dumper ELF in its list - " +
-                                       "upload it there once and this page can start it.)";
-        return;
-      }
-      var best = newestPayload(paths);
-      launcher = { name: l.name, url: launcherUrl(l, l.start(best)), file: best.split("/").pop() };
-      $("offline-start").textContent = "Start it with " + l.name;
-      $("offline-start").title = launcher.file;
-      $("offline-start").hidden = false;
-    }).catch(function(){ /* not there - that is fine */ });
-  });
-}
-
-function startPayload(){
-  if(!launcher) return;
-  var b = $("offline-start"), l = launcher;
-
-  b.disabled = true;
-  $("offline-spin").hidden = false;
-  $("offline-msg").textContent = "Asking " + l.name + " to start " + l.file + "…";
-
-  fetch(l.url).then(function(r){
-    b.disabled = false;
-    if(r.ok){
-      /* the status poll notices it on its own and takes the banner away */
-      $("offline-msg").textContent = "Started " + l.file + " - waiting for it to come up…";
-      return;
-    }
-    $("offline-spin").hidden = true;
-    $("offline-msg").textContent = l.name + " could not start it (HTTP " + r.status + ").";
-  }).catch(function(e){
-    b.disabled = false;
-    $("offline-spin").hidden = true;
-    $("offline-msg").textContent = l.name + " did not answer: " + e.message;
-  });
-}
-
-function pollStatus(){
-  api("/api/status?since=" + state.logSeq).then(function(d){
-    state.failures = 0;
-    setOnline(true);
-
-    if(d.log){
-      appendLog(d.log.lines);
-      if(d.log.seq) state.logSeq = d.log.seq;
-    }
-
-    var wasBusy = state.busy, wasQueue = queueActive();
-    state.busy = !!d.busy;
-    state.job = d.job;
-    state.squeue = d.queue || null;
-    renderJob(d.job);
-    if(d.move) renderMove(d.move);
-
-    if(wasBusy && !state.busy){
-      presenceFor = null;      /* what is on the drive has just changed */
-      loadDevices();
-      if(wasQueue){
-        var ok = d.queue.items.filter(function(q){ return q.state === "done"; }).length;
-        var cut = d.queue.items.some(function(q){ return q.state === "skipped"; });
-        toast("Queue " + (cut ? "stopped" : "finished") + ": " + ok + " of " + d.queue.items.length + " dumped",
-              ok === d.queue.items.length ? "ok" : "bad");
-      }
-      else if(d.job.state === "done") toast("Dump complete", "ok");
-      else if(d.job.state === "failed") toast(d.job.message || "Dump failed", "bad");
-    }
-    /* a queue moves through phases without the busy flag ever changing */
-    if(wasBusy !== state.busy || queueActive() || wasQueue || jobStopping()) updateAction();
-    else renderQueue();
-  }).catch(function(){
-    if(++state.failures >= 2) setOnline(false);
-  });
-}
+function pollStatus(){ return whbPoll(); }
 
 function loadDevices(){
   var asked = state.launching ? state.launching.titleId : null;
@@ -2467,12 +2280,12 @@ function loadDevices(){
       }
     }
 
-    if(state.app && !state.busy) fetchSize(state.app);
+    if(state.app && !whb.busy) fetchSize(state.app);
     renderApps(); renderDrives(); renderIncomplete(); updateAction();
     renderLibrary();
   }).catch(function(e){
     /* while the payload is down the banner says it all */
-    if(state.online) toast("Could not read the console state: " + e.message, "bad");
+    if(whb.online) toast("Could not read the console state: " + e.message, "bad");
   });
 }
 
@@ -2491,7 +2304,7 @@ function start(){
   go.classList.remove("arm");
 
   post("/api/dump", request).then(function(d){
-    state.busy = true;
+    whb.busy = true;
     state.job = d.job;
     renderJob(d.job);
     updateAction();
@@ -2517,7 +2330,7 @@ var cutSig = null, cutArm;
 
 function renderIncomplete(){
   var box = $("incomplete"), list = state.incomplete || [];
-  var sig = list.map(function(c){ return c.mount + "/" + c.folder + c.state; }).join("~") + "#" + state.busy;
+  var sig = list.map(function(c){ return c.mount + "/" + c.folder + c.state; }).join("~") + "#" + whb.busy;
   if(sig === cutSig) return;
   cutSig = sig;
 
@@ -2527,7 +2340,7 @@ function renderIncomplete(){
   box.innerHTML = '<div class="cut-head">Unfinished dumps</div>' + list.map(function(c, i){
     return '<div class="cut-row"><span class="meta"><span class="name">' + esc(c.title) + '</span>' +
       '<span class="id">' + esc(c.dest + "/" + c.folder) + " &middot; " + esc(c.state === "running" ? "interrupted" : c.state) + '</span></span>' +
-      '<button type="button" class="mini" data-cut="' + i + '"' + (state.busy ? " disabled" : "") + '>Delete</button></div>';
+      '<button type="button" class="mini" data-cut="' + i + '"' + (whb.busy ? " disabled" : "") + '>Delete</button></div>';
   }).join("");
 
   Array.prototype.forEach.call(box.querySelectorAll("[data-cut]"), function(el){
@@ -2624,7 +2437,7 @@ function pkDriveForBrowse(forConsole){
 }
 
 function openPicker(forConsole){
-  if(state.busy){ toast("A dump is running - type the folder in, or browse when it is done.", "bad"); return; }
+  if(whb.busy){ toast("A dump is running - type the folder in, or browse when it is done.", "bad"); return; }
   var mount = pkDriveForBrowse(forConsole);
   if(!mount){ toast(forConsole ? "The console's storage is not available." : "Plug in a USB drive to choose a folder on it.", "bad"); return; }
   pk.mount = mount;
@@ -2638,7 +2451,7 @@ function openPicker(forConsole){
 /* Choosing where a dump goes: the same dialog, with the destinations to
    switch between, and "Move here" instead of storing a setting. */
 function openMovePicker(d){
-  if(state.busy){ toast("A dump or a move is running.", "bad"); return; }
+  if(whb.busy){ toast("A dump or a move is running.", "bad"); return; }
   if(!d) return;
   pk.move = d;
   pk.forConsole = false;
@@ -2806,132 +2619,17 @@ Array.prototype.forEach.call($("q-existing").querySelectorAll("button"), functio
   });
 });
 
-$("offline-start").addEventListener("click", startPayload);
-
-/* ---------------- application cache, with a paper trail ----------------
-   The cache works out of sight, and on the console there are no developer
-   tools to look into it. So every step is written into the live console,
-   and kept across the reload that an update triggers - otherwise the most
-   interesting lines would vanish with the page that logged them. */
-var BUILD = "@BUILD@".charAt(0) === "@" ? "dev" : "@BUILD@";
-var CACHELOG_KEY = "ps5-app-dumper.cachelog";
-var CACHE_STATES = ["uncached", "idle", "checking", "downloading", "update ready", "obsolete"];
-
-function cacheLog(msg){
-  var now = new Date(), two = function(v){ return v < 10 ? "0" + v : "" + v; };
-  var line = "Cache [" + two(now.getHours()) + ":" + two(now.getMinutes()) + ":" + two(now.getSeconds()) +
-             ", build " + BUILD + "] " + msg;
-  appendLog([line]);
-  try {
-    var kept = JSON.parse(localStorage.getItem(CACHELOG_KEY) || "[]");
-    kept.push(line);
-    localStorage.setItem(CACHELOG_KEY, JSON.stringify(kept.slice(-25)));
-  } catch(e){}
-}
-
-function showCacheState(){
-  var ac = window.applicationCache;
-  $("cachestate").textContent = ac ? (CACHE_STATES[ac.status] || ac.status) : "not supported";
-}
-
-$("build").textContent = BUILD;
-
-(function(){
-  /* what earlier loads of this page went through */
-  try {
-    var kept = JSON.parse(localStorage.getItem(CACHELOG_KEY) || "[]");
-    if(kept.length) appendLog(kept.map(function(l){ return "(earlier) " + l; }));
-  } catch(e){}
-
-  var ac = window.applicationCache;
-  if(!ac){
-    cacheLog("this browser has no application cache - the page only opens while the payload runs");
-    showCacheState();
-    return;
-  }
-
-  /* "checking" usually fires before this script runs, hence the status */
-  cacheLog("page loaded, cache status: " + (CACHE_STATES[ac.status] || ac.status));
-
-  var said = {
-    checking:    "asking the payload for the manifest",
-    noupdate:    "manifest unchanged - the cached page is current",
-    downloading: "manifest is new - downloading the page",
-    cached:      "page stored for the first time - it now opens without the payload",
-    obsolete:    "the payload no longer offers a manifest - cache dropped",
-    error:       "could not reach the manifest (payload down?) - staying with the cached page"
-  };
-  Object.keys(said).forEach(function(name){
-    ac.addEventListener(name, function(){ cacheLog(said[name]); showCacheState(); });
-  });
-
-  /* A changed page is fetched in the background while the cached one is
-     already on screen; switch over as soon as it is there. */
-  ac.addEventListener("updateready", function(){
-    showCacheState();
-    try { ac.swapCache(); } catch(e){}
-    if(state.busy){
-      cacheLog("a new page is ready - it shows after the dump, on the next reload");
-      return;
-    }
-    cacheLog("a new page is ready - reloading to show it");
-    location.reload();
-  });
-
-  showCacheState();
-})();
-
 $("q-clear").addEventListener("click", clearQueueResult);
 $("q-empty").addEventListener("click", function(){
   state.queue = [];
   storeQueue(); markQueued(); renderQueue(); updateAction();
 });
 
-$("clearlog").addEventListener("click", function(){
-  $("logbox").innerHTML = '<div class="empty">console cleared</div>';
-});
 $("c-subdir").addEventListener("input", updateAction);
 $("c-subdir-console").addEventListener("input", updateAction);
 
 $("c-browse").addEventListener("click", function(){ openPicker(false); });
 $("c-browse-console").addEventListener("click", function(){ openPicker(true); });
-
-/* ---------------- settings page ---------------- */
-/* What is not about a dump lives on a page of its own. It is a second view of
-   this one file - the page has to stay a single cached document - and the
-   hash makes the back button work. */
-var VIEWS = { "#settings": "view-settings", "#dumps": "view-dumps" };
-function showView(){
-  var page = VIEWS[location.hash] || null;
-  for(var h in VIEWS) if(VIEWS.hasOwnProperty(h)) $(VIEWS[h]).hidden = VIEWS[h] !== page;
-  document.querySelector("main").hidden = !!page;
-  document.querySelector(".actions").hidden = !!page;
-  closeMenu();
-  if(page === "view-settings") showAccess();
-  if(page === "view-dumps") loadDumps();
-  if(page) window.scrollTo(0, 0);
-}
-function closeMenu(){
-  $("menupop").hidden = true;
-  $("menubtn").setAttribute("aria-expanded", "false");
-}
-$("menubtn").addEventListener("click", function(e){
-  e.stopPropagation();
-  var open = $("menupop").hidden;
-  $("menupop").hidden = !open;
-  $("menubtn").setAttribute("aria-expanded", String(open));
-  Array.prototype.forEach.call($("menupop").querySelectorAll("button"), function(b){
-    b.classList.toggle("on", (b.getAttribute("data-go") || "") === (VIEWS[location.hash] ? location.hash : ""));
-  });
-});
-document.addEventListener("click", closeMenu);
-Array.prototype.forEach.call($("menupop").querySelectorAll("button"), function(b){
-  b.addEventListener("click", function(){ location.hash = b.getAttribute("data-go"); closeMenu(); });
-});
-Array.prototype.forEach.call(document.querySelectorAll("[data-back]"), function(b){
-  b.addEventListener("click", function(){ location.hash = ""; });
-});
-window.addEventListener("hashchange", showView);
 
 /* ---------------- dumps ---------------- */
 /* What has been dumped, wherever it lies, and moving it: within a drive at
@@ -3045,7 +2743,7 @@ Array.prototype.forEach.call($("dumps-view").querySelectorAll("button"), functio
    names what goes - and the server wants the folder's name repeated. */
 var delTarget = null;
 function openDelete(d){
-  if(state.busy){ toast("A dump or a move is running.", "bad"); return; }
+  if(whb.busy){ toast("A dump or a move is running.", "bad"); return; }
   if(!d) return;
   delTarget = d;
   $("del-title").textContent = d.title;
@@ -3119,108 +2817,7 @@ $("move-ok").addEventListener("click", function(){
   post("/api/dumps/move/clear").then(function(){ renderMove({state: "idle"}); }).catch(function(e){ toast(e.message, "bad"); });
 });
 
-/* ---------------- access ---------------- */
-/* A locked device is told so right away, not only when a tap is refused. */
-var unlockOffered = false;
-function showAccess(){
-  api("/api/access?token=" + encodeURIComponent(accessToken())).then(function(a){
-    var locked = !!(a.required && !a.unlocked);
-    $("lockchip").hidden = !locked;
-    if(locked && !unlockOffered){ unlockOffered = true; openUnlock(); }
-    /* whether others need a code is for the console's own browser to decide */
-    $("c-require").checked = !!a.required;
-    $("c-require").disabled = !a.local;
-    $("require-hint").textContent = a.local
-      ? "Phones and PCs may look, but have to enter the code from the TV before they can start, stop or delete anything."
-      : "Can only be changed in the console's own browser. " + (a.required
-          ? "Devices like this one enter the code from the TV once."
-          : "Right now every device on the network may change things.");
-    var row = $("row-access");
-    row.hidden = !(a.required && a.unlocked && a.code);
-    $("access-code").textContent = a.code || "";
-    /* a token from before the code was changed is of no use any more */
-    if(a.required && !a.unlocked && accessToken())
-      try { localStorage.removeItem(TOKEN_KEY); } catch(e){}
-  }).catch(function(){});
-}
-function openUnlock(){
-  if(!$("unlock").hidden) return;
-  $("ul-msg").textContent = "";
-  $("ul-code").value = "";
-  $("unlock").hidden = false;
-  try { $("ul-code").focus(); } catch(e){}
-}
-function closeUnlock(){ $("unlock").hidden = true; }
-function tryUnlock(){
-  var code = $("ul-code").value.replace(/\D/g, "");
-  if(code.length !== 6){ $("ul-msg").textContent = "Six digits."; return; }
-  $("ul-go").disabled = true;
-  post("/api/unlock", {code: code}).then(function(r){
-    try { localStorage.setItem(TOKEN_KEY, r.token); } catch(e){}
-    closeUnlock();
-    showAccess();
-    toast(refusedTap ? "Unlocked - press it again, please." : "Unlocked.", "ok");
-    refusedTap = false;
-  }).catch(function(e){
-    $("ul-msg").textContent = e.message;
-  }).then(function(){ $("ul-go").disabled = false; });
-}
-$("c-require").addEventListener("change", function(){
-  var want = $("c-require").checked ? 1 : 0;
-  post("/api/config", {requireCode: want}).then(function(r){
-    applyConfig(r.config);
-    toast(want ? "Other devices need the code again." : "Other devices may change things without a code.", want ? "ok" : "bad");
-  }).catch(function(e){ toast(e.message, "bad"); }).then(showAccess);
-});
-$("c-cfgcopy").addEventListener("click", function(){
-  var b = $("c-cfgcopy");
-  b.disabled = true;
-  post("/api/config/console").then(function(r){
-    toast("Settings copied to " + r.path, "ok");
-  }).catch(function(e){ toast(e.message, "bad"); }).then(function(){ b.disabled = false; });
-});
-$("lockchip").addEventListener("click", openUnlock);
-$("ul-go").addEventListener("click", tryUnlock);
-$("ul-code").addEventListener("keydown", function(e){ if(e.key === "Enter" || e.keyCode === 13) tryUnlock(); });
-$("ul-close").addEventListener("click", closeUnlock);
-$("ul-show").addEventListener("click", function(){
-  post("/api/access/show").then(function(){
-    $("ul-msg").textContent = "Look at the TV.";
-  }).catch(function(e){ $("ul-msg").textContent = e.message; });
-});
-showAccess();
-showView();
 
-/* The tile only opens this page in the console browser; the payload still
-   has to be running. Asked for once, never polled. */
-function showTileState(installed, current){
-  var outdated = installed && !current;
-  $("c-tile").textContent = outdated ? "Update" : installed ? "Reinstall" : "Install";
-  $("c-tile").classList.toggle("warn", outdated);
-  $("tile-hint").textContent = outdated
-    ? "The tile on the home screen is from an older version, or points at another port. Update it."
-    : installed
-      ? "The \"App Dumper\" tile is on the home screen. It opens this page, and can start the payload if it is not running."
-      : "Adds an \"App Dumper\" tile that opens this page";
-}
-api("/api/tile").then(function(r){
-  showTileState(!!r.installed, !!r.current);
-  if(r.installed && !r.current)
-    toast("The home-screen tile is out of date - update it under Menu > Settings.", "bad");
-}).catch(function(){});
-
-$("c-tile").addEventListener("click", function(){
-  var b = $("c-tile");
-  b.disabled = true;
-  b.textContent = "Installing…";
-  post("/api/tile").then(function(){
-    showTileState(true, true);
-    toast("Shortcut installed - look for \"App Dumper\" on the home screen.", "ok");
-  }).catch(function(e){
-    api("/api/tile").then(function(r){ showTileState(!!r.installed, !!r.current); }).catch(function(){});
-    toast("Shortcut not installed: " + e.message, "bad");
-  }).then(function(){ b.disabled = false; });
-});
 $("pk-close").addEventListener("click", closePicker);
 $("pk-cancel").addEventListener("click", closePicker);
 $("pk-use").addEventListener("click", pkUse);
@@ -3229,85 +2826,17 @@ $("pk-name").addEventListener("keydown", function(e){ if(e.key === "Enter") pkCr
 $("picker").addEventListener("click", function(e){ if(e.target === $("picker")) closePicker(); });
 document.addEventListener("keydown", function(e){ if(e.key === "Escape" && !$("picker").hidden) closePicker(); });
 
-var quitArm;
-$("quit").addEventListener("click", function(){
-  var b = $("quit");
-  if(!b.classList.contains("arm")){
-    if(state.busy){ toast("A dump is running.", "bad"); return; }
-    b.classList.add("arm");
-    b.textContent = "confirm shut down";
-    clearTimeout(quitArm);
-    quitArm = setTimeout(function(){ b.classList.remove("arm"); b.textContent = "shut down payload"; }, 4000);
-    return;
-  }
-  clearTimeout(quitArm);
-  post("/api/quit").then(function(){
-    setOnline(false);
-    b.textContent = "payload stopped";
-    b.disabled = true;
-    toast("The payload has been stopped. Relaunch it from the homebrew menu.");
-  }).catch(function(e){
-    b.classList.remove("arm");
-    b.textContent = "shut down payload";
-    toast(e.message, "bad");
-  });
-});
-
-$("sub").textContent = "Web console · " + location.host;
-
-/* ---------------- this copy: version, and a place in Payload Manager ---------------- */
-var self = null;
-
-/* stored: "none" | "same" | "other" | "unknown"
-   "same" is this very build, "other" a different build under the same
-   version - during development the number stays while the code moves. */
-function showStoreState(stored){
-  var can = !!(self && self.canStore), b = $("c-store");
-  b.disabled = !can || stored === "same";
-  b.classList.toggle("warn", can && stored === "other");
-  b.textContent = stored === "same" ? "Saved" : stored === "other" ? "Update" : stored === "unknown" ? "Save again" : "Save";
-  $("store-hint").textContent = !self ? "…"
-    : !can ? "This copy was started from a stored file, so it is in a payload manager already."
-    : stored === "same"  ? "Payload Manager holds exactly this build as " + self.file + ". The home-screen shortcut can start it when the payload is not running."
-    : stored === "other" ? "Payload Manager holds a different build of v" + self.version + ". Update it to keep what is running now."
-    : stored === "unknown" ? self.file + " is in Payload Manager; whether it is this build could not be told."
-    : "Stores this payload as " + self.file + " in pldmgr, so it can be started from there - and from the home-screen shortcut.";
-}
-
-/* pldmgr says whether it has a file of this name; whether that file is this
-   very build the payload finds out itself, reading it off the console's disk */
-function checkStored(){
-  if(!self) return;
-  fetch("http://" + location.hostname + ":8084/list_payloads").then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
-    var found = ((d && d.payloads) || []).filter(function(p){ return typeof p === "string" && p.split("/").pop() === self.file; })[0];
-    if(!found){ showStoreState("none"); return; }
-
-    api("/api/self/compare?path=" + encodeURIComponent(found)).then(function(r){
-      showStoreState(r.match === "same" ? "same" : r.match === "other" ? "other" : "unknown");
-    }).catch(function(){ showStoreState("unknown"); });
-  }).catch(function(){ showStoreState("none"); });
-}
-
-api("/api/self").then(function(r){
-  self = r;
-  $("sub").textContent = "Web console · v" + r.version + " · " + location.host;
-  $("ver").textContent = "v" + r.version + " · ";
-  showStoreState("none");
-  checkStored();
-}).catch(function(){});
-
-$("c-store").addEventListener("click", function(){
-  var b = $("c-store");
-  b.disabled = true;
-  b.textContent = "Saving…";
-  post("/api/self/store").then(function(r){
-    toast(r.file + " stored in Payload Manager", "ok");
-    checkStored();
-  }).catch(function(e){
-    toast("Not stored: " + e.message, "bad");
-    checkStored();
-  });
-});
+/* ---------------- the kit ---------------- */
+whb.app = {
+  elf: "ps5-app-dumper", shortName: "App Dumper", storage: "ps5-app-dumper",
+  busyText: "A dump is running.", afterBusy: "after the dump",
+  views: { "#settings": "view-settings", "#dumps": "view-dumps" }, settingsView: "view-settings",
+  onView: function(page){ if(page === "view-dumps") loadDumps(); },
+  onOnline: function(){ loadDevices(); loadLibrary(); },
+  onStatus: onStatus,
+  onConfig: applyConfig
+};
+whbBoot();
 
 try { state.showAllOptions = !!localStorage.getItem(SHOWALL_KEY); } catch(e){}
 try { state.queueReplace = !!localStorage.getItem(PRESENCE_KEY); } catch(e){}
@@ -3319,7 +2848,7 @@ pollStatus();
 setInterval(pollStatus, 1000);
 setInterval(function(){
   /* a queue starts and closes games, so the listing keeps moving under it */
-  if(state.busy && !queueActive()) return;
+  if(whb.busy && !queueActive()) return;
   loadDevices();
   loadLibrary();
 }, 8000);

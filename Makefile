@@ -40,8 +40,12 @@ CFILES := $(filter-out $(WEB_GEN) $(TILE_GEN) $(SELF_GEN) $(SELF_NONE),$(wildcar
 # tells which version a browser - or its cache - is showing.
 BUILD_ID := $(shell git rev-parse --short HEAD 2>/dev/null || echo nogit)-$(shell date +%m%d-%H%M)
 
-$(WEB_GEN): $(WEB_PAGE) tools/bin2c.sh
-	sed "s/@BUILD@/$(BUILD_ID)/g" $(WEB_PAGE) > $(WEB_GEN).html
+# The client kit (webhb/web) goes into the page first: what is served stays
+# one file, which is what lets the browser cache it as a whole.
+WHB_KIT := webhb/web
+
+$(WEB_GEN): $(WEB_PAGE) $(WHB_KIT)/whb.css $(WHB_KIT)/whb.js tools/inline.sh tools/bin2c.sh
+	./tools/inline.sh $(WEB_PAGE) $(WHB_KIT) | sed "s/@BUILD@/$(BUILD_ID)/g" > $(WEB_GEN).html
 	./tools/bin2c.sh $(WEB_GEN).html web_index_html > $@
 	rm -f $(WEB_GEN).html
 

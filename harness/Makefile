@@ -26,9 +26,10 @@ CFLAGS := -O1 -Wall -pthread -I$(ROOT)/include -I$(ROOT)/webhb/include \
 
 sim: $(OUT)/sim
 
-$(OUT)/web_assets.c: $(ROOT)/web/index.html $(ROOT)/tools/bin2c.sh
+$(OUT)/web_assets.c: $(ROOT)/web/index.html $(ROOT)/webhb/web/whb.css $(ROOT)/webhb/web/whb.js $(ROOT)/tools/inline.sh $(ROOT)/tools/bin2c.sh
 	@mkdir -p $(OUT)
-	$(ROOT)/tools/bin2c.sh $< web_index_html > $@
+	$(ROOT)/tools/inline.sh $< $(ROOT)/webhb/web > $(OUT)/index.html
+	$(ROOT)/tools/bin2c.sh $(OUT)/index.html web_index_html > $@
 
 $(OUT)/tile_assets.c: $(ROOT)/assets/tile/icon0.png $(ROOT)/tools/bin2c.sh
 	@mkdir -p $(OUT)
