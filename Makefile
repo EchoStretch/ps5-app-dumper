@@ -9,7 +9,7 @@ endif
 
 ELF := ps5-app-dumper.elf
 
-CFLAGS := -Werror -pthread -O2 -Wall -Iinclude
+CFLAGS := -Werror -pthread -O2 -Wall -Iinclude -Iwebhb/include
 
 
 # The web UI is compiled into the payload so it works no matter how the
@@ -31,7 +31,10 @@ STAGE1    := ps5-app-dumper.stage1.elf
 
 all: $(ELF)
 
-CFILES := $(filter-out $(WEB_GEN) $(TILE_GEN) $(SELF_GEN) $(SELF_NONE),$(wildcard source/*.c)) $(WEB_GEN) $(TILE_GEN)
+# webhb/ is the part that is not about dumping: the web server and, step by
+# step, what else a web homebrew needs. See docs/webhb-plan.md.
+CFILES := $(filter-out $(WEB_GEN) $(TILE_GEN) $(SELF_GEN) $(SELF_NONE),$(wildcard source/*.c)) \
+          $(wildcard webhb/*.c) $(WEB_GEN) $(TILE_GEN)
 
 # The page carries a stamp of when it was embedded, so a look at the footer
 # tells which version a browser - or its cache - is showing.

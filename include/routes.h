@@ -14,18 +14,23 @@ You should have received a copy of the GNU General Public License
 along with this program; see the file COPYING. If not, see
 <http://www.gnu.org/licenses/>.  */
 
-#ifndef HTTP_SERVER_H
-#define HTTP_SERVER_H
+#ifndef ROUTES_H
+#define ROUTES_H
 
-/* Serves the web UI on the given TCP port. Blocks until the server is
-   asked to shut down. Returns 0 on a clean shutdown, -1 when the socket
-   could not be opened. */
-int http_server_run(int port);
+#include "webhb_http.h"
+#include "utils.h"
 
-/* Asks the accept loop to return. Safe to call from a request handler. */
-void http_server_stop(void);
+/* Registers the routes. Call both before http_server_run(). */
+void routes_platform_init(void);
+void routes_dumper_init(void);
 
-/* The port the server actually bound to, 0 before it is listening. */
-int http_server_port(void);
+/* The settings live with the platform routes, which serve and store them;
+   everyone else gets a copy. */
+void cfg_snapshot(dumper_config_t *out);
+void json_config(sb_t *sb, const dumper_config_t *cfg);
 
-#endif /* HTTP_SERVER_H */
+/* A drive turned up after the payload started: settings changed in the
+   meantime are written to it, otherwise its own are taken over. */
+void cfg_drive_appeared(void);
+
+#endif /* ROUTES_H */

@@ -1,0 +1,395 @@
+/* Copyright (C) 2025 EchoStretch
+
+This program is free software; you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the
+Free Software Foundation; either version 3, or (at your option) any
+later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; see the file COPYING. If not, see
+<http://www.gnu.org/licenses/>.  */
+
+/* What every web homebrew needs besides its own business: the page and its
+   icons, settings, the folder picker, the home-screen tile, a place in
+   Payload Manager, shutting down. */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <pthread.h>
+
+#include "routes.h"
+#include "web_assets.h"
+#include "app_scan.h"
+#include "fs_browse.h"
+#include "app_installer.h"
+#include "dump_job.h"
+#include "dump_queue.h"
+#include "self_store.h"
+#include "version.h"
+#include "utils.h"
+
+static dumper_config_t  g_cfg;
+static pthread_mutex_t  g_cfg_mtx = PTHREAD_MUTEX_INITIALIZER;
+/* settings were changed while no drive was around to store them */
+static int              g_cfg_unsaved = 0;
+
+void cfg_snapshot(dumper_config_t *out)
+{
+    pthread_mutex_lock(&g_cfg_mtx);
+    *out = g_cfg;
+    pthread_mutex_unlock(&g_cfg_mtx);
+}
+
+void cfg_drive_appeared(void)
+{
+    pthread_mutex_lock(&g_cfg_mtx);
+    if (g_cfg_unsaved) {
+        /* carry this session's changes onto the drive that just appeared */
+        if (config_save(&g_cfg) == 0) g_cfg_unsaved = 0;
+    } else {
+        config_load(&g_cfg);
+    }
+    g_enable_logging = g_cfg.enable_logging;
+    g_split_mode = g_cfg.split;
+    pthread_mutex_unlock(&g_cfg_mtx);
+}
+
+void json_config(sb_t *sb, const dumper_config_t *cfg);
+
+void json_config(sb_t *sb, const dumper_config_t *cfg)
+{
+    sb_printf(sb,
+        "{\"enableDecrypter\":%d,\"enableBackport\":%d,"
+        "\"ps4BackportLevel\":%d,\"ps5BackportLevel\":%d,"
+        "\"enableElf2fself\":%d,\"enableLogging\":%d,\"split\":%d,"
+        "\"enableWebui\":%d,\"webPort\":%d,\"autoStart\":%d,"
+        "\"queueDelay\":%d,\"dumpSubdir\":",
+        cfg->enable_decrypter, cfg->enable_backport,
+        cfg->ps4_backport_level, cfg->ps5_backport_level,
+        cfg->enable_elf2fself, cfg->enable_logging, cfg->split,
+        cfg->enable_webui, cfg->web_port, cfg->auto_start,
+        cfg->queue_delay);
+    sb_json_str(sb, cfg->dump_subdir);
+    sb_puts(sb, "}");
+}
+
+static void handle_config_get(int fd, const params_t *p)
+{
+    (void)p;
+    sb_t sb;
+    sb_init(&sb);
+
+    pthread_mutex_lock(&g_cfg_mtx);
+    json_config(&sb, &g_cfg);
+    pthread_mutex_unlock(&g_cfg_mtx);
+
+    send_sb(fd, 200, &sb);
+}
+
+static void handle_config_post(int fd, const params_t *p)
+{
+    pthread_mutex_lock(&g_cfg_mtx);
+    dumper_config_t cfg = g_cfg;
+
+    cfg.enable_decrypter   = param_get_int(p, "enableDecrypter",  cfg.enable_decrypter) ? 1 : 0;
+    cfg.enable_backport    = param_get_int(p, "enableBackport",   cfg.enable_backport) ? 1 : 0;
+    cfg.ps4_backport_level = clamp(param_get_int(p, "ps4BackportLevel", cfg.ps4_backport_level), 1, 6);
+    cfg.ps5_backport_level = clamp(param_get_int(p, "ps5BackportLevel", cfg.ps5_backport_level), 1, 10);
+    cfg.enable_elf2fself   = param_get_int(p, "enableElf2fself",  cfg.enable_elf2fself) ? 1 : 0;
+    cfg.enable_logging     = param_get_int(p, "enableLogging",    cfg.enable_logging) ? 1 : 0;
+    cfg.split              = clamp(param_get_int(p, "split",      cfg.split), 0, 3);
+    cfg.enable_webui       = param_get_int(p, "enableWebui",      cfg.enable_webui) ? 1 : 0;
+    cfg.web_port           = clamp(param_get_int(p, "webPort",    cfg.web_port), 1024, 65535);
+    cfg.auto_start         = param_get_int(p, "autoStart",        cfg.auto_start) ? 1 : 0;
+    cfg.queue_delay        = clamp(param_get_int(p, "queueDelay", cfg.queue_delay),
+                                   QUEUE_SETTLE_MIN, QUEUE_SETTLE_MAX);
+
+    const char *subdir = param_get(p, "dumpSubdir", NULL);
+    if (subdir) {
+        /* a destination folder must stay below the mount point */
+        if (strstr(subdir, "..") || subdir[0] == '/') {
+            pthread_mutex_unlock(&g_cfg_mtx);
+            send_error(fd, 400, "invalid destination folder");
+            return;
+        }
+        strncpy(cfg.dump_subdir, subdir, sizeof(cfg.dump_subdir) - 1);
+        cfg.dump_subdir[sizeof(cfg.dump_subdir) - 1] = '\0';
+    }
+
+    g_cfg = cfg;
+    g_enable_logging = cfg.enable_logging;
+    g_split_mode = cfg.split;
+
+    int saved = config_save(&cfg);
+    g_cfg_unsaved = (saved == 0) ? 0 : 1;
+    pthread_mutex_unlock(&g_cfg_mtx);
+
+    sb_t sb;
+    sb_init(&sb);
+    sb_printf(&sb, "{\"saved\":%s,\"config\":", saved == 0 ? "true" : "false");
+    json_config(&sb, &cfg);
+    sb_puts(&sb, ",\"note\":");
+    sb_json_str(&sb, saved == 0
+                ? "settings written to config.ini"
+                : "no drive connected - settings stay active until the payload restarts, "
+                  "and are written as soon as a drive shows up");
+    sb_puts(&sb, "}");
+    send_sb(fd, 200, &sb);
+}
+
+/* What this copy is, and whether it carries an ELF it could store. */
+static void handle_self(int fd, const params_t *p)
+{
+    (void)p;
+    char json[192];
+    snprintf(json, sizeof(json),
+             "{\"version\":\"" DUMPER_VERSION "\",\"file\":\"" DUMPER_ELF_NAME "\",\"canStore\":%s}",
+             self_store_available() ? "true" : "false");
+    send_json(fd, 200, json);
+}
+
+/* Is the file pldmgr holds this very build? The page passes the path it
+   got from pldmgr's list; self_store_matches() only accepts a file of our
+   name inside a payload manager's storage. */
+static void handle_self_compare(int fd, const params_t *p)
+{
+    int rc = self_store_matches(param_get(p, "path", ""));
+
+    char json[64];
+    snprintf(json, sizeof(json), "{\"match\":%s}",
+             rc == 1 ? "\"same\"" : rc == 0 ? "\"other\"" : "\"unknown\"");
+    send_json(fd, 200, json);
+}
+
+static void handle_self_store(int fd, const params_t *p)
+{
+    (void)p;
+    char err[192] = {0};
+    if (self_store_to_pldmgr(err, sizeof(err)) != 0) {
+        send_error(fd, 409, err[0] ? err : "could not store the payload");
+        return;
+    }
+
+    send_json(fd, 200, "{\"stored\":true,\"file\":\"" DUMPER_ELF_NAME "\"}");
+}
+
+/* Resolves the drive to browse: the caller-named mount if it is one of ours,
+   otherwise the drive holding config.ini. Returns NULL when none is usable. */
+static const char *browse_mount(const params_t *p)
+{
+    const char *mount = param_get(p, "mount", NULL);
+    if (mount && *mount && target_is_known(mount) == 0) return mount;
+    return NULL;
+}
+
+static void handle_browse(int fd, const params_t *p)
+{
+    const char *mount = browse_mount(p);
+    if (!mount) { send_error(fd, 400, "unknown drive"); return; }
+
+    const char *rel = param_get(p, "path", "");
+    if (!fs_path_is_safe(rel)) { send_error(fd, 400, "invalid path"); return; }
+
+    /* the listing can be large; keep it off the connection thread's stack */
+    char (*names)[FS_NAME_MAX] = calloc(FS_BROWSE_MAX, FS_NAME_MAX);
+    if (!names) { send_error(fd, 500, "out of memory"); return; }
+
+    int count = fs_list_dirs(mount, rel, names, FS_BROWSE_MAX);
+    if (count < 0) { free(names); send_error(fd, 404, "cannot open folder"); return; }
+
+    sb_t sb;
+    sb_init(&sb);
+    sb_puts(&sb, "{\"mount\":");
+    sb_json_str(&sb, mount);
+    sb_puts(&sb, ",\"path\":");
+    sb_json_str(&sb, rel);
+    sb_puts(&sb, ",\"dirs\":[");
+    for (int i = 0; i < count; i++) {
+        if (i) sb_puts(&sb, ",");
+        sb_json_str(&sb, names[i]);
+    }
+    sb_puts(&sb, "]}");
+
+    free(names);
+    send_sb(fd, 200, &sb);
+}
+
+static void handle_mkdir(int fd, const params_t *p)
+{
+    const char *mount = browse_mount(p);
+    if (!mount) { send_error(fd, 400, "unknown drive"); return; }
+
+    const char *rel  = param_get(p, "path", "");
+    const char *name = param_get(p, "name", NULL);
+    if (!name || !*name)          { send_error(fd, 400, "no folder name"); return; }
+    if (!fs_name_is_safe(name))   { send_error(fd, 400, "invalid folder name"); return; }
+    if (!fs_path_is_safe(rel))    { send_error(fd, 400, "invalid path"); return; }
+
+    char newrel[128];
+    if (fs_make_subdir(mount, rel, name, newrel, sizeof(newrel)) != 0) {
+        send_error(fd, 400, "could not create the folder (name too long or not writable)");
+        return;
+    }
+
+    sb_t sb;
+    sb_init(&sb);
+    sb_puts(&sb, "{\"path\":");
+    sb_json_str(&sb, newrel);
+    sb_puts(&sb, "}");
+    send_sb(fd, 200, &sb);
+}
+
+/* Whether the home-screen shortcut is in place. Reads two small files and
+   nothing else, so the settings tab can ask without waking a system service. */
+static void handle_tile_state(int fd, const params_t *p)
+{
+    (void)p;
+    /* "installed" without "current" is a tile from an older build, or one
+       that points at a port this server is not on */
+    int current = tile_is_current(http_server_port());
+
+    char json[96];
+    snprintf(json, sizeof(json), "{\"installed\":%s,\"current\":%s}",
+             (current || tile_exists()) ? "true" : "false",
+             current ? "true" : "false");
+    send_json(fd, 200, json);
+}
+
+static void handle_install_tile(int fd, const params_t *p)
+{
+    (void)p;
+    /* Registering a title makes the shell rework its app database. Keep that
+       away from a dump that is reading the very same titles. */
+    if (job_is_active() || queue_is_active()) {
+        send_error(fd, 409, "wait for the dump to finish first");
+        return;
+    }
+
+    char err[160];
+    if (tile_install(http_server_port(), err, sizeof(err)) != 0) {
+        send_error(fd, 500, err[0] ? err : "could not install the shortcut (see log.txt)");
+        return;
+    }
+    send_json(fd, 200, "{\"installed\":true}");
+}
+
+static void handle_quit(int fd, const params_t *p)
+{
+    (void)p;
+    if (job_is_active() || queue_is_active()) {
+        send_error(fd, 409, "a dump is running");
+        return;
+    }
+
+    send_json(fd, 200, "{\"stopping\":true}");
+    printf_notification("PS5 App Dumper: web UI closed");
+    http_server_stop();
+}
+
+/* The logo as PNG, the one picture the payload carries anyway (the tile
+   uses it). iOS wants a PNG for "Add to Home Screen" - it ignores an SVG
+   favicon - and Android takes it from the web manifest. */
+extern const unsigned char tile_icon0_png[];
+extern const size_t        tile_icon0_png_len;
+
+static void handle_app_icon(int fd, const params_t *p)
+{
+    (void)p;
+    send_response_cc(fd, 200, "image/png", tile_icon0_png, tile_icon0_png_len,
+                     "max-age=86400", NULL);
+}
+
+static void handle_web_manifest(int fd, const params_t *p)
+{
+    (void)p;
+    static const char manifest[] =
+        "{\"name\":\"PS5 App Dumper\",\"short_name\":\"App Dumper\","
+        "\"start_url\":\"/\",\"display\":\"standalone\","
+        "\"background_color\":\"#07090d\",\"theme_color\":\"#07090d\","
+        "\"icons\":[{\"src\":\"/icon.png\",\"sizes\":\"512x512\",\"type\":\"image/png\","
+        "\"purpose\":\"any maskable\"}]}";
+    send_response(fd, 200, "application/manifest+json", manifest, sizeof(manifest) - 1, NULL);
+}
+
+static void handle_index(int fd, const params_t *p)
+{
+    (void)p;
+    /* "no-store" would keep the page out of the browser's application cache,
+       which is what lets the home-screen tile open it while the payload is
+       not running. The manifest below takes care of freshness. */
+    send_response_cc(fd, 200, "text/html; charset=utf-8",
+                     web_index_html, web_index_html_len, "no-cache", NULL);
+}
+
+/* The application cache manifest. A browser that knows the mechanism - the
+   PS5's does - keeps the page and serves it even when nothing answers on
+   this port; the page then says so and offers to start the payload. The
+   comment line carries a checksum of the page: any change to it makes the
+   browser fetch the new one. Everything else always goes to the network. */
+static void handle_manifest(int fd, const params_t *p)
+{
+    (void)p;
+    uint32_t sum = 2166136261u;   /* FNV-1a */
+    for (size_t i = 0; i < web_index_html_len; i++)
+        sum = (sum ^ web_index_html[i]) * 16777619u;
+
+    /* tells, in the live console, whether a browser uses the cache at all */
+    write_log(g_log_path, "Web UI: cache manifest requested (page %08x)", (unsigned)sum);
+
+    char body[160];
+    int n = snprintf(body, sizeof(body),
+                     "CACHE MANIFEST\n"
+                     "# page %08x-%zu\n"
+                     "\n"
+                     "CACHE:\n"
+                     "/\n"
+                     "\n"
+                     "NETWORK:\n"
+                     "*\n",
+                     (unsigned)sum, web_index_html_len);
+
+    send_response(fd, 200, "text/cache-manifest", body, (size_t)n, NULL);
+}
+
+static void on_listening(int port)
+{
+    /* Said, not done: installing goes through the app-install service, and
+       that only ever happens because the user asked for it. */
+    if (tile_exists() && !tile_is_current(port))
+        write_log(g_log_path, "Tile: the home-screen shortcut is out of date - "
+                              "update it under Options > Advanced");
+}
+
+void routes_platform_init(void)
+{
+    pthread_mutex_lock(&g_cfg_mtx);
+    config_load(&g_cfg);
+    pthread_mutex_unlock(&g_cfg_mtx);
+
+    http_on_listening(on_listening);
+
+    http_route("GET",  "/",                     handle_index);
+    http_route("GET",  "/index.html",           handle_index);
+    http_route("GET",  "/cache.appcache",       handle_manifest);
+    http_route("GET",  "/icon.png",             handle_app_icon);
+    http_route("GET",  "/apple-touch-icon.png", handle_app_icon);
+    http_route("GET",  "/apple-touch-icon-precomposed.png", handle_app_icon);
+    http_route("GET",  "/app.webmanifest",      handle_web_manifest);
+    http_route("GET",  "/api/config",           handle_config_get);
+    http_route("POST", "/api/config",           handle_config_post);
+    http_route("GET",  "/api/self",             handle_self);
+    http_route("GET",  "/api/self/compare",     handle_self_compare);
+    http_route("POST", "/api/self/store",       handle_self_store);
+    http_route("GET",  "/api/browse",           handle_browse);
+    http_route("POST", "/api/mkdir",            handle_mkdir);
+    http_route("GET",  "/api/tile",             handle_tile_state);
+    http_route("POST", "/api/tile",             handle_install_tile);
+    http_route("POST", "/api/quit",             handle_quit);
+}

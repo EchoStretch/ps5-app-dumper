@@ -26,7 +26,7 @@ along with this program; see the file COPYING. If not, see
 #include "app_launch.h"
 #include "app_scan.h"
 #include "dump_job.h"
-#include "http_server.h"
+#include "routes.h"
 #include "ps4_dumper.h"
 #include "ps5_dumper.h"
 #include "single_instance.h"
@@ -211,6 +211,9 @@ int main(void)
 
     if (cfg.auto_start)
         schedule_auto_dump(&cfg);
+
+    routes_platform_init();
+    routes_dumper_init();
 
     if (http_server_run(cfg.web_port) != 0) {
         printf_notification("Web UI failed to start, dumping directly instead");

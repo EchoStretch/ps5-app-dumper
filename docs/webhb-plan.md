@@ -1,6 +1,6 @@
 # webhb - carving the web-homebrew core out of the dumper
 
-Status: proposal, nothing moved yet. Working name `webhb`; everything stays in
+Status: step 1 is done (the server is split, see below); the rest is a proposal. Working name `webhb`; everything stays in
 this repository until a second payload has proven the interface.
 
 ## Why
@@ -94,8 +94,11 @@ the kit at `/* @WHB_CSS@ */` and `/* @WHB_JS@ */`.
 
 Each step builds, passes the harness in a browser, and changes no behaviour.
 
-1. **Split `http_server.c`** into `webhb/http.c`, `webhb/routes.c` and
-   `source/routes_dumper.c` behind a route table. Pure move.
+1. **Split `http_server.c`** - done. `webhb/http.c` + `webhb/include/webhb_http.h`
+   hold the server and the route table (`http_route()`), `source/routes_platform.c`
+   the ~250 platform lines, `source/routes_dumper.c` the dumper's. The platform
+   routes stay in `source/` until step 2 gives them `whb_app_t` to stand on.
+   Verified by diffing the answers of 40 requests before and after: identical.
 2. **Introduce `whb_app_t`** and move `single_instance`, `self_store`,
    `app_installer`, `fs_browse` over, replacing the hard-coded names
    (`PAYLOAD_PROCESS_NAME`, `DUMPER_ELF_NAME`, `TILE_TITLE_ID`, port 8081).

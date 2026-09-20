@@ -1,0 +1,613 @@
+/* Copyright (C) 2025 EchoStretch
+
+This program is free software; you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the
+Free Software Foundation; either version 3, or (at your option) any
+later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; see the file COPYING. If not, see
+<http://www.gnu.org/licenses/>.  */
+
+/* The dumper's own routes: what is on the console and the drives, starting
+   titles, dumping one or a queue of them, clearing away what was cut short. */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <pthread.h>
+
+#include "routes.h"
+#include "app_scan.h"
+#include "app_launch.h"
+#include "dump_job.h"
+#include "dump_queue.h"
+#include "dump_store.h"
+#include "utils.h"
+
+static void json_job(sb_t *sb, const job_status_t *job)
+{
+    sb_puts(sb, "{\"state\":");
+    sb_json_str(sb, job_state_name(job->state));
+    sb_puts(sb, ",\"appDir\":");
+    sb_json_str(sb, job->app_dir);
+    sb_puts(sb, ",\"title\":");
+    sb_json_str(sb, job->title);
+    sb_puts(sb, ",\"titleId\":");
+    sb_json_str(sb, job->title_id);
+    sb_puts(sb, ",\"dest\":");
+    sb_json_str(sb, job->dest);
+    sb_puts(sb, ",\"stage\":");
+    sb_json_str(sb, job->stage);
+    sb_puts(sb, ",\"currentFile\":");
+    sb_json_str(sb, job->current_file);
+    sb_puts(sb, ",\"message\":");
+    sb_json_str(sb, job->message);
+    sb_printf(sb, ",\"totalBytes\":%llu,\"copiedBytes\":%llu,"
+                  "\"started\":%lld,\"copyStarted\":%lld,\"finished\":%lld,\"now\":%lld}",
+              (unsigned long long)job->total_bytes,
+              (unsigned long long)job->copied_bytes,
+              (long long)job->started, (long long)job->copy_started,
+              (long long)job->finished, (long long)time(NULL));
+}
+
+static void json_queue(sb_t *sb, const queue_status_t *q)
+{
+    sb_printf(sb, "{\"replace\":%s,", q->replace_existing ? "true" : "false");
+    sb_printf(sb, "\"active\":%s,\"current\":%d,\"settle\":%d,\"wait\":%d,"
+                  "\"started\":%lld,\"finished\":%lld,\"target\":",
+              q->active ? "true" : "false", q->current, q->settle_seconds,
+              q->wait_remaining, (long long)q->started, (long long)q->finished);
+    sb_json_str(sb, q->mount);
+    sb_puts(sb, ",\"items\":[");
+
+    for (int i = 0; i < q->count; i++) {
+        if (i) sb_puts(sb, ",");
+        sb_puts(sb, "{\"titleId\":");
+        sb_json_str(sb, q->items[i].title_id);
+        sb_puts(sb, ",\"title\":");
+        sb_json_str(sb, q->items[i].title);
+        sb_printf(sb, ",\"custom\":%s", q->items[i].custom ? "true" : "false");
+        sb_printf(sb, ",\"isDisc\":%s,\"discIn\":%s", q->items[i].is_disc ? "true" : "false",
+                  title_on_disc(q->items[i].title_id) ? "true" : "false");
+        sb_puts(sb, ",\"state\":");
+        sb_json_str(sb, queue_item_state_name(q->items[i].state));
+        sb_puts(sb, ",\"message\":");
+        sb_json_str(sb, q->items[i].message);
+        sb_puts(sb, "}");
+    }
+
+    sb_puts(sb, "]}");
+}
+
+static void handle_status(int fd, const params_t *q)
+{
+    job_status_t job;
+    job_get_status(&job);
+
+    /* too large for a connection thread's stack next to the request buffers */
+    queue_status_t *queue = malloc(sizeof(*queue));
+    if (!queue) { send_error(fd, 500, "out of memory"); return; }
+    queue_get_status(queue);
+
+    sb_t sb;
+    sb_init(&sb);
+
+    sb_puts(&sb, "{\"job\":");
+    json_job(&sb, &job);
+    sb_puts(&sb, ",\"queue\":");
+    json_queue(&sb, queue);
+    sb_puts(&sb, ",\"log\":");
+    json_log(&sb, (unsigned)param_get_int(q, "since", 0));
+    sb_printf(&sb, ",\"busy\":%s}",
+              (job_is_active() || queue->active) ? "true" : "false");
+
+    free(queue);
+
+    send_sb(fd, 200, &sb);
+}
+
+static void handle_devices(int fd, const params_t *p)
+{
+    (void)p;
+    /* Pick up a drive that was plugged in after the payload started. Only a
+       drive that actually turned up may touch the settings - rereading them
+       on every poll would throw away what the user just changed. */
+    if (!get_app_data_path()[0] && find_usb_and_setup() >= 0) cfg_drive_appeared();
+
+    app_entry_t *apps = calloc(APP_SCAN_MAX, sizeof(*apps));
+    target_entry_t *targets = calloc(TARGET_SCAN_MAX, sizeof(*targets));
+    if (!apps || !targets) {
+        free(apps); free(targets);
+        send_error(fd, 500, "out of memory");
+        return;
+    }
+
+    int app_count = app_scan(apps, APP_SCAN_MAX);
+    int target_count = target_scan(targets, TARGET_SCAN_MAX);
+
+    sb_t sb;
+    sb_init(&sb);
+    sb_puts(&sb, "{\"apps\":[");
+
+    for (int i = 0; i < app_count; i++) {
+        if (i) sb_puts(&sb, ",");
+        sb_puts(&sb, "{\"dir\":");
+        sb_json_str(&sb, apps[i].dir);
+        sb_puts(&sb, ",\"titleId\":");
+        sb_json_str(&sb, apps[i].title_id);
+        sb_puts(&sb, ",\"title\":");
+        sb_json_str(&sb, apps[i].title[0] ? apps[i].title : apps[i].title_id);
+        sb_puts(&sb, ",\"version\":");
+        sb_json_str(&sb, apps[i].version);
+        sb_puts(&sb, ",\"patchDir\":");
+        sb_json_str(&sb, apps[i].patch_dir);
+        sb_printf(&sb, ",\"isPs4\":%s,\"hasIcon\":%s,\"media\":\"%s\",\"discIn\":%s}",
+                  apps[i].is_ps4 ? "true" : "false",
+                  apps[i].has_icon ? "true" : "false",
+                  apps[i].is_disc ? "disc" : "pkg",
+                  apps[i].on_disc ? "true" : "false");
+    }
+
+    sb_puts(&sb, "],\"targets\":[");
+
+    for (int i = 0; i < target_count; i++) {
+        if (i) sb_puts(&sb, ",");
+        sb_puts(&sb, "{\"mount\":");
+        sb_json_str(&sb, targets[i].mount);
+        sb_puts(&sb, ",\"fs\":");
+        sb_json_str(&sb, targets[i].fs);
+        sb_printf(&sb, ",\"writable\":%s,\"totalBytes\":%llu,\"freeBytes\":%llu}",
+                  targets[i].writable ? "true" : "false",
+                  (unsigned long long)targets[i].total_bytes,
+                  (unsigned long long)targets[i].free_bytes);
+    }
+
+    /* dumps that were cut short, per drive, so they can be cleared away */
+    dumper_config_t cfg_now;
+    cfg_snapshot(&cfg_now);
+
+    sb_puts(&sb, "],\"incomplete\":[");
+    dump_entry_t *cut = calloc(DUMP_LIST_MAX, sizeof(*cut));
+    int cut_total = 0;
+    for (int i = 0; cut && i < target_count; i++) {
+        char dest[384];
+        job_dest_path(targets[i].mount, &cfg_now, dest, sizeof(dest));
+
+        int n = dump_list_incomplete(dest, cut, DUMP_LIST_MAX);
+        for (int k = 0; k < n; k++) {
+            /* the dump in progress is unfinished too, but not abandoned */
+            job_status_t running;
+            job_get_status(&running);
+            if (job_is_active() && strcmp(running.title_id, cut[k].title_id) == 0) continue;
+
+            if (cut_total++) sb_puts(&sb, ",");
+            sb_puts(&sb, "{\"mount\":");
+            sb_json_str(&sb, targets[i].mount);
+            sb_puts(&sb, ",\"dest\":");
+            sb_json_str(&sb, dest);
+            sb_puts(&sb, ",\"folder\":");
+            sb_json_str(&sb, cut[k].folder);
+            sb_puts(&sb, ",\"titleId\":");
+            sb_json_str(&sb, cut[k].title_id);
+            sb_puts(&sb, ",\"title\":");
+            sb_json_str(&sb, cut[k].title[0] ? cut[k].title : cut[k].title_id);
+            sb_puts(&sb, ",\"state\":");
+            sb_json_str(&sb, cut[k].state);
+            sb_puts(&sb, "}");
+        }
+    }
+    free(cut);
+
+    sb_puts(&sb, "],\"config\":");
+    json_config(&sb, &cfg_now);
+
+    sb_puts(&sb, ",\"configPath\":");
+    const char *hb = get_app_data_path();
+    if (hb && hb[0]) {
+        char path[256];
+        snprintf(path, sizeof(path), "%s/config.ini", hb);
+        sb_json_str(&sb, path);
+    } else {
+        sb_puts(&sb, "null");
+    }
+
+    sb_puts(&sb, "}");
+
+    free(apps);
+    free(targets);
+    send_sb(fd, 200, &sb);
+}
+
+static void handle_dump(int fd, const params_t *p)
+{
+    const char *app = param_get(p, "app", NULL);
+    const char *target = param_get(p, "target", NULL);
+
+    if (queue_is_active())   { send_error(fd, 409, "a queue is running"); return; }
+    if (!app || !*app)       { send_error(fd, 400, "no app selected"); return; }
+    if (!target || !*target) { send_error(fd, 400, "no destination selected"); return; }
+
+    dumper_config_t cfg;
+    cfg_snapshot(&cfg);
+
+    char err[160] = {0};
+    int rc = job_start(app, target, &cfg, param_get_int(p, "overwrite", 0), err, sizeof(err));
+
+    if (rc == JOB_ERR_EXISTS) {
+        /* the page asks, and comes back with overwrite=1 */
+        sb_t sb;
+        sb_init(&sb);
+        sb_puts(&sb, "{\"error\":");
+        sb_json_str(&sb, err);
+        sb_puts(&sb, ",\"exists\":true}");
+        send_sb(fd, 409, &sb);
+        return;
+    }
+    if (rc != 0) {
+        send_error(fd, 409, err[0] ? err : "could not start the dump");
+        return;
+    }
+
+    sb_t sb;
+    sb_init(&sb);
+    job_status_t job;
+    job_get_status(&job);
+    sb_puts(&sb, "{\"started\":true,\"job\":");
+    json_job(&sb, &job);
+    sb_puts(&sb, "}");
+    send_sb(fd, 200, &sb);
+}
+
+/* Which of these titles are on the drive already - so the page can say so
+   before a queue is started, and the choice between skipping and replacing
+   them is not made blind. "titles" as for the queue; the general split mode
+   decides the folder names, as it does for a title without own settings. */
+static void handle_dump_presence(int fd, const params_t *p)
+{
+    const char *mount = param_get(p, "target", NULL);
+    if (!mount || target_is_known(mount) != 0) { send_error(fd, 400, "unknown drive"); return; }
+
+    dumper_config_t cfg;
+    cfg_snapshot(&cfg);
+
+    char dest[384];
+    job_dest_path(mount, &cfg, dest, sizeof(dest));
+
+    char list[sizeof(((param_t *)0)->val)];
+    snprintf(list, sizeof(list), "%s", param_get(p, "titles", ""));
+
+    sb_t sb;
+    sb_init(&sb);
+    sb_puts(&sb, "{\"dest\":");
+    sb_json_str(&sb, dest);
+    sb_puts(&sb, ",\"titles\":{");
+
+    int n = 0;
+    for (char *tok = strtok(list, ","); tok && n < QUEUE_MAX; tok = strtok(NULL, ",")) {
+        if (strlen(tok) != 9) continue;
+
+        dump_presence_t there = dump_presence(dest, tok, strncmp(tok, "CUSA", 4) == 0, cfg.split);
+        if (n++) sb_puts(&sb, ",");
+        sb_json_str(&sb, tok);
+        sb_printf(&sb, ":\"%s\"", there == DUMP_PRESENT ? "present"
+                                 : there == DUMP_INCOMPLETE ? "incomplete" : "absent");
+    }
+
+    sb_puts(&sb, "}}");
+    send_sb(fd, 200, &sb);
+}
+
+/* Clears away a dump that was cut short. dump_remove_incomplete() only ever
+   deletes a folder whose info file says it is an unfinished dump of ours. */
+static void handle_dump_delete(int fd, const params_t *p)
+{
+    const char *mount  = param_get(p, "mount", NULL);
+    const char *folder = param_get(p, "folder", NULL);
+
+    if (!mount || !folder || target_is_known(mount) != 0) { send_error(fd, 400, "unknown drive"); return; }
+    if (job_is_active() || queue_is_active())              { send_error(fd, 409, "a dump is running"); return; }
+
+    dumper_config_t cfg;
+    cfg_snapshot(&cfg);
+
+    char dest[384];
+    job_dest_path(mount, &cfg, dest, sizeof(dest));
+
+    if (dump_remove_incomplete(dest, folder) != 0) {
+        send_error(fd, 409, "not an unfinished dump of this tool - nothing was deleted");
+        return;
+    }
+
+    write_log(g_log_path, "Web UI: removed the unfinished dump %s/%s", dest, folder);
+    send_json(fd, 200, "{\"deleted\":true}");
+}
+
+static void handle_abort(int fd, const params_t *p)
+{
+    (void)p;
+    /* stopping the dump of a queued title stops the queue with it */
+    if (queue_is_active()) {
+        queue_stop();
+        send_json(fd, 200, "{\"stopping\":true}");
+        return;
+    }
+
+    if (!job_is_active()) {
+        send_error(fd, 409, "no dump is running");
+        return;
+    }
+
+    job_abort();
+    send_json(fd, 200, "{\"stopping\":true}");
+}
+
+/* Applies a title's own settings, e.g. "d1f0b1p4q1s3", to cfg: decrypt,
+   fself, backport, ps4 level, ps5 level, split. Letters that are missing
+   keep the general setting; anything else makes the string invalid. */
+static int apply_item_settings(dumper_config_t *cfg, const char *spec)
+{
+    for (const char *p = spec; *p; ) {
+        char key = *p++;
+        if (*p < '0' || *p > '9') return -1;
+
+        int val = 0;
+        while (*p >= '0' && *p <= '9') val = val * 10 + (*p++ - '0');
+
+        switch (key) {
+            case 'd': cfg->enable_decrypter   = val ? 1 : 0;     break;
+            case 'f': cfg->enable_elf2fself   = val ? 1 : 0;     break;
+            case 'b': cfg->enable_backport    = val ? 1 : 0;     break;
+            case 'p': cfg->ps4_backport_level = clamp(val, 1, 6);  break;
+            case 'q': cfg->ps5_backport_level = clamp(val, 1, 10); break;
+            case 's': cfg->split              = clamp(val, 0, 3);  break;
+            default:  return -1;
+        }
+    }
+    return 0;
+}
+
+/* "PPSA01234,CUSA05678" -> the titles to dump, in that order. "discs" names
+   those among them the user marked as disc games; when the page sends it,
+   even empty, it overrules what the scanner believes. */
+static void handle_queue_start(int fd, const params_t *p)
+{
+    const char *target = param_get(p, "target", NULL);
+    if (!target || !*target) { send_error(fd, 400, "no destination selected"); return; }
+
+    char list[sizeof(((param_t *)0)->val)];
+    snprintf(list, sizeof(list), "%s", param_get(p, "titles", ""));
+
+    const char *ids[QUEUE_MAX + 1];
+    int count = 0;
+
+    for (char *tok = strtok(list, ","); tok; tok = strtok(NULL, ",")) {
+        if (count > QUEUE_MAX) break;   /* one over, so queue_start reports it */
+        ids[count++] = tok;
+    }
+
+    const char *discs = param_get(p, "discs", NULL);
+    int is_disc[QUEUE_MAX + 1] = {0};
+    for (int i = 0; discs && i < count; i++)
+        is_disc[i] = (strstr(discs, ids[i]) != NULL);
+
+    dumper_config_t cfg;
+    cfg_snapshot(&cfg);
+
+    /* "o_<title id>" carries the settings of a title that has its own */
+    dumper_config_t *own = calloc(QUEUE_MAX + 1, sizeof(*own));
+    if (!own) { send_error(fd, 500, "out of memory"); return; }
+
+    const dumper_config_t *item_cfg[QUEUE_MAX + 1] = {0};
+    for (int i = 0; i < count && i <= QUEUE_MAX; i++) {
+        char key[32];
+        snprintf(key, sizeof(key), "o_%s", ids[i]);
+
+        const char *spec = param_get(p, key, NULL);
+        if (!spec || !*spec) continue;
+
+        own[i] = cfg;
+        if (apply_item_settings(&own[i], spec) != 0) {
+            free(own);
+            send_error(fd, 400, "invalid settings for a queued title");
+            return;
+        }
+        item_cfg[i] = &own[i];
+    }
+
+    char err[160] = {0};
+    int rc = queue_start(ids, discs ? is_disc : NULL, item_cfg, count, target,
+                         cfg.queue_delay, param_get_int(p, "replace", 0),
+                         &cfg, err, sizeof(err));
+    free(own);
+
+    if (rc != 0) {
+        send_error(fd, 409, err[0] ? err : "could not start the queue");
+        return;
+    }
+
+    send_json(fd, 200, "{\"started\":true}");
+}
+
+static void handle_queue_skip(int fd, const params_t *p)
+{
+    (void)p;
+    if (queue_skip() != 0) {
+        send_error(fd, 409, "the queue is not working on a title right now");
+        return;
+    }
+
+    send_json(fd, 200, "{\"skipping\":true}");
+}
+
+static void handle_queue_clear(int fd, const params_t *p)
+{
+    (void)p;
+    if (queue_clear() != 0) {
+        send_error(fd, 409, "the queue is still running");
+        return;
+    }
+
+    send_json(fd, 200, "{\"cleared\":true}");
+}
+
+static void handle_icon(int fd, const params_t *p)
+{
+    const char *dir = param_get(p, "app", NULL);
+    if (!dir || !*dir) { send_error(fd, 400, "no app given"); return; }
+
+    app_entry_t app;
+    char path[512];
+
+    if (app_find(dir, &app) != 0 || app_icon_path(&app, path, sizeof(path)) != 0) {
+        send_error(fd, 404, "no icon");
+        return;
+    }
+
+    send_file(fd, path, "image/png");
+}
+
+static void handle_size(int fd, const params_t *p)
+{
+    const char *dir = param_get(p, "app", NULL);
+    if (!dir || !*dir) { send_error(fd, 400, "no app given"); return; }
+
+    app_entry_t app;
+    if (app_find(dir, &app) != 0) { send_error(fd, 404, "app is not mounted"); return; }
+
+    char json[128];
+    snprintf(json, sizeof(json), "{\"bytes\":%llu}", (unsigned long long)app_size(&app));
+    send_json(fd, 200, json);
+}
+
+static void handle_library(int fd, const params_t *p)
+{
+    (void)p;
+    /* A console with a full library needs ~25 KB here, which is more than a
+       connection thread's stack can take. */
+    library_entry_t *lib = calloc(LIBRARY_SCAN_MAX, sizeof(*lib));
+    if (!lib) { send_error(fd, 500, "out of memory"); return; }
+
+    int count = library_scan(lib, LIBRARY_SCAN_MAX);
+
+    sb_t sb;
+    sb_init(&sb);
+    sb_puts(&sb, "{\"titles\":[");
+
+    for (int i = 0; i < count; i++) {
+        if (i) sb_puts(&sb, ",");
+        sb_puts(&sb, "{\"titleId\":");
+        sb_json_str(&sb, lib[i].title_id);
+        sb_puts(&sb, ",\"title\":");
+        sb_json_str(&sb, lib[i].title[0] ? lib[i].title : lib[i].title_id);
+        sb_puts(&sb, ",\"version\":");
+        sb_json_str(&sb, lib[i].version);
+        sb_puts(&sb, ",\"source\":");
+        sb_json_str(&sb, lib[i].source);
+        sb_printf(&sb, ",\"isPs4\":%s,\"hasIcon\":%s,\"hasPic\":%s,\"isRunning\":%s,"
+                       "\"media\":\"%s\",\"discIn\":%s}",
+                  lib[i].is_ps4 ? "true" : "false",
+                  lib[i].has_icon ? "true" : "false",
+                  lib[i].has_pic ? "true" : "false",
+                  lib[i].is_running ? "true" : "false",
+                  lib[i].is_disc ? "disc" : "pkg",
+                  lib[i].on_disc ? "true" : "false");
+    }
+
+    /* Whether a title is up is already known from the pfsmnt scan, so the
+       polling listing never asks the system service - that call reaches
+       into SceLncUtil and is not worth doing every few seconds while a
+       game is running. */
+    int running = 0;
+    for (int i = 0; i < count; i++)
+        if (lib[i].is_running) running = 1;
+
+    sb_printf(&sb, "],\"aTitleIsRunning\":%s,\"canLaunch\":%s}",
+              running ? "true" : "false",
+              app_launch_probably_available() ? "true" : "false");
+
+    free(lib);
+    send_sb(fd, 200, &sb);
+}
+
+static void handle_launch(int fd, const params_t *p)
+{
+    const char *title = param_get(p, "title", NULL);
+    if (!title || !*title) { send_error(fd, 400, "no title given"); return; }
+
+    if (job_is_active() || queue_is_active()) {
+        send_error(fd, 409, "a dump is running");
+        return;
+    }
+
+    int close_running = param_get_int(p, "force", 0);
+    char err[192] = {0};
+
+    if (app_launch_title(title, close_running, err, sizeof(err)) != 0) {
+        /* the caller may retry with force=1 once the player agrees */
+        int running = (strstr(err, "another game is running") != NULL);
+        sb_t sb;
+        sb_init(&sb);
+        sb_puts(&sb, "{\"error\":");
+        sb_json_str(&sb, err[0] ? err : "could not start the title");
+        sb_printf(&sb, ",\"needsClose\":%s}", running ? "true" : "false");
+        send_sb(fd, 409, &sb);
+        return;
+    }
+
+    send_json(fd, 200, "{\"launched\":true}");
+}
+
+static void handle_library_icon(int fd, const params_t *p)
+{
+    const char *title = param_get(p, "title", NULL);
+    if (!title || !*title) { send_error(fd, 400, "no title given"); return; }
+
+    /* library_icon_path only accepts a title id, so no path can be injected */
+    char path[512];
+    if (library_icon_path(title, path, sizeof(path)) != 0) {
+        send_error(fd, 404, "no icon");
+        return;
+    }
+
+    send_file(fd, path, "image/png");
+}
+
+static void handle_library_pic(int fd, const params_t *p)
+{
+    const char *title = param_get(p, "title", NULL);
+    if (!title || !*title) { send_error(fd, 400, "no title given"); return; }
+
+    /* library_pic_path only accepts a title id, so no path can be injected */
+    char path[512];
+    if (library_pic_path(title, path, sizeof(path)) != 0) {
+        send_error(fd, 404, "no artwork");
+        return;
+    }
+
+    send_file(fd, path, "image/png");
+}
+
+void routes_dumper_init(void)
+{
+    http_route("GET",  "/api/status",         handle_status);
+    http_route("GET",  "/api/devices",        handle_devices);
+    http_route("GET",  "/api/library",        handle_library);
+    http_route("GET",  "/api/icon",           handle_icon);
+    http_route("GET",  "/api/libicon",        handle_library_icon);
+    http_route("GET",  "/api/libpic",         handle_library_pic);
+    http_route("GET",  "/api/size",           handle_size);
+    http_route("POST", "/api/launch",         handle_launch);
+    http_route("POST", "/api/dump",           handle_dump);
+    http_route("POST", "/api/abort",          handle_abort);
+    http_route("GET",  "/api/dumps/presence", handle_dump_presence);
+    http_route("POST", "/api/dumps/delete",   handle_dump_delete);
+    http_route("POST", "/api/queue/start",    handle_queue_start);
+    http_route("POST", "/api/queue/skip",     handle_queue_skip);
+    http_route("POST", "/api/queue/clear",    handle_queue_clear);
+}
