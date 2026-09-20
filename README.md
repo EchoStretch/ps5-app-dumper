@@ -49,7 +49,9 @@ Before a dump starts, single or queued, its size is compared with the free space
 
 **Turning it off:** set `enable_webui = 0` to go back to the old behaviour (dump the running title immediately and exit). With `auto_start = 1` the payload dumps the running title right at launch *and* serves the web interface, so the dump can be watched or stopped and the switch can be turned off again.
 
-> The interface has no password. Anyone on your network who can reach the console can start a dump while the payload runs — use it on a network you trust, and shut the payload down from the footer link when you are done.
+**Access code:** anyone on your network can open the page and look, but a phone or PC has to enter a six-digit code once before it may start, stop or delete anything. The console shows the code in the notification it sends at start; the dialog that asks for it can put it on the TV again, and a device that is already in finds it under *Options > Advanced*. The console's own browser never needs it. The code is kept in `config.ini` (`access_code`, next to the `access_token` devices hold afterwards) — delete both lines to lock every device out and get a new code, or set `require_code = 0` to do without.
+
+> The code keeps other people's devices from *changing* things. It does not hide anything: the title list, the log and folder names on your drives are readable by anyone who can reach the console, and the connection is plain HTTP. Use it on a network you trust, and shut the payload down from the footer link when you are done.
 
 ---
 

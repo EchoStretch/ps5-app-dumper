@@ -34,6 +34,12 @@ page is part of it. This is how the split of `http_server.c` was verified.
 It refuses to run while something else answers on the port: a simulator left
 over from `make run` would otherwise answer in place of the fresh one.
 
+Requests from 127.0.0.1 are trusted, so the access check never shows there.
+The script asks the last few questions over the machine's LAN address to see
+the lock; to try the unlock dialog in a browser, open the page that way too.
+The simulator has no data folder, so it makes up a new code with every start -
+it is in its output, in the line the console would show as a toast.
+
 ## Checking the page
 
 `node --check` finds a syntax error; it does not notice that a function the

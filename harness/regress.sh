@@ -42,6 +42,15 @@ q() {
   q POST /api/queue/start "titles=PPSA01234&target=usb0&o_PPSA01234=zz"; q POST /api/queue/skip ""; q POST /api/queue/clear ""
   q POST /api/dumps/delete "mount=usb0&folder=../x"; q POST /api/launch "title=bad"; q POST /api/launch "title=PPSA01234"
   sleep 6; q GET /api/devices; q POST /api/launch "title=CUSA07211"; q POST /api/tile ""; q GET /api/tile
+  # access: loopback is trusted, so the lock itself is asked over the LAN address
+  q GET /api/access | sed -E 's/"code":"[0-9]{6}"/"code":"CODE"/'
+  LAN="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || hostname -I 2>/dev/null | cut -d' ' -f1)"
+  if [ -n "$LAN" ]; then
+    B="http://$LAN:$PORT"
+    q GET /api/access; q GET "/api/access?token=nope"; q POST /api/config "queueDelay=9"
+    q POST /api/unlock "code=abc"; q POST /api/access/show ""; q POST /api/quit ""
+    B="http://127.0.0.1:$PORT"
+  fi
   q POST /api/quit ""
 } > "$OUT" 2>&1
 

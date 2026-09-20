@@ -146,9 +146,16 @@ Steps 1-3 already pay off for the dumper alone.
 - **Copyright headers.** The files written in this fork carry the repo's
   "Copyright (C) 2025 EchoStretch" header for consistency, which is not
   accurate for code that did not come from there. GPLv3 applies either way.
-- **Access control.** Anyone on the LAN can launch titles, delete unfinished
-  dumps and stop the payload. Fine for one tool at home; a framework needs at
-  least a token or an origin check.
+- **Access control** - built, `webhb/access.c`. Reads are open; a POST needs a
+  token unless it comes from 127.0.0.1 (the console's browser, and the next
+  copy asking this one to quit). The start toast shows a six-digit code,
+  `POST /api/unlock` trades it for the token (five wrong codes: a minute's
+  hold), `POST /api/access/show` puts the code on the TV again, `GET
+  /api/access` tells a browser where it stands. The app stores code and token
+  wherever it keeps its settings and hands them to `whb_access_init()`; an app
+  that stores nothing gets a new code with every start. Not covered: reads
+  (titles, log, folder names on the drives are visible to the LAN), and plain
+  HTTP - whoever can sniff the network can take the token.
 - **Firmware scope.** Tile install, launch services and the process list are
   proven on FW 12.00 only.
 - **iOS.** No offline start there: service workers need HTTPS, AppCache is
