@@ -850,6 +850,13 @@ footer{
               </div>
               <button type="button" class="mini" id="c-store">Save</button>
             </div>
+            <div class="row" id="row-access" hidden>
+              <div class="txt">
+                <div class="label">Code for other devices</div>
+                <div class="hint" id="access-hint">Phones and PCs enter it once before they may change anything. The console's own browser never has to.</div>
+              </div>
+              <span class="mono" id="access-code" style="font-family:var(--mono);font-size:18px;letter-spacing:.18em;color:var(--accent)"></span>
+            </div>
             <div class="row">
               <div class="txt"><div class="label">Config file</div><div class="hint" id="cfgpath">not available</div></div>
             </div>
@@ -894,6 +901,26 @@ footer{
       <span class="spacer"></span>
       <button type="button" class="act ghost" id="pk-cancel">Cancel</button>
       <button type="button" class="act go" id="pk-use">Use this folder</button>
+    </div>
+  </div>
+</div>
+
+<div class="picker" id="unlock" hidden>
+  <div class="picker-box" role="dialog" aria-modal="true" aria-label="Enter the code from the TV" style="max-width:400px">
+    <div class="picker-head">
+      <span>Code from the TV</span>
+      <span class="spacer"></span>
+      <button type="button" class="ghost act" id="ul-close" style="padding:5px 11px;font-size:11px;letter-spacing:.1em">Close</button>
+    </div>
+    <div class="picker-path" style="white-space:normal;line-height:1.5">Looking is free. To start, stop or delete something from this device, enter the six-digit code the console showed when the payload started.</div>
+    <div class="picker-new">
+      <input type="text" id="ul-code" placeholder="000000" maxlength="6" inputmode="numeric" pattern="[0-9]*" spellcheck="false" autocomplete="one-time-code">
+      <button type="button" class="mini" id="ul-go">Unlock</button>
+    </div>
+    <div class="picker-foot">
+      <span class="picker-dest" id="ul-msg"></span>
+      <span class="spacer"></span>
+      <button type="button" class="act ghost" id="ul-show">Show the code on the TV</button>
     </div>
   </div>
 </div>
@@ -956,9 +983,16 @@ function toast(msg, kind){
   clearTimeout(toastTimer);
   toastTimer = setTimeout(function(){ t.className = "toast"; }, 3600);
 }
+/* Other devices than the console have to show once that they can see the TV:
+   the code from there buys a token, and every POST carries it from then on. */
+var TOKEN_KEY = "whb.token";
+function accessToken(){
+  try { return localStorage.getItem(TOKEN_KEY) || ""; } catch(e){ return ""; }
+}
 function api(path, opts){
   return fetch(path, opts).then(function(r){
     return r.json().catch(function(){ return {}; }).then(function(body){
+      if(r.status === 401 && path !== "/api/unlock") openUnlock();
       if(!r.ok){
         var err = new Error(body.error || ("HTTP " + r.status));
         err.body = body;
@@ -969,9 +1003,10 @@ function api(path, opts){
   });
 }
 function post(path, data){
-  var body = "";
+  var body = "", token = accessToken();
   if(data) for(var k in data) if(data.hasOwnProperty(k))
     body += (body ? "&" : "") + encodeURIComponent(k) + "=" + encodeURIComponent(data[k]);
+  if(token) body += (body ? "&" : "") + "token=" + encodeURIComponent(token);
   return api(path, {
     method: "POST",
     headers: {"Content-Type": "application/x-www-form-urlencoded"},
@@ -2536,6 +2571,48 @@ $("clearlog").addEventListener("click", function(){
 $("c-subdir").addEventListener("input", updateAction);
 
 $("c-browse").addEventListener("click", openPicker);
+
+/* ---------------- access ---------------- */
+function showAccess(){
+  api("/api/access?token=" + encodeURIComponent(accessToken())).then(function(a){
+    var row = $("row-access");
+    row.hidden = !(a.required && a.unlocked && a.code);
+    $("access-code").textContent = a.code || "";
+    /* a token from before the code was changed is of no use any more */
+    if(a.required && !a.unlocked && accessToken())
+      try { localStorage.removeItem(TOKEN_KEY); } catch(e){}
+  }).catch(function(){});
+}
+function openUnlock(){
+  if(!$("unlock").hidden) return;
+  $("ul-msg").textContent = "";
+  $("ul-code").value = "";
+  $("unlock").hidden = false;
+  try { $("ul-code").focus(); } catch(e){}
+}
+function closeUnlock(){ $("unlock").hidden = true; }
+function tryUnlock(){
+  var code = $("ul-code").value.replace(/\D/g, "");
+  if(code.length !== 6){ $("ul-msg").textContent = "Six digits."; return; }
+  $("ul-go").disabled = true;
+  post("/api/unlock", {code: code}).then(function(r){
+    try { localStorage.setItem(TOKEN_KEY, r.token); } catch(e){}
+    closeUnlock();
+    showAccess();
+    toast("Unlocked - do that again, please.", "ok");
+  }).catch(function(e){
+    $("ul-msg").textContent = e.message;
+  }).then(function(){ $("ul-go").disabled = false; });
+}
+$("ul-go").addEventListener("click", tryUnlock);
+$("ul-code").addEventListener("keydown", function(e){ if(e.key === "Enter" || e.keyCode === 13) tryUnlock(); });
+$("ul-close").addEventListener("click", closeUnlock);
+$("ul-show").addEventListener("click", function(){
+  post("/api/access/show").then(function(){
+    $("ul-msg").textContent = "Look at the TV.";
+  }).catch(function(e){ $("ul-msg").textContent = e.message; });
+});
+showAccess();
 
 /* The tile only opens this page in the console browser; the payload still
    has to be running. Asked for once, never polled. */
