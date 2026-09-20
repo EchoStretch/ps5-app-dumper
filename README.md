@@ -147,7 +147,9 @@ socat -t 99999999 - TCP:<ip>:9021 < ps5-app-dumper.elf
 
 ## Configuration
 
-`config.ini` lives in `<drive>/ps5-app-dumper/`, the payload's own folder on the first writable USB drive, together with the list of known disc titles and `logs/` (a general `dumper.log` plus one log per dump). It is created on first run and rewritten whenever a setting is changed in the web interface. A `config.ini` that an older version left in `<drive>/homebrew/` is moved over automatically. Dumps still go to `<drive>/homebrew/` unless `dump_subdir` says otherwise.
+`config.ini` lives in `homebrew/ps5-app-dumper/`, together with the list of known disc titles and `logs/` (a general `dumper.log` plus one log per dump) - on a USB drive, or on the console itself under `/data`. **A drive that carries a `config.ini` wins**: it travels with the stick and can be edited on a PC. Without such a drive the console's copy is used, so settings and the access code survive without anything plugged in; *Menu > Settings > Copy to console* puts the drive's settings there as well. The file is rewritten whenever a setting is changed in the web interface. Files that older versions kept in `<drive>/ps5-app-dumper/` or `<drive>/homebrew/` are moved over automatically.
+
+**Where dumps go:** to the selected destination - a USB drive, or *Console storage* (`/data`) when you choose it; it is never picked automatically while a drive is there, and always keeps 10 GB free. Each kind of destination remembers a dump folder of its own (`dump_subdir`, `dump_subdir_console`, both chosen with *Browse*); a new install defaults to `homebrew/ps5-app-dumper/dumps` on both, an existing `config.ini` keeps what it says. Browsing the console's folders needs the access code, browsing a stick does not. Dumps still go to `<drive>/homebrew/` unless `dump_subdir` says otherwise.
 
 ### Existing and unfinished dumps
 

@@ -15,7 +15,8 @@ pkill -f "$SIM" 2>/dev/null; sleep 0.5
 if curl -s -m 2 -o /dev/null "$B/api/status"; then
     echo "something already answers on $B - stop it first (make run left open?)" >&2; exit 1
 fi
-rm -rf "$RUN/usb0"; mkdir -p "$RUN/usb0"
+# the pretend drive and the pretend console storage both start empty
+rm -rf "$RUN/usb0" "$RUN/data"; mkdir -p "$RUN/usb0"
 ( cd "$RUN" && "$SIM" usb0 "$PORT" > "$RUN/sim.log" 2>&1 & )
 for i in 1 2 3 4 5 6 7 8 9 10; do curl -s -o /dev/null "$B/api/status" && break; sleep 0.4; done
 

@@ -779,7 +779,7 @@ footer{
         <div class="head"><h2>Options</h2><span class="spacer"></span><span id="opt-plat" class="opt-plat"></span></div>
         <div class="body">
           <div class="banner" id="nodrive" hidden style="background:rgba(255,176,32,.1);border-color:rgba(255,176,32,.4);margin:0 0 12px">
-            <span>No drive connected. Settings stay active but cannot be saved — plug in a USB drive and they are written automatically.</span>
+            <span>Nowhere to store the settings right now. They stay active and are written as soon as a drive or the console's storage can be used.</span>
           </div>
           <div class="row">
             <div class="txt">
@@ -791,14 +791,14 @@ footer{
           <div class="row">
             <div class="txt">
               <div class="label">Write logs</div>
-              <div class="hint">One log per dump, in ps5-app-dumper/logs on the drive</div>
+              <div class="hint">One log per dump, in homebrew/ps5-app-dumper/logs</div>
             </div>
             <label class="sw"><input type="checkbox" id="c-logging"><span></span></label>
           </div>
           <div class="row">
             <div class="txt">
               <div class="label">Destination folder</div>
-              <div class="hint">Below the selected drive</div>
+              <div class="hint" id="subdir-hint">Below the selected drive</div>
             </div>
             <div class="subdir-ctl">
               <input type="text" id="c-subdir" spellcheck="false" autocapitalize="off" autocomplete="off">
@@ -881,6 +881,7 @@ footer{
             </div>
             <div class="row">
               <div class="txt"><div class="label">Config file</div><div class="hint" id="cfgpath">not available</div></div>
+              <button type="button" class="mini" id="c-cfgcopy" hidden>Copy to console</button>
             </div>
       </div>
     </section>
@@ -1674,7 +1675,7 @@ function renderDrives(){
   $("drivecount").textContent = state.targets.length;
 
   var sig = state.targets.map(function(t){
-    return t.mount + "|" + t.fs + "|" + t.writable + "|" + Math.round(t.freeBytes / 1073741824);
+    return t.mount + "|" + t.fs + "|" + t.writable + "|" + !!t.internal + "|" + Math.round(t.freeBytes / 1073741824);
   }).join("~");
 
   if(sig === driveSig){ markPressed(box, "data-mount", state.target); return; }
@@ -1694,8 +1695,9 @@ function renderDrives(){
     html += '<button class="drive" type="button" data-mount="' + esc(t.mount) + '" aria-pressed="' + sel + '"' +
       (t.writable ? "" : " disabled title=\"read-only\"") + '>' +
       '<span class="drive-top">' +
-        '<span class="drive-name">' + esc(t.mount) + '</span>' +
-        (t.fs ? '<span class="drive-fs">' + esc(t.fs) + '</span>' : "") +
+        '<span class="drive-name">' + (t.internal ? "Console storage" : esc(t.mount)) + '</span>' +
+        (t.internal ? '<span class="drive-fs">' + esc(t.mount) + '</span>'
+                    : t.fs ? '<span class="drive-fs">' + esc(t.fs) + '</span>' : "") +
         '<span class="drive-free">' + (t.totalBytes ? bytes(t.freeBytes) + " free" : (t.writable ? "" : "read-only")) + '</span>' +
       '</span>' +
       (t.totalBytes ? '<span class="bar"><i class="' + (low ? "low" : "") + '" style="width:' + used.toFixed(1) + '%"></i></span>' : "") +
@@ -1706,8 +1708,12 @@ function renderDrives(){
   Array.prototype.forEach.call(box.querySelectorAll(".drive"), function(el){
     el.addEventListener("click", function(){
       if(state.busy || el.disabled) return;
+      /* each kind of destination has a folder of its own: what was typed
+         for the old one is stored before the field shows the new one's */
+      if(subdirDirty()) saveConfigNow();
       state.target = el.getAttribute("data-mount");
       markPressed(box, "data-mount", state.target);
+      showSubdir();
       updateAction();
     });
   });
@@ -1725,6 +1731,23 @@ function fillLevels(){
     s4.add(new Option("PS4 " + PS4_LEVELS[i] + "  (" + (i+1) + ")", i+1));
 }
 
+function targetIsConsole(){
+  var t = selectedTarget();
+  return !!(t && t.internal);
+}
+var subdirForConsole = false;
+function subdirOf(c, onConsole){ return (onConsole ? c.dumpSubdirConsole : c.dumpSubdir) || ""; }
+function showSubdir(){
+  if(!state.config) return;
+  /* a poll must not overwrite what is being typed */
+  if(document.activeElement === $("c-subdir") && subdirForConsole === targetIsConsole()) return;
+  subdirForConsole = targetIsConsole();
+  $("c-subdir").value = subdirOf(state.config, subdirForConsole);
+  $("subdir-hint").textContent = subdirForConsole ? "On the console, below /data" : "On a USB drive, below its root";
+}
+function subdirDirty(){
+  return !!state.config && $("c-subdir").value.trim() !== subdirOf(state.config, subdirForConsole);
+}
 function applyConfig(c){
   state.config = c;
   $("c-decrypt").checked  = !!c.enableDecrypter;
@@ -1732,7 +1755,7 @@ function applyConfig(c){
   $("c-fself").checked    = !!c.enableElf2fself;
   $("c-backport").checked = !!c.enableBackport;
   $("c-auto").checked     = !!c.autoStart;
-  $("c-subdir").value     = c.dumpSubdir || "";
+  showSubdir();
   $("c-bp5").value        = c.ps5BackportLevel;
   $("c-bp4").value        = c.ps4BackportLevel;
   if(document.activeElement !== $("c-qdelay")) $("c-qdelay").value = c.queueDelay;
@@ -1748,7 +1771,10 @@ function applyConfig(c){
   $("c-bp4").disabled = !on;
 
   var stored = !!state.configPath;
-  $("cfgpath").textContent = stored ? state.configPath : "not stored — no drive connected";
+  $("cfgpath").textContent = !stored ? "not stored — nowhere to write to"
+    : state.configOnConsole ? state.configPath + " — on the console"
+    : state.configPath + " — on the drive, and it wins while the drive is plugged in. A copy on the console is used without it.";
+  $("c-cfgcopy").hidden = !stored || !!state.configOnConsole;
   $("nodrive").hidden = stored;
 
   updatePlatformOptions();
@@ -1767,22 +1793,25 @@ function collectConfig(){
     autoStart:       $("c-auto").checked ? 1 : 0,
     ps5BackportLevel:$("c-bp5").value,
     ps4BackportLevel:$("c-bp4").value,
-    dumpSubdir:      $("c-subdir").value.trim(),
+    dumpSubdir:        subdirForConsole ? subdirOf(state.config || {}, false) : $("c-subdir").value.trim(),
+    dumpSubdirConsole: subdirForConsole ? $("c-subdir").value.trim() : subdirOf(state.config || {}, true),
     queueDelay:      parseInt($("c-qdelay").value, 10) || 30,
     split:           split
   };
 }
 
 var saveTimer;
+function saveConfigNow(){
+  clearTimeout(saveTimer);
+  post("/api/config", collectConfig()).then(function(r){
+    applyConfig(r.config);
+    if(!r.saved) toast(r.note, "bad");
+    else toast("Settings saved", "ok");
+  }).catch(function(e){ toast(e.message, "bad"); });
+}
 function saveConfig(){
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(function(){
-    post("/api/config", collectConfig()).then(function(r){
-      applyConfig(r.config);
-      if(!r.saved) toast(r.note, "bad");
-      else toast("Settings saved", "ok");
-    }).catch(function(e){ toast(e.message, "bad"); });
-  }, 320);
+  saveTimer = setTimeout(saveConfigNow, 320);
   updateAction();
 }
 
@@ -2231,6 +2260,7 @@ function loadDevices(){
     state.targets = d.targets || [];
     state.incomplete = d.incomplete || [];
     state.configPath = d.configPath;
+    state.configOnConsole = !!d.configOnConsole;
 
     if(state.app && !selectedApp()) state.app = null;
     if(!state.app && state.apps.length === 1) state.app = state.apps[0].dir;
@@ -2241,9 +2271,7 @@ function loadDevices(){
     if(!state.target){
       /* default to the writable drive with the most space */
       var best = null;
-      state.targets.forEach(function(t){
-        if(t.writable && (!best || t.freeBytes > best.freeBytes)) best = t;
-      });
+      state.targets.forEach(function(t){ if(betterTarget(t, best)) best = t; });
       if(best) state.target = best.mount;
     }
 
@@ -2401,12 +2429,17 @@ function stopThisDump(){
 /* ---------------- destination folder picker ---------------- */
 var pk = { mount: null, path: "" };
 
+/* the drive with the most room; the console itself only when there is none */
+function betterTarget(t, best){
+  if(!t.writable) return false;
+  if(!best) return true;
+  if(!!t.internal !== !!best.internal) return !t.internal;
+  return t.freeBytes > best.freeBytes;
+}
 function pkDriveForBrowse(){
   if(state.target) return state.target;
   var best = null;
-  state.targets.forEach(function(t){
-    if(t.writable && (!best || t.freeBytes > best.freeBytes)) best = t;
-  });
+  state.targets.forEach(function(t){ if(betterTarget(t, best)) best = t; });
   return best ? best.mount : null;
 }
 
@@ -2429,7 +2462,7 @@ function pkBrowse(path){
   list.innerHTML = '<div class="pk-empty">loading…</div>';
 
   var q = "/api/browse?mount=" + encodeURIComponent(pk.mount) +
-          "&path=" + encodeURIComponent(path);
+          "&path=" + encodeURIComponent(path) + "&token=" + encodeURIComponent(accessToken());
   api(q).then(function(d){
     pk.path = d.path || "";
     renderPicker(d.dirs || []);
@@ -2681,6 +2714,13 @@ $("c-require").addEventListener("change", function(){
     applyConfig(r.config);
     toast(want ? "Other devices need the code again." : "Other devices may change things without a code.", want ? "ok" : "bad");
   }).catch(function(e){ toast(e.message, "bad"); }).then(showAccess);
+});
+$("c-cfgcopy").addEventListener("click", function(){
+  var b = $("c-cfgcopy");
+  b.disabled = true;
+  post("/api/config/console").then(function(r){
+    toast("Settings copied to " + r.path, "ok");
+  }).catch(function(e){ toast(e.message, "bad"); }).then(function(){ b.disabled = false; });
 });
 $("lockchip").addEventListener("click", openUnlock);
 $("ul-go").addEventListener("click", tryUnlock);
