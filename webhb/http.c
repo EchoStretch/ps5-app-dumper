@@ -603,6 +603,12 @@ static int listen_again(void)
 
         g_listen_fd = fd;
         write_log(g_log_path, "Web UI: the network is back - listening on port %d again", g_port);
+
+        /* said on the TV as well, as other payloads do after rest mode: it
+           tells that this one came through, and where it is */
+        char ip[64];
+        local_ipv4(ip, sizeof(ip));
+        printf_notification_quiet("%s is back\nhttp://%s:%d", whb_app()->name, ip, g_port);
         return 0;
     }
     return -1;
