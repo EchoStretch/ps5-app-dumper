@@ -28,17 +28,19 @@ along with this program; see the file COPYING. If not, see
 
 typedef enum {
     QITEM_PENDING = 0,
+    QITEM_WAITING_DISC,   /* a disc game whose disc is not in the drive */
     QITEM_LAUNCHING,      /* started, waiting for its mount to appear  */
     QITEM_SETTLING,       /* mounted, giving the game time to load     */
     QITEM_DUMPING,
     QITEM_DONE,
     QITEM_FAILED,
-    QITEM_SKIPPED         /* never reached because the queue stopped   */
+    QITEM_SKIPPED         /* passed over, by the user or by a stop     */
 } queue_item_state_t;
 
 typedef struct {
     char               title_id[16];
     char               title[128];
+    int                is_disc;      /* wait for its disc before starting */
     queue_item_state_t state;
     char               message[192];
 } queue_item_t;
@@ -57,11 +59,19 @@ typedef struct {
 
 /* Dumps the given titles one after the other: each one is started, given
    settle_seconds to finish loading, dumped to mount, and makes room for the
-   next. A title that fails is recorded and the queue moves on. Returns 0 on
-   success, -1 with the reason in err otherwise. */
-int  queue_start(const char *const *title_ids, int count, const char *mount,
-                 int settle_seconds, const dumper_config_t *cfg,
-                 char *err, size_t err_size);
+   next. A title that fails is recorded and the queue moves on.
+
+   is_disc marks, per title, a disc game: the queue then holds until that
+   disc is in the drive, however long the swap takes. NULL lets the scanner
+   decide. Returns 0 on success, -1 with the reason in err otherwise. */
+int  queue_start(const char *const *title_ids, const int *is_disc, int count,
+                 const char *mount, int settle_seconds,
+                 const dumper_config_t *cfg, char *err, size_t err_size);
+
+/* Passes over the title the queue is waiting on - for a disc, a launch or
+   the load time. Returns -1 when there is nothing to skip, which includes a
+   dump in progress: that one is stopped, not skipped. */
+int  queue_skip(void);
 
 /* Stops after aborting whatever the queue is doing right now. */
 void queue_stop(void);

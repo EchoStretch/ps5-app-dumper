@@ -395,6 +395,8 @@ static void json_queue(sb_t *sb, const queue_status_t *q)
         sb_json_str(sb, q->items[i].title_id);
         sb_puts(sb, ",\"title\":");
         sb_json_str(sb, q->items[i].title);
+        sb_printf(sb, ",\"isDisc\":%s,\"discIn\":%s", q->items[i].is_disc ? "true" : "false",
+                  title_on_disc(q->items[i].title_id) ? "true" : "false");
         sb_puts(sb, ",\"state\":");
         sb_json_str(sb, queue_item_state_name(q->items[i].state));
         sb_puts(sb, ",\"message\":");
@@ -668,7 +670,9 @@ static void handle_abort(int fd)
     send_json(fd, 200, "{\"stopping\":true}");
 }
 
-/* "PPSA01234,CUSA05678" -> the titles to dump, in that order. */
+/* "PPSA01234,CUSA05678" -> the titles to dump, in that order. "discs" names
+   those among them the user marked as disc games; when the page sends it,
+   even empty, it overrules what the scanner believes. */
 static void handle_queue_start(int fd, const params_t *p)
 {
     const char *target = param_get(p, "target", NULL);
@@ -685,17 +689,33 @@ static void handle_queue_start(int fd, const params_t *p)
         ids[count++] = tok;
     }
 
+    const char *discs = param_get(p, "discs", NULL);
+    int is_disc[QUEUE_MAX + 1] = {0};
+    for (int i = 0; discs && i < count; i++)
+        is_disc[i] = (strstr(discs, ids[i]) != NULL);
+
     pthread_mutex_lock(&g_cfg_mtx);
     dumper_config_t cfg = g_cfg;
     pthread_mutex_unlock(&g_cfg_mtx);
 
     char err[160] = {0};
-    if (queue_start(ids, count, target, cfg.queue_delay, &cfg, err, sizeof(err)) != 0) {
+    if (queue_start(ids, discs ? is_disc : NULL, count, target, cfg.queue_delay,
+                    &cfg, err, sizeof(err)) != 0) {
         send_error(fd, 409, err[0] ? err : "could not start the queue");
         return;
     }
 
     send_json(fd, 200, "{\"started\":true}");
+}
+
+static void handle_queue_skip(int fd)
+{
+    if (queue_skip() != 0) {
+        send_error(fd, 409, "nothing to skip - a running dump is stopped, not skipped");
+        return;
+    }
+
+    send_json(fd, 200, "{\"skipping\":true}");
 }
 
 static void handle_queue_clear(int fd)
@@ -953,6 +973,7 @@ static void route(int fd, const char *method, const char *path, const params_t *
     else if (is_post && !strcmp(path, "/api/abort"))   handle_abort(fd);
     else if (is_post && !strcmp(path, "/api/queue/start")) handle_queue_start(fd, p);
     else if (is_post && !strcmp(path, "/api/queue/clear")) handle_queue_clear(fd);
+    else if (is_post && !strcmp(path, "/api/queue/skip"))  handle_queue_skip(fd);
     else if (is_post && !strcmp(path, "/api/quit"))    handle_quit(fd);
     else if (is_get  && !strcmp(path, "/api/icon"))    handle_icon(fd, p);
     else if (is_get  && !strcmp(path, "/api/library")) handle_library(fd);

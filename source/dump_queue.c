@@ -34,6 +34,10 @@ along with this program; see the file COPYING. If not, see
 /* The console answers "still open" for a moment after a title went away. */
 #define LAUNCH_ATTEMPTS  3
 #define LAUNCH_RETRY_GAP 5
+/* A freshly inserted disc is visible before the console is done with it. */
+#define DISC_SETTLE      8
+/* How often the console is reminded that the queue wants a disc. */
+#define DISC_REMINDER    120
 
 static pthread_mutex_t g_mtx = PTHREAD_MUTEX_INITIALIZER;
 /* serialises queue_start() so two requests cannot both pass the active check */
@@ -41,6 +45,7 @@ static pthread_mutex_t g_start_mtx = PTHREAD_MUTEX_INITIALIZER;
 static queue_status_t  g_queue = { .current = -1 };
 static dumper_config_t g_queue_cfg;
 static volatile int    g_stop = 0;
+static volatile int    g_skip = 0;
 static pthread_t       g_worker;
 static int             g_worker_valid = 0;
 
@@ -48,6 +53,7 @@ const char *queue_item_state_name(queue_item_state_t state)
 {
     switch (state) {
         case QITEM_PENDING:   return "pending";
+        case QITEM_WAITING_DISC: return "waiting_disc";
         case QITEM_LAUNCHING: return "launching";
         case QITEM_SETTLING:  return "settling";
         case QITEM_DUMPING:   return "dumping";
@@ -93,13 +99,18 @@ static int title_mounted(void *arg)
     return app_find((const char *)arg, &app) == 0;
 }
 
+#define WAIT_STOPPED (-1)
+#define WAIT_SKIPPED (-2)
+
 /* Waits up to seconds for cond to hold; with no cond it simply waits the
-   time out. Returns 1 when cond held, 0 when the time ran out and -1 when
-   the queue was stopped. */
+   time out. Returns 1 when cond held, 0 when the time ran out, WAIT_STOPPED
+   when the queue was stopped and WAIT_SKIPPED when the user passed over
+   this title. */
 static int wait_until(int seconds, int (*cond)(void *), void *arg)
 {
     for (int left = seconds; left > 0; left--) {
-        if (g_stop) return -1;
+        if (g_stop) return WAIT_STOPPED;
+        if (g_skip) return WAIT_SKIPPED;
         if (cond && cond(arg)) return 1;
 
         set_wait(left);
@@ -107,8 +118,42 @@ static int wait_until(int seconds, int (*cond)(void *), void *arg)
     }
 
     set_wait(0);
-    if (g_stop) return -1;
+    if (g_stop) return WAIT_STOPPED;
+    if (g_skip) return WAIT_SKIPPED;
     return (cond && cond(arg)) ? 1 : 0;
+}
+
+static int disc_inserted(void *arg)
+{
+    return title_on_disc((const char *)arg);
+}
+
+/* Holds until the title's disc is in the drive. Swapping a disc needs a
+   person, who may be away for hours, so this has no time limit - only a
+   stop or a skip ends it early. Returns 0 once the disc is there, or the
+   WAIT_* code. */
+static int wait_for_disc(int index, const char *title_id, const char *title)
+{
+    if (disc_inserted((void *)title_id)) return 0;
+
+    set_item(index, QITEM_WAITING_DISC, "insert the disc for this game");
+    write_log(g_log_path, "Queue: waiting for the disc of %s", title_id);
+
+    for (unsigned waited = 0; ; waited++) {
+        if (g_stop) return WAIT_STOPPED;
+        if (g_skip) return WAIT_SKIPPED;
+        if (disc_inserted((void *)title_id)) break;
+
+        if (waited % DISC_REMINDER == 0)
+            printf_notification_quiet("Dump queue: insert the disc for\n%s", title);
+        sleep(1);
+    }
+
+    write_log(g_log_path, "Queue: disc of %s found", title_id);
+    set_item(index, QITEM_WAITING_DISC, "disc found, giving the console a moment");
+
+    int rc = wait_until(DISC_SETTLE, NULL, NULL);
+    return rc < 0 ? rc : 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -116,7 +161,7 @@ static int wait_until(int seconds, int (*cond)(void *), void *arg)
 /* ------------------------------------------------------------------ */
 
 /* Brings the title up. Returns 0 once it is mounted and had its time to
-   load, 1 when it failed (recorded on the item) and -1 when stopped. */
+   load, 1 when it failed (recorded on the item), or the WAIT_* code. */
 static int bring_up(int index, const char *title_id, const char *dir, int settle)
 {
     char err[192] = {0};
@@ -138,11 +183,12 @@ static int bring_up(int index, const char *title_id, const char *dir, int settle
             set_item(index, QITEM_FAILED, "%s", err);
             return 1;
         }
-        if (wait_until(LAUNCH_RETRY_GAP, NULL, NULL) < 0) return -1;
+        int gap = wait_until(LAUNCH_RETRY_GAP, NULL, NULL);
+        if (gap < 0) return gap;
     }
 
     int rc = wait_until(MOUNT_TIMEOUT, title_mounted, (void *)dir);
-    if (rc < 0) return -1;
+    if (rc < 0) return rc;
     if (rc == 0) {
         set_item(index, QITEM_FAILED,
                  "the game did not come up within %d seconds", MOUNT_TIMEOUT);
@@ -150,7 +196,8 @@ static int bring_up(int index, const char *title_id, const char *dir, int settle
     }
 
     set_item(index, QITEM_SETTLING, "waiting for the game to finish loading");
-    if (wait_until(settle, NULL, NULL) < 0) return -1;
+    rc = wait_until(settle, NULL, NULL);
+    if (rc < 0) return rc;
 
     /* it may have crashed or been closed by hand while we waited */
     if (!title_mounted((void *)dir)) {
@@ -175,7 +222,18 @@ static int process_item(int index)
 
     /* a title that is already up is dumped as it is */
     if (!title_mounted(dir)) {
-        int rc = bring_up(index, title_id, dir, snap.settle_seconds);
+        int rc = 0;
+
+        if (snap.items[index].is_disc)
+            rc = wait_for_disc(index, title_id, snap.items[index].title);
+        if (rc == 0)
+            rc = bring_up(index, title_id, dir, snap.settle_seconds);
+
+        if (rc == WAIT_SKIPPED) {
+            write_log(g_log_path, "Queue: %s skipped by user", title_id);
+            set_item(index, QITEM_SKIPPED, "skipped by user");
+            return 0;
+        }
         if (rc != 0) return rc < 0 ? -1 : 0;
     }
 
@@ -218,6 +276,7 @@ static void *worker(void *arg)
         pthread_mutex_lock(&g_mtx);
         g_queue.current = i;
         pthread_mutex_unlock(&g_mtx);
+        g_skip = 0;   /* a skip is meant for one title only */
 
         if (g_stop || process_item(i) < 0) stopped = 1;
     }
@@ -229,7 +288,7 @@ static void *worker(void *arg)
         queue_item_t *item = &g_queue.items[i];
 
         if (item->state == QITEM_DONE) { done++; continue; }
-        if (item->state == QITEM_FAILED) continue;
+        if (item->state == QITEM_FAILED || item->state == QITEM_SKIPPED) continue;
 
         /* cut short by the stop, either mid-way or before its turn */
         int reached = (item->state != QITEM_PENDING);
@@ -263,9 +322,9 @@ int queue_is_active(void)
     return active;
 }
 
-int queue_start(const char *const *title_ids, int count, const char *mount,
-                int settle_seconds, const dumper_config_t *cfg,
-                char *err, size_t err_size)
+int queue_start(const char *const *title_ids, const int *is_disc, int count,
+                const char *mount, int settle_seconds,
+                const dumper_config_t *cfg, char *err, size_t err_size)
 {
     #define FAIL(...) do { if (err && err_size) snprintf(err, err_size, __VA_ARGS__); \
                            pthread_mutex_unlock(&g_start_mtx); return -1; } while (0)
@@ -298,6 +357,10 @@ int queue_start(const char *const *title_ids, int count, const char *mount,
         strncpy(item->title_id, entry.title_id, sizeof(item->title_id) - 1);
         strncpy(item->title, entry.title[0] ? entry.title : entry.title_id,
                 sizeof(item->title) - 1);
+
+        item->is_disc = is_disc ? (is_disc[i] != 0) : entry.is_disc;
+        /* what the user knows about a title is worth keeping */
+        if (item->is_disc) title_remember_disc(entry.title_id);
     }
 
     if (settle_seconds < QUEUE_SETTLE_MIN) settle_seconds = QUEUE_SETTLE_MIN;
@@ -318,6 +381,7 @@ int queue_start(const char *const *title_ids, int count, const char *mount,
     }
 
     g_stop = 0;
+    g_skip = 0;
     g_queue_cfg = *cfg;
 
     pthread_mutex_lock(&g_mtx);
@@ -349,6 +413,22 @@ void queue_stop(void)
     g_stop = 1;
     job_abort();
     write_log(g_log_path, "Queue: stop requested");
+}
+
+int queue_skip(void)
+{
+    pthread_mutex_lock(&g_mtx);
+    int waiting = 0;
+    if (g_queue.active && g_queue.current >= 0) {
+        queue_item_state_t st = g_queue.items[g_queue.current].state;
+        waiting = (st == QITEM_WAITING_DISC || st == QITEM_LAUNCHING ||
+                   st == QITEM_SETTLING);
+    }
+    pthread_mutex_unlock(&g_mtx);
+
+    if (!waiting) return -1;
+    g_skip = 1;
+    return 0;
 }
 
 int queue_clear(void)
