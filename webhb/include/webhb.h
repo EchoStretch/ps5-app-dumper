@@ -85,6 +85,89 @@ void whb_access_notify(const char *ip, int port);
 void whb_access_routes_init(void);
 
 /* ------------------------------------------------------------------ */
+/*  Settings - see config.c                                            */
+/* ------------------------------------------------------------------ */
+
+typedef enum { WHB_CFG_BOOL, WHB_CFG_INT, WHB_CFG_STRING } whb_cfg_type_t;
+
+#define WHB_CFG_SECRET  0x1   /* never served, never taken from a request       */
+#define WHB_CFG_LOCAL   0x2   /* only the console's own browser may change it   */
+#define WHB_CFG_SUBDIR  0x4   /* a folder below a mount point: stays relative,
+                                 no "..", slashes at the end are dropped        */
+
+#define WHB_CFG_STR_MAX 64    /* the longest string value, its NUL included     */
+
+typedef struct {
+    const char    *ini_name;  /* "queue_delay" - the line in config.ini         */
+    const char    *web_name;  /* "queueDelay" - the name in /api/config         */
+    whb_cfg_type_t type;
+    unsigned       flags;
+    int            lo, hi;    /* WHB_CFG_INT: what is outside is pulled inside  */
+    int            def;       /* default of a bool or an int                    */
+    const char    *def_str;   /* default of a string                            */
+    size_t         size;      /* string: bytes it may take, 0 = WHB_CFG_STR_MAX */
+    const char    *if_empty;  /* string: what config.ini gets for an empty one  */
+    /* Lines put in front of the key in config.ini, each starting with ';'
+       and ending in '\n'. A blank line goes before them, so the first key of
+       a group carries the group's heading. */
+    const char    *comment;
+} whb_cfg_key_t;
+
+/* The keys the core acts on by itself. An app puts the ones it wants into
+   its own table, where it wants them: the table's order is the order of
+   config.ini and of /api/config. Left out, logging stays on, the web UI
+   takes the app's default_port and the access code is new with every start. */
+#define WHB_CFG_STD_LOGGING \
+    { .ini_name = "enable_logging", .web_name = "enableLogging", .type = WHB_CFG_BOOL, .def = 1, \
+      .comment = "; === Logging ===\n" \
+                 "; enable_logging = 1 -> write log.txt (default)\n" \
+                 "; enable_logging = 0 -> disable logging\n" }
+#define WHB_CFG_STD_WEB_PORT \
+    { .ini_name = "web_port", .web_name = "webPort", .type = WHB_CFG_INT, .lo = 1024, .hi = 65535, \
+      .def = 0 /* the app's default_port */, \
+      .comment = "; web_port -> first TCP port tried for the web interface\n" }
+#define WHB_CFG_STD_ACCESS \
+    { .ini_name = "require_code", .web_name = "requireCode", .type = WHB_CFG_BOOL, .def = 1, \
+      .flags = WHB_CFG_LOCAL, \
+      .comment = "; === Access ===\n" \
+                 "; Phones and PCs have to enter access_code once before they may change anything;\n" \
+                 "; the console's own browser never has to. access_token is what they keep afterwards -\n" \
+                 "; delete both lines to lock every device out again and get a new code.\n" \
+                 "; require_code = 0 -> anyone on the network may use the web UI\n" }, \
+    { .ini_name = "access_code",  .type = WHB_CFG_STRING, .flags = WHB_CFG_SECRET, .size = 8 }, \
+    { .ini_name = "access_token", .type = WHB_CFG_STRING, .flags = WHB_CFG_SECRET, .size = 40 }
+
+/* Adds keys to the store. The table must outlive the server; a name that is
+   registered already is skipped. Call before whb_config_init(). */
+void whb_config_register(const whb_cfg_key_t *keys, int count);
+
+/* Called whenever values may have changed - after a load and after the page
+   stored new ones - with the store locked. */
+void whb_config_on_change(void (*fn)(void));
+
+/* Finds the data folder, reads config.ini and writes one with the defaults
+   where there is none yet. */
+void whb_config_init(void);
+
+/* The data folder moved (storage_refresh() returned 1): settings changed
+   while there was nowhere to store them are written to the new place,
+   otherwise its own are taken over. */
+void whb_config_storage_changed(void);
+
+int  whb_config_int(const char *ini_name, int fallback);
+void whb_config_str(const char *ini_name, char *out, size_t out_size);
+/* For reading several values that belong together. Recursive. */
+void whb_config_lock(void);
+void whb_config_unlock(void);
+
+/* The settings as /api/config serves them. */
+void whb_config_json(sb_t *sb);
+
+/* Hands the stored access code to the access check and registers
+   /api/config and /api/config/console. */
+void whb_config_routes_init(void);
+
+/* ------------------------------------------------------------------ */
 /*  One running copy                                                   */
 /* ------------------------------------------------------------------ */
 

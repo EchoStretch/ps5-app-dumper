@@ -40,7 +40,10 @@ along with this program; see the file COPYING. If not, see
 
 static int run_headless(const dumper_config_t *cfg)
 {
-    while (find_usb_and_setup() == -1) {
+    /* looks again where our files live each time: that is what finds the drive */
+    for (;;) {
+        whb_config_init();
+        if (storage_first_usb() != -1) break;
         printf_notification("Please insert USB (exFAT) into any port...");
         sleep(7);
     }
@@ -180,6 +183,7 @@ static void log_host_process(void)
 int main(void)
 {
     whb_app_set(dumper_app());
+    dumper_config_init();
 
     /* first of all, so that whatever happens next can be attributed */
     instance_claim_name();
@@ -194,11 +198,8 @@ int main(void)
 
     /* One pass over the mount points so config.ini can be read; the web UI
        rescans on its own once a drive shows up later. */
-    find_usb_and_setup();
-    config_load(&cfg);
-
-    g_enable_logging = cfg.enable_logging;
-    g_split_mode = cfg.split;
+    whb_config_init();
+    cfg_snapshot(&cfg);
 
     /* Sending the payload again replaces the copy that is running, rather
        than putting a second one next to it on the next free port - unless
@@ -218,6 +219,7 @@ int main(void)
         schedule_auto_dump(&cfg);
 
     whb_routes_init();
+    whb_config_routes_init();
     routes_settings_init();
     routes_dumper_init();
 

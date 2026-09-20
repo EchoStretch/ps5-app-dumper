@@ -40,7 +40,6 @@ extern time_t copy_start_time;
 extern int copy_directory(const char *src, const char *dst);
 extern pthread_t progress_thread;
 
-int  find_usb_and_setup(void);
 int  read_decrypter_config(void);
 int  read_logging_config(void); 
 int  read_elf2fself_config(void);
@@ -52,6 +51,9 @@ void debug_list_usbs(void);
 /* ------------------------------------------------------------------ */
 /*  Configuration                                                      */
 /* ------------------------------------------------------------------ */
+
+/* What a dump is told. The values live in the core's config store
+   (source/dumper_config.c registers them); this is a copy of them. */
 
 typedef struct {
     int  enable_decrypter;
@@ -67,20 +69,7 @@ typedef struct {
     char dump_subdir[64];      /* dump folder below a drive's mount point */
     char dump_subdir_console[64]; /* the same below /data, the console's own storage */
     int  queue_delay;          /* seconds a queued title gets to load before its dump */
-    /* access control of the web UI (webhb/access.c); never served over HTTP
-       with the rest of the settings */
-    int  require_code;         /* 0 -> anyone on the network may change things */
-    char access_code[8];
-    char access_token[40];
 } dumper_config_t;
-
-void config_defaults(dumper_config_t *cfg);
-void config_load(dumper_config_t *cfg);
-int  config_save(const dumper_config_t *cfg);
-int  config_path(char *out, size_t out_size);
-/* Writes the settings to the console's storage as well, for the day no drive
-   is plugged in. Returns 0 and the file's path, -1 on failure. */
-int config_save_internal(const dumper_config_t *cfg, char *path, size_t path_size);
 
 /* ------------------------------------------------------------------ */
 /*  Cooperative abort, honoured by the copy routines                   */

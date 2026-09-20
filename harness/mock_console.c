@@ -323,8 +323,10 @@ int main(int argc, char **argv)
     setvbuf(stdout, NULL, _IOLBF, 0);
 
     whb_app_set(dumper_app());
-    find_usb_and_setup();   /* no /mnt/usbX here: settings go to the pretend console */
+    dumper_config_init();
+    whb_config_init();      /* no /mnt/usbX here: settings go to the pretend console */
     whb_routes_init();
+    whb_config_routes_init();
     routes_settings_init();
     routes_dumper_init();
     return http_server_run(argc > 2 ? atoi(argv[2]) : 8099);

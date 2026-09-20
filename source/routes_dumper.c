@@ -130,7 +130,7 @@ static void handle_devices(int fd, const params_t *p)
     /* Pick up a drive that was plugged in or pulled after the payload
        started. Only a change of place may touch the settings - rereading them
        on every poll would throw away what the user just changed. */
-    if (!dumper_busy() && storage_refresh()) cfg_drive_appeared();
+    if (!dumper_busy() && storage_refresh()) whb_config_storage_changed();
 
     app_entry_t *apps = calloc(APP_SCAN_MAX, sizeof(*apps));
     target_entry_t *targets = calloc(TARGET_SCAN_MAX, sizeof(*targets));
@@ -218,7 +218,7 @@ static void handle_devices(int fd, const params_t *p)
     free(cut);
 
     sb_puts(&sb, "],\"config\":");
-    json_config(&sb, &cfg_now);
+    whb_config_json(&sb);
 
     sb_printf(&sb, ",\"configOnConsole\":%s", storage_is_internal() ? "true" : "false");
 

@@ -14,189 +14,17 @@ You should have received a copy of the GNU General Public License
 along with this program; see the file COPYING. If not, see
 <http://www.gnu.org/licenses/>.  */
 
-/* The settings and the folder picker that chooses where dumps go. Neither is
-   about dumping, but both still stand on the dumper's config struct and its
-   drive detection; they follow the rest into webhb/ once those have moved
-   (steps 4 and 6 of docs/webhb-plan.md). */
+/* The folder picker that chooses where dumps go. It is not about dumping, but
+   still stands on the dumper's drive detection; it follows the rest into
+   webhb/ once that has moved (docs/webhb-plan.md). */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
 
 #include "routes.h"
 #include "app_scan.h"
-#include "dump_queue.h"
 #include "utils.h"
-
-static dumper_config_t  g_cfg;
-static pthread_mutex_t  g_cfg_mtx = PTHREAD_MUTEX_INITIALIZER;
-/* settings were changed while no drive was around to store them */
-static int              g_cfg_unsaved = 0;
-
-void cfg_snapshot(dumper_config_t *out)
-{
-    pthread_mutex_lock(&g_cfg_mtx);
-    *out = g_cfg;
-    pthread_mutex_unlock(&g_cfg_mtx);
-}
-
-/* Hands the stored code and token to the core, and takes back what it had to
-   make up. Call with g_cfg_mtx held, after every config_load(). */
-static void access_adopt(void)
-{
-    if (!whb_access_init(g_cfg.access_code, g_cfg.access_token, g_cfg.require_code)) return;
-
-    whb_access_get(g_cfg.access_code, sizeof(g_cfg.access_code),
-                   g_cfg.access_token, sizeof(g_cfg.access_token));
-    if (config_save(&g_cfg) != 0) g_cfg_unsaved = 1;
-}
-
-void cfg_drive_appeared(void)
-{
-    pthread_mutex_lock(&g_cfg_mtx);
-    if (g_cfg_unsaved) {
-        /* carry this session's changes onto the drive that just appeared */
-        if (config_save(&g_cfg) == 0) g_cfg_unsaved = 0;
-    } else {
-        config_load(&g_cfg);
-        access_adopt();
-    }
-    g_enable_logging = g_cfg.enable_logging;
-    g_split_mode = g_cfg.split;
-    pthread_mutex_unlock(&g_cfg_mtx);
-}
-
-void json_config(sb_t *sb, const dumper_config_t *cfg);
-
-void json_config(sb_t *sb, const dumper_config_t *cfg)
-{
-    sb_printf(sb,
-        "{\"enableDecrypter\":%d,\"enableBackport\":%d,"
-        "\"ps4BackportLevel\":%d,\"ps5BackportLevel\":%d,"
-        "\"enableElf2fself\":%d,\"enableLogging\":%d,\"split\":%d,"
-        "\"enableWebui\":%d,\"webPort\":%d,\"autoStart\":%d,"
-        "\"queueDelay\":%d,\"requireCode\":%d,\"dumpSubdirConsole\":",
-        cfg->enable_decrypter, cfg->enable_backport,
-        cfg->ps4_backport_level, cfg->ps5_backport_level,
-        cfg->enable_elf2fself, cfg->enable_logging, cfg->split,
-        cfg->enable_webui, cfg->web_port, cfg->auto_start,
-        cfg->queue_delay, cfg->require_code);
-    sb_json_str(sb, cfg->dump_subdir_console);
-    sb_puts(sb, ",\"dumpSubdir\":");
-    sb_json_str(sb, cfg->dump_subdir);
-    sb_puts(sb, "}");
-}
-
-static void handle_config_get(int fd, const params_t *p)
-{
-    (void)p;
-    sb_t sb;
-    sb_init(&sb);
-
-    pthread_mutex_lock(&g_cfg_mtx);
-    json_config(&sb, &g_cfg);
-    pthread_mutex_unlock(&g_cfg_mtx);
-
-    send_sb(fd, 200, &sb);
-}
-
-static void handle_config_post(int fd, const params_t *p)
-{
-    pthread_mutex_lock(&g_cfg_mtx);
-    dumper_config_t cfg = g_cfg;
-
-    cfg.enable_decrypter   = param_get_int(p, "enableDecrypter",  cfg.enable_decrypter) ? 1 : 0;
-    cfg.enable_backport    = param_get_int(p, "enableBackport",   cfg.enable_backport) ? 1 : 0;
-    cfg.ps4_backport_level = clamp(param_get_int(p, "ps4BackportLevel", cfg.ps4_backport_level), 1, 6);
-    cfg.ps5_backport_level = clamp(param_get_int(p, "ps5BackportLevel", cfg.ps5_backport_level), 1, 10);
-    cfg.enable_elf2fself   = param_get_int(p, "enableElf2fself",  cfg.enable_elf2fself) ? 1 : 0;
-    cfg.enable_logging     = param_get_int(p, "enableLogging",    cfg.enable_logging) ? 1 : 0;
-    cfg.split              = clamp(param_get_int(p, "split",      cfg.split), 0, 3);
-    cfg.enable_webui       = param_get_int(p, "enableWebui",      cfg.enable_webui) ? 1 : 0;
-    cfg.web_port           = clamp(param_get_int(p, "webPort",    cfg.web_port), 1024, 65535);
-    cfg.auto_start         = param_get_int(p, "autoStart",        cfg.auto_start) ? 1 : 0;
-    cfg.queue_delay        = clamp(param_get_int(p, "queueDelay", cfg.queue_delay),
-                                   QUEUE_SETTLE_MIN, QUEUE_SETTLE_MAX);
-
-    /* Whether other devices need the code is for the console's own browser to
-       say: a phone that got in must not be able to leave the door open. */
-    if (param_get(p, "requireCode", NULL)) {
-        if (!http_peer_is_local(fd)) {
-            pthread_mutex_unlock(&g_cfg_mtx);
-            send_error(fd, 403, "this can only be changed in the console's own browser");
-            return;
-        }
-        cfg.require_code = param_get_int(p, "requireCode", cfg.require_code) ? 1 : 0;
-    }
-
-    /* a destination folder must stay below the mount point */
-    const struct { const char *param; char *field; size_t size; } folders[] = {
-        { "dumpSubdir",        cfg.dump_subdir,         sizeof(cfg.dump_subdir) },
-        { "dumpSubdirConsole", cfg.dump_subdir_console, sizeof(cfg.dump_subdir_console) },
-    };
-    for (size_t i = 0; i < sizeof(folders) / sizeof(folders[0]); i++) {
-        const char *given = param_get(p, folders[i].param, NULL);
-        if (!given) continue;
-
-        /* typed by hand: a slash at the end means nothing */
-        char subdir[64];
-        snprintf(subdir, sizeof(subdir), "%s", given);
-        for (size_t n = strlen(subdir); n && subdir[n - 1] == '/'; n--) subdir[n - 1] = '\0';
-
-        if (given[0] == '/' || !fs_path_is_safe(subdir)) {
-            pthread_mutex_unlock(&g_cfg_mtx);
-            send_error(fd, 400, "invalid destination folder");
-            return;
-        }
-        snprintf(folders[i].field, folders[i].size, "%s", subdir);
-    }
-
-    g_cfg = cfg;
-    g_enable_logging = cfg.enable_logging;
-    g_split_mode = cfg.split;
-    whb_access_init(cfg.access_code, cfg.access_token, cfg.require_code);
-
-    int saved = config_save(&cfg);
-    g_cfg_unsaved = (saved == 0) ? 0 : 1;
-    pthread_mutex_unlock(&g_cfg_mtx);
-
-    sb_t sb;
-    sb_init(&sb);
-    sb_printf(&sb, "{\"saved\":%s,\"config\":", saved == 0 ? "true" : "false");
-    json_config(&sb, &cfg);
-    sb_puts(&sb, ",\"note\":");
-    sb_json_str(&sb, saved == 0
-                ? "settings written to config.ini"
-                : "no drive connected - settings stay active until the payload restarts, "
-                  "and are written as soon as a drive shows up");
-    sb_puts(&sb, "}");
-    send_sb(fd, 200, &sb);
-}
-
-/* Puts a copy of the settings on the console, for the day the drive that
-   carries them is not plugged in. While it is, the drive's own still win. */
-static void handle_config_to_console(int fd, const params_t *p)
-{
-    (void)p;
-    pthread_mutex_lock(&g_cfg_mtx);
-    dumper_config_t cfg = g_cfg;
-    pthread_mutex_unlock(&g_cfg_mtx);
-
-    char path[256] = {0};
-    if (config_save_internal(&cfg, path, sizeof(path)) != 0) {
-        send_error(fd, 500, "could not write the settings to the console");
-        return;
-    }
-    write_log(g_log_path, "Settings copied to %s", path);
-
-    sb_t sb;
-    sb_init(&sb);
-    sb_puts(&sb, "{\"saved\":true,\"path\":");
-    sb_json_str(&sb, path);
-    sb_puts(&sb, "}");
-    send_sb(fd, 200, &sb);
-}
 
 /* Resolves the drive to browse: the caller-named mount if it is one of ours,
    otherwise the drive holding config.ini. Returns NULL when none is usable. */
@@ -275,14 +103,6 @@ static void handle_mkdir(int fd, const params_t *p)
 
 void routes_settings_init(void)
 {
-    pthread_mutex_lock(&g_cfg_mtx);
-    config_load(&g_cfg);
-    access_adopt();
-    pthread_mutex_unlock(&g_cfg_mtx);
-
-    http_route("GET",  "/api/config",           handle_config_get);
-    http_route("POST", "/api/config",           handle_config_post);
-    http_route("POST", "/api/config/console",   handle_config_to_console);
     http_route("GET",  "/api/browse",           handle_browse);
     http_route("POST", "/api/mkdir",            handle_mkdir);
 }

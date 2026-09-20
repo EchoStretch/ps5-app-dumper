@@ -26,18 +26,16 @@ const whb_app_t *dumper_app(void);
 /* 1 while a dump, a queue or the move of a dump is running. */
 int dumper_busy(void);
 
-/* Registers the dumper's routes. Call both, and whb_routes_init(), before
-   http_server_run(). */
+/* Registers the dumper's routes. Call both, whb_routes_init() and
+   whb_config_routes_init(), before http_server_run(). */
 void routes_settings_init(void);
 void routes_dumper_init(void);
 
-/* The settings live with the routes that serve and store them; everyone
-   else gets a copy. */
-void cfg_snapshot(dumper_config_t *out);
-void json_config(sb_t *sb, const dumper_config_t *cfg);
+/* Registers the dumper's settings with the core's config store. Call before
+   whb_config_init(). */
+void dumper_config_init(void);
 
-/* A drive turned up after the payload started: settings changed in the
-   meantime are written to it, otherwise its own are taken over. */
-void cfg_drive_appeared(void);
+/* The settings live in the core's store; everyone here gets a copy. */
+void cfg_snapshot(dumper_config_t *out);
 
 #endif /* ROUTES_H */
