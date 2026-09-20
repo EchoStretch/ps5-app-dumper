@@ -87,7 +87,7 @@ static int      g_backport_enabled = 0;   // default: disabled
 /* --------------------------------------------------------------------- */
 static int read_ps5_custom_sdk(const char *key, uint32_t *out)
 {
-    const char *homebrew = get_usb_homebrew_path();
+    const char *homebrew = get_app_data_path();
     if (!homebrew || !homebrew[0]) return -1;
 
     char cfg_path[512];
@@ -125,7 +125,7 @@ static int read_ps5_backport_level(int *level)
         return 0;
     }
 
-    const char *homebrew = get_usb_homebrew_path();
+    const char *homebrew = get_app_data_path();
     if (!homebrew || !homebrew[0]) return -1;
 
     char cfg_path[512];
@@ -165,7 +165,7 @@ static void load_ps5_sdk_config(void)
     int      enable_backport = 1;
 
     /* ---- read enable_backport ---- */
-    const char *homebrew = get_usb_homebrew_path();
+    const char *homebrew = get_app_data_path();
     if (homebrew && homebrew[0]) {
         char cfg_path[512];
         snprintf(cfg_path, sizeof(cfg_path), "%s/config.ini", homebrew);

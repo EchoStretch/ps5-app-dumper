@@ -486,7 +486,7 @@ static void handle_devices(int fd)
     /* Pick up a drive that was plugged in after the payload started. Only a
        drive that actually turned up may touch the settings - rereading them
        on every poll would throw away what the user just changed. */
-    if (!get_usb_homebrew_path()[0] && find_usb_and_setup() >= 0) {
+    if (!get_app_data_path()[0] && find_usb_and_setup() >= 0) {
         pthread_mutex_lock(&g_cfg_mtx);
         if (g_cfg_unsaved) {
             /* carry this session's changes onto the drive that just appeared */
@@ -553,7 +553,7 @@ static void handle_devices(int fd)
     pthread_mutex_unlock(&g_cfg_mtx);
 
     sb_puts(&sb, ",\"configPath\":");
-    const char *hb = get_usb_homebrew_path();
+    const char *hb = get_app_data_path();
     if (hb && hb[0]) {
         char path[256];
         snprintf(path, sizeof(path), "%s/config.ini", hb);

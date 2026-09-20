@@ -425,7 +425,7 @@ static int disc_known_locked(const char *title_id)
 
 static int disc_memory_path(char *out, size_t out_size)
 {
-    const char *hb = get_usb_homebrew_path();
+    const char *hb = get_app_data_path();
     if (!hb || !hb[0]) return -1;
     snprintf(out, out_size, "%s/%s", hb, DISC_MEMORY_FILE);
     return 0;

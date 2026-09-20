@@ -37,7 +37,8 @@ int progress_thread_run = 1;
 time_t copy_start_time = 0;
 pthread_t progress_thread = 0;
 
-static char g_usb_homebrew[128] = {0};
+static char g_usb_homebrew[128] = {0};   /* <drive>/homebrew: default home of dumps */
+static char g_app_data[128] = {0};      /* <drive>/ps5-app-dumper: settings, logs  */
 
 /* ------------------------------------------------------------------ */
 /*  In-memory log ring                                                 */
@@ -109,6 +110,20 @@ void request_abort(void) { g_abort_requested = 1; }
 void clear_abort(void)   { g_abort_requested = 0; }
 int  abort_requested(void) { return g_abort_requested; }
 
+/* Moves a file that older versions kept in <drive>/homebrew into our own
+   folder. A rename within one drive; on failure the old file simply stays
+   where it is and defaults take over. */
+static void adopt_legacy_file(const char *legacy_dir, const char *name)
+{
+    char from[256], to[256];
+    snprintf(from, sizeof(from), "%s/%s", legacy_dir, name);
+    snprintf(to,   sizeof(to),   "%s/%s", g_app_data, name);
+
+    if (file_exists(to) || !file_exists(from)) return;
+    if (rename(from, to) == 0)
+        write_log(g_log_path, "Moved %s into %s", from, g_app_data);
+}
+
 int find_usb_and_setup(void) {
     const char *possible_mounts[] = {
         "/mnt/usb0", "/mnt/usb1", "/mnt/usb2", "/mnt/usb3",
@@ -118,17 +133,22 @@ int find_usb_and_setup(void) {
 
     for (int i = 0; i < num_mounts; ++i) {
         const char *root = possible_mounts[i];
-        char homebrew[128], testfile[256], config[256];
+        char homebrew[128], appdir[128], testfile[256], config[256], legacy[256];
 
         snprintf(homebrew, sizeof(homebrew), "%s/homebrew", root);
-        snprintf(testfile, sizeof(testfile), "%s/.probe_usb", homebrew);
-        snprintf(config,   sizeof(config),   "%s/config.ini", homebrew);
+        snprintf(appdir,   sizeof(appdir),   "%s/" APP_DATA_DIRNAME, root);
+        snprintf(testfile, sizeof(testfile), "%s/.probe_usb", appdir);
+        snprintf(config,   sizeof(config),   "%s/config.ini", appdir);
+        snprintf(legacy,   sizeof(legacy),   "%s/config.ini", homebrew);
 
         g_enable_logging = read_logging_config();
 
         if (!dir_exists(root)) continue;
 
-        mkdirs(homebrew);
+        /* Our own folder holds the settings, the disc list and the logs.
+           "homebrew" is shared by many tools; it stays the default place
+           for dumps, but nothing is created there until a dump needs it. */
+        mkdirs(appdir);
 
         int fd = open(testfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
         if (fd != -1) {
@@ -138,14 +158,22 @@ int find_usb_and_setup(void) {
 
                 strncpy(g_usb_homebrew, homebrew, sizeof(g_usb_homebrew) - 1);
                 g_usb_homebrew[sizeof(g_usb_homebrew) - 1] = '\0';
+                strncpy(g_app_data, appdir, sizeof(g_app_data) - 1);
+                g_app_data[sizeof(g_app_data) - 1] = '\0';
+
+                char logs[192];
+                snprintf(logs, sizeof(logs), "%s/logs", appdir);
+                mkdirs(logs);
+                log_use_general();
+
+                adopt_legacy_file(homebrew, "config.ini");
+                adopt_legacy_file(homebrew, "disc_titles.txt");
 
                 if (!file_exists(config)) {
                     dumper_config_t defaults;
                     config_defaults(&defaults);
                     config_save(&defaults);
                 }
-
-                snprintf(g_log_path, sizeof(g_log_path), "%s/log.txt", homebrew);
 
                 if (g_enable_logging && g_log_path[0]) {
                     write_log(g_log_path,
@@ -159,17 +187,16 @@ int find_usb_and_setup(void) {
             unlink(testfile);
         }
 
-        if (file_exists(config)) {
+        /* a drive we cannot write to can still hand us its settings */
+        const char *ro_dir = file_exists(config) ? appdir : file_exists(legacy) ? homebrew : NULL;
+        if (ro_dir) {
             printf_notification("USB (read-only fallback): %s", root);
             strncpy(g_usb_homebrew, homebrew, sizeof(g_usb_homebrew) - 1);
             g_usb_homebrew[sizeof(g_usb_homebrew) - 1] = '\0';
-            snprintf(g_log_path, sizeof(g_log_path), "%s/log.txt", homebrew);
+            strncpy(g_app_data, ro_dir, sizeof(g_app_data) - 1);
+            g_app_data[sizeof(g_app_data) - 1] = '\0';
+            g_log_path[0] = '\0';   /* nowhere to write a log to */
 
-            if (g_enable_logging && g_log_path[0]) {
-                write_log(g_log_path,
-                          "USB detected (read-only) at %s – %s",
-                          root, detect_fs_type(root));
-            }
             return i;
         }
     }
@@ -202,15 +229,37 @@ void debug_list_usbs(void) {
     pclose(fp);
 }
 
+const char* get_app_data_path(void) {
+    return g_app_data;
+}
+
+/* The log of everything that is not one particular dump: start-up, the
+   queue's moves, the web UI. A dump switches to a file of its own and comes
+   back here when it is over. */
+void log_use_general(void)
+{
+    if (g_app_data[0]) snprintf(g_log_path, sizeof(g_log_path), "%s/logs/dumper.log", g_app_data);
+}
+
+void log_use_dump(const char *title_id)
+{
+    if (!g_app_data[0] || !title_id) return;
+
+    char stamp[32];
+    time_t now = time(NULL);
+    strftime(stamp, sizeof(stamp), "%Y-%m-%d_%H%M%S", localtime(&now));
+    snprintf(g_log_path, sizeof(g_log_path), "%s/logs/%s_%s.log", g_app_data, stamp, title_id);
+}
+
 const char* get_usb_homebrew_path(void) {
     return g_usb_homebrew;
 }
 
 int read_decrypter_config(void) {
-    if (g_usb_homebrew[0] == '\0') return 1;
+    if (g_app_data[0] == '\0') return 1;
 
     char config_path[256];
-    snprintf(config_path, sizeof(config_path), "%s/config.ini", g_usb_homebrew);
+    snprintf(config_path, sizeof(config_path), "%s/config.ini", g_app_data);
 
     FILE *f = fopen(config_path, "r");
     if (!f) return 1;
@@ -231,10 +280,10 @@ int read_decrypter_config(void) {
 }
 
 int read_logging_config(void) {
-    if (g_usb_homebrew[0] == '\0') return 1;
+    if (g_app_data[0] == '\0') return 1;
 
     char config_path[256];
-    snprintf(config_path, sizeof(config_path), "%s/config.ini", g_usb_homebrew);
+    snprintf(config_path, sizeof(config_path), "%s/config.ini", g_app_data);
 
     FILE *f = fopen(config_path, "r");
     if (!f) return 1;
@@ -257,10 +306,10 @@ int read_logging_config(void) {
 
 int read_backport_config(void)
 {
-    if (g_usb_homebrew[0] == '\0') return 1; 
+    if (g_app_data[0] == '\0') return 1; 
 
     char cfg_path[512];
-    snprintf(cfg_path, sizeof(cfg_path), "%s/config.ini", g_usb_homebrew);
+    snprintf(cfg_path, sizeof(cfg_path), "%s/config.ini", g_app_data);
 
     FILE *f = fopen(cfg_path, "r");
     if (!f) return 1;
@@ -283,10 +332,10 @@ int read_backport_config(void)
 
 int read_elf2fself_config(void)
 {
-    if (g_usb_homebrew[0] == '\0') return 1;
+    if (g_app_data[0] == '\0') return 1;
 
     char config_path[256];
-    snprintf(config_path, sizeof(config_path), "%s/config.ini", g_usb_homebrew);
+    snprintf(config_path, sizeof(config_path), "%s/config.ini", g_app_data);
 
     FILE *f = fopen(config_path, "r");
     if (!f) return 1;
@@ -309,10 +358,10 @@ int read_elf2fself_config(void)
 
 int read_split_config(void)
 {
-    if (g_usb_homebrew[0] == '\0') return 3;
+    if (g_app_data[0] == '\0') return 3;
 
     char config_path[256];
-    snprintf(config_path, sizeof(config_path), "%s/config.ini", g_usb_homebrew);
+    snprintf(config_path, sizeof(config_path), "%s/config.ini", g_app_data);
 
     FILE *f = fopen(config_path, "r");
     if (!f) return 3;
@@ -360,8 +409,8 @@ void config_defaults(dumper_config_t *cfg)
 int config_path(char *out, size_t out_size)
 {
     if (!out || out_size == 0) return -1;
-    if (g_usb_homebrew[0] == '\0') { out[0] = '\0'; return -1; }
-    snprintf(out, out_size, "%s/config.ini", g_usb_homebrew);
+    if (g_app_data[0] == '\0') { out[0] = '\0'; return -1; }
+    snprintf(out, out_size, "%s/config.ini", g_app_data);
     return 0;
 }
 

@@ -49,9 +49,9 @@ static int run_headless(const dumper_config_t *cfg)
     const char *usb = get_usb_homebrew_path();
     if (!usb || !usb[0]) return 1;
 
-    char logpath[512];
-    snprintf(logpath, sizeof(logpath), "%s/log.txt", usb);
-    strncpy(g_log_path, logpath, sizeof(g_log_path) - 1);
+    /* the dump still goes to <drive>/homebrew; its log joins the others */
+    log_use_general();
+    const char *logpath = g_log_path;
 
     write_log(logpath, "=== PS5 App Dumper v%s ===", VERSION);
 

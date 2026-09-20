@@ -69,7 +69,7 @@ static int      g_backport_enabled = 0;
 /* --------------------------------------------------------------------- */
 static int read_uint32_from_ini(const char *key, uint32_t *out)
 {
-    const char *homebrew = get_usb_homebrew_path();
+    const char *homebrew = get_app_data_path();
     if (!homebrew || !homebrew[0]) return -1;
 
     char cfg_path[512];
@@ -104,7 +104,7 @@ static int read_backport_level_from_ini(const char *key, int *level)
         return 0;
     }
 
-    const char *homebrew = get_usb_homebrew_path();
+    const char *homebrew = get_app_data_path();
     if (!homebrew || !homebrew[0]) return -1;
 
     char cfg_path[512];
