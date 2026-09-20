@@ -2448,30 +2448,41 @@ $("sub").textContent = "Web console · " + location.host;
 /* ---------------- this copy: version, and a place in Payload Manager ---------------- */
 var self = null;
 
+/* stored: "none" | "same" | "other" | "unknown"
+   "same" is this very build, "other" a different build under the same
+   version - during development the number stays while the code moves. */
 function showStoreState(stored){
-  var can = !!(self && self.canStore);
-  $("c-store").disabled = !can;
-  $("c-store").textContent = stored ? "Save again" : "Save";
+  var can = !!(self && self.canStore), b = $("c-store");
+  b.disabled = !can || stored === "same";
+  b.classList.toggle("warn", can && stored === "other");
+  b.textContent = stored === "same" ? "Saved" : stored === "other" ? "Update" : stored === "unknown" ? "Save again" : "Save";
   $("store-hint").textContent = !self ? "…"
     : !can ? "This copy was started from a stored file, so it is in a payload manager already."
-    : stored ? self.file + " is in Payload Manager. The home-screen shortcut can start it when the payload is not running."
-             : "Stores this payload as " + self.file + " in pldmgr, so it can be started from there - and from the home-screen shortcut.";
+    : stored === "same"  ? "Payload Manager holds exactly this build as " + self.file + ". The home-screen shortcut can start it when the payload is not running."
+    : stored === "other" ? "Payload Manager holds a different build of v" + self.version + ". Update it to keep what is running now."
+    : stored === "unknown" ? self.file + " is in Payload Manager; whether it is this build could not be told."
+    : "Stores this payload as " + self.file + " in pldmgr, so it can be started from there - and from the home-screen shortcut.";
 }
 
-/* pldmgr is asked directly whether it has this very file */
+/* pldmgr says whether it has a file of this name; whether that file is this
+   very build the payload finds out itself, reading it off the console's disk */
 function checkStored(){
   if(!self) return;
   fetch("http://" + location.hostname + ":8084/list_payloads").then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
-    var paths = (d && d.payloads) || [];
-    showStoreState(paths.some(function(p){ return typeof p === "string" && p.split("/").pop() === self.file; }));
-  }).catch(function(){ showStoreState(false); });
+    var found = ((d && d.payloads) || []).filter(function(p){ return typeof p === "string" && p.split("/").pop() === self.file; })[0];
+    if(!found){ showStoreState("none"); return; }
+
+    api("/api/self/compare?path=" + encodeURIComponent(found)).then(function(r){
+      showStoreState(r.match === "same" ? "same" : r.match === "other" ? "other" : "unknown");
+    }).catch(function(){ showStoreState("unknown"); });
+  }).catch(function(){ showStoreState("none"); });
 }
 
 api("/api/self").then(function(r){
   self = r;
   $("sub").textContent = "Web console · v" + r.version + " · " + location.host;
   $("ver").textContent = "v" + r.version + " · ";
-  showStoreState(false);
+  showStoreState("none");
   checkStored();
 }).catch(function(){});
 
@@ -2481,10 +2492,10 @@ $("c-store").addEventListener("click", function(){
   b.textContent = "Saving…";
   post("/api/self/store").then(function(r){
     toast(r.file + " stored in Payload Manager", "ok");
-    showStoreState(true);
+    checkStored();
   }).catch(function(e){
     toast("Not stored: " + e.message, "bad");
-    showStoreState(false);
+    checkStored();
   });
 });
 

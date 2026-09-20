@@ -919,6 +919,19 @@ static void handle_self(int fd)
     send_json(fd, 200, json);
 }
 
+/* Is the file pldmgr holds this very build? The page passes the path it
+   got from pldmgr's list; self_store_matches() only accepts a file of our
+   name inside a payload manager's storage. */
+static void handle_self_compare(int fd, const params_t *p)
+{
+    int rc = self_store_matches(param_get(p, "path", ""));
+
+    char json[64];
+    snprintf(json, sizeof(json), "{\"match\":%s}",
+             rc == 1 ? "\"same\"" : rc == 0 ? "\"other\"" : "\"unknown\"");
+    send_json(fd, 200, json);
+}
+
 static void handle_self_store(int fd)
 {
     char err[192] = {0};
@@ -1115,6 +1128,7 @@ static void route(int fd, const char *method, const char *path, const params_t *
     else if (is_get  && !strcmp(path, "/api/libicon")) handle_library_icon(fd, p);
     else if (is_get  && !strcmp(path, "/api/libpic"))  handle_library_pic(fd, p);
     else if (is_get  && !strcmp(path, "/api/self"))    handle_self(fd);
+    else if (is_get  && !strcmp(path, "/api/self/compare")) handle_self_compare(fd, p);
     else if (is_post && !strcmp(path, "/api/self/store")) handle_self_store(fd);
     else if (is_post && !strcmp(path, "/api/launch"))  handle_launch(fd, p);
     else if (is_get  && !strcmp(path, "/api/size"))    handle_size(fd, p);

@@ -30,6 +30,13 @@ extern const size_t        self_elf_len;
 /* 1 when this copy carries an ELF it can store. */
 int self_store_available(void);
 
+/* Tells whether a stored file is this very build: 1 when it equals the
+   embedded ELF or contains it (the file a release ships does - it is this
+   build one stage later), 0 when it is some other build, -1 when it cannot
+   be read or there is nothing to compare with. path must name a
+   DUMPER_ELF_NAME inside a payload manager's storage. */
+int self_store_matches(const char *path);
+
 /* Uploads the embedded ELF to pldmgr on this console under DUMPER_ELF_NAME,
    replacing a file of that name. Returns 0 on success, -1 with a reason a
    user can act on in err. */

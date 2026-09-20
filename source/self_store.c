@@ -20,6 +20,7 @@ along with this program; see the file COPYING. If not, see
 #include <errno.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -32,9 +33,58 @@ along with this program; see the file COPYING. If not, see
    the same request its own page sends. */
 #define PLDMGR_PORT 8084
 
+/* Where pldmgr keeps what it stores. */
+#ifndef STORE_ROOT          /* the host harness points this at a scratch folder */
+#define STORE_ROOT "/data/pldmgr/"
+#endif
+
 int self_store_available(void)
 {
     return self_elf_len > 0;
+}
+
+/* Only a payload manager's own storage, and only a file of our name: the
+   path comes in over HTTP. */
+static int path_is_ours(const char *path)
+{
+    if (!path || strstr(path, "..")) return 0;
+    if (strncmp(path, STORE_ROOT, strlen(STORE_ROOT)) != 0 && strncmp(path, "/mnt/usb", 8) != 0) return 0;
+
+    const char *name = strrchr(path, '/');
+    return name && strcmp(name + 1, DUMPER_ELF_NAME) == 0;
+}
+
+int self_store_matches(const char *path)
+{
+    if (!self_store_available() || !path_is_ours(path)) return -1;
+
+    struct stat st;
+    if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) return -1;
+    /* an ELF of ours is a megabyte; anything far off is not worth reading */
+    if ((size_t)st.st_size < self_elf_len || st.st_size > 16 * 1024 * 1024) return 0;
+
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+
+    size_t size = (size_t)st.st_size;
+    unsigned char *buf = malloc(size);
+    int same = -1;
+
+    if (buf && fread(buf, 1, size, f) == size) {
+        same = 0;
+        /* equal, or this build one stage later, which carries the copy inside */
+        for (size_t off = 0; off + self_elf_len <= size; off++) {
+            if (buf[off] == self_elf[0] && memcmp(buf + off, self_elf, self_elf_len) == 0) {
+                same = 1;
+                break;
+            }
+            if (size == self_elf_len) break;   /* same size: only offset 0 counts */
+        }
+    }
+
+    free(buf);
+    fclose(f);
+    return same;
 }
 
 static int send_all(int fd, const void *data, size_t len)
