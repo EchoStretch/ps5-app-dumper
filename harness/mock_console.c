@@ -326,8 +326,6 @@ int main(int argc, char **argv)
     dumper_config_init();
     whb_config_init();      /* no /mnt/usbX here: settings go to the pretend console */
     whb_routes_init();
-    whb_config_routes_init();
-    routes_settings_init();
     routes_dumper_init();
     return http_server_run(argc > 2 ? atoi(argv[2]) : 8099);
 }

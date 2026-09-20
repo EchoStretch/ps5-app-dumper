@@ -20,9 +20,11 @@ along with this program; see the file COPYING. If not, see
 #include <stddef.h>
 #include <stdint.h>
 
+/* target_scan() and its target_entry_t live in the core now */
+#include "webhb.h"
+
 #define SANDBOX_PATH    "/mnt/sandbox/pfsmnt"
 #define APP_SCAN_MAX    24
-#define TARGET_SCAN_MAX 16
 
 /* One mounted application, as exposed by pfsmnt while the title runs. */
 typedef struct {
@@ -36,16 +38,6 @@ typedef struct {
     int  on_disc;         /* served by the disc in the drive            */
     int  is_disc;         /* a disc game, inserted or not               */
 } app_entry_t;
-
-/* A mount point the dump can be written to. */
-typedef struct {
-    char     mount[64];   /* "/mnt/usb0"                */
-    char     fs[24];      /* "exfatfs", "ufs", ...      */
-    int      writable;
-    int      internal;    /* the console's own storage, not a drive */
-    uint64_t total_bytes;
-    uint64_t free_bytes;
-} target_entry_t;
 
 /* Fills out with up to max entries, returns the number found. */
 int app_scan(app_entry_t *out, int max);
@@ -107,12 +99,6 @@ int library_icon_path(const char *title_id, char *out, size_t out_size);
 /* Resolves the wide key art of an installed title (pic0/pic1). Returns 0 on
    success; many titles ship none. */
 int library_pic_path(const char *title_id, char *out, size_t out_size);
-
-/* Fills out with up to max mount points, returns the number found. */
-int target_scan(target_entry_t *out, int max);
-
-/* Returns 0 when mount is one of the mount points target_scan() reports. */
-int target_is_known(const char *mount);
 
 /* A title can run without its package: ShadowMount redirects a title to a
    dump it found (seen: a mount.lnk next to app.pkg, /system_ex/app/<id>

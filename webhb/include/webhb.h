@@ -18,6 +18,7 @@ along with this program; see the file COPYING. If not, see
 #define WEBHB_H
 
 #include <stddef.h>
+#include <stdint.h>
 #include <time.h>
 
 #include "webhb_http.h"
@@ -64,8 +65,9 @@ int whb_busy(void);
 const char *whb_elf_name(void);
 
 /* Registers the routes every app gets: the page and its cache manifest, the
-   icons, the web manifest, /api/self*, /api/tile and /api/quit. Call before
-   http_server_run(). */
+   icons, the web manifest, /api/self*, /api/tile, /api/quit, the settings
+   (/api/config*), the folder picker (/api/browse, /api/mkdir) and the access
+   check. Call after whb_config_init() and before http_server_run(). */
 void whb_routes_init(void);
 
 /* ------------------------------------------------------------------ */
@@ -164,7 +166,7 @@ void whb_config_unlock(void);
 void whb_config_json(sb_t *sb);
 
 /* Hands the stored access code to the access check and registers
-   /api/config and /api/config/console. */
+   /api/config and /api/config/console. whb_routes_init() calls it. */
 void whb_config_routes_init(void);
 
 /* ------------------------------------------------------------------ */
@@ -235,6 +237,28 @@ int tile_is_current(int port);
    tile_is_current() that tells a tile left behind by an older build - or
    pointing at another port - from no tile. */
 int tile_exists(void);
+
+/* ------------------------------------------------------------------ */
+/*  Drives - see drives.c                                              */
+/* ------------------------------------------------------------------ */
+
+#define TARGET_SCAN_MAX 16
+
+/* A mount point files can be written to. */
+typedef struct {
+    char     mount[64];   /* "/mnt/usb0"                */
+    char     fs[24];      /* "exfatfs", "ufs", ...      */
+    int      writable;
+    int      internal;    /* the console's own storage, not a drive */
+    uint64_t total_bytes;
+    uint64_t free_bytes;
+} target_entry_t;
+
+/* Fills out with up to max mount points, returns the number found. */
+int target_scan(target_entry_t *out, int max);
+
+/* Returns 0 when mount is one of the mount points target_scan() reports. */
+int target_is_known(const char *mount);
 
 /* ------------------------------------------------------------------ */
 /*  Folder picker backend                                              */
