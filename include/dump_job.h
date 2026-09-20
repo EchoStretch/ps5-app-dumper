@@ -43,6 +43,7 @@ typedef struct {
     uint64_t    total_bytes;
     uint64_t    copied_bytes;
     time_t      started;
+    time_t      copy_started;     /* when bytes began to move, 0 before that */
     time_t      finished;
 } job_status_t;
 

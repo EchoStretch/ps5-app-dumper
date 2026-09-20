@@ -46,6 +46,8 @@ int file_exists(const char *path);
 void mkdirs(const char *path);
 int write_log(const char *log_file_path, const char *fmt, ...);
 void printf_notification(const char *fmt, ...);
+/* Same toast on the console, but kept out of the web UI's live console. */
+void printf_notification_quiet(const char *fmt, ...);
 int sceKernelSendNotificationRequest(int device, SceNotificationRequest *req, size_t size, int blocking);
 
 int read_npwr_id(const char *npbind_path, char *npwr_out, size_t out_size);

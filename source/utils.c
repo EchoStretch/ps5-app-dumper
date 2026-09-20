@@ -572,15 +572,12 @@ int write_log(const char *log_file_path, const char *fmt, ...)
     return 0;
 }
 
-void printf_notification(const char *fmt, ...)
+static void send_notification(const char *fmt, va_list ap, int to_console)
 {
     SceNotificationRequest noti;
     memset(&noti, 0, sizeof(noti));
 
-    va_list ap;
-    va_start(ap, fmt);
     vsnprintf(noti.message, sizeof(noti.message), fmt, ap);
-    va_end(ap);
 
     noti.type = 0;
     noti.use_icon_image_uri = 1;
@@ -589,7 +586,23 @@ void printf_notification(const char *fmt, ...)
 
     sceKernelSendNotificationRequest(0, &noti, sizeof(noti), 0);
     printf("%s\n", noti.message);
-    log_ring_push(noti.message);
+    if (to_console) log_ring_push(noti.message);
+}
+
+void printf_notification(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    send_notification(fmt, ap, 1);
+    va_end(ap);
+}
+
+void printf_notification_quiet(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    send_notification(fmt, ap, 0);
+    va_end(ap);
 }
 
 int read_npwr_id(const char *npbind_path, char *npwr_out, size_t out_size)
@@ -863,18 +876,19 @@ void *progress_status_func(void *arg)
         int est_m = (int)((est_sec - est_h*3600)/60);
         int est_s = (int)(est_sec - est_h*3600 - est_m*60);
 
-        printf_notification(
+        /* The toast goes to the screen only: the log line below says the
+           same, and the web console would otherwise show every tick twice. */
+        printf_notification_quiet(
             "Copying: %s\nProgress: %d%%\n%.2fGB of %.2fGB\nAverage speed: %.2f MB/s\nETA: %02d:%02d:%02d",
             current_copied, pct, copied_gb, total_gb, avg_speed_mb_s, est_h, est_m, est_s
         );
 
-        if (g_enable_logging && g_log_path[0]) {
-            write_log(g_log_path,
-                      "Progress: %d%% Copied: %.2f/%.2f GB Remaining: %.2f GB "
-                      "Average speed: %.2f MB/s ETA: %02d:%02d:%02d",
-                      pct, copied_gb, total_gb, (double)remaining_bytes/(1024.0*1024.0*1024.0),
-                      avg_speed_mb_s, est_h, est_m, est_s);
-        }
+        /* write_log feeds the web console even with file logging off */
+        write_log(g_log_path,
+                  "Progress: %d%% Copied: %.2f/%.2f GB Remaining: %.2f GB "
+                  "Average speed: %.2f MB/s ETA: %02d:%02d:%02d",
+                  pct, copied_gb, total_gb, (double)remaining_bytes/(1024.0*1024.0*1024.0),
+                  avg_speed_mb_s, est_h, est_m, est_s);
     }
     return NULL;
 }

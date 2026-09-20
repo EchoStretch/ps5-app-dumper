@@ -1534,8 +1534,9 @@ function renderJob(job){
     live.style.display = "";
     verdict.style.display = "none";
 
+    /* whole percent, rounded down - the same figure the log line carries */
     var pct = job.totalBytes ? Math.min(100, job.copiedBytes / job.totalBytes * 100) : 0;
-    $("pctnum").textContent = pct.toFixed(pct >= 10 ? 0 : 1);
+    $("pctnum").textContent = Math.floor(pct);
     $("pbar").style.width = pct + "%";
     $("s-copied").textContent = bytes(job.copiedBytes);
     $("s-total").textContent  = job.totalBytes ? bytes(job.totalBytes) : "measuring…";
@@ -1543,10 +1544,14 @@ function renderJob(job){
     var rate = speed(job);
     $("s-speed").textContent = rate > 0 ? (rate / 1048576).toFixed(1) + " MB/s" : "—";
 
-    var elapsed = job.started ? (Date.now()/1000) - job.started : 0;
-    $("s-elapsed").textContent = clock(elapsed);
-    $("s-eta").textContent = (rate > 0 && job.totalBytes > job.copiedBytes)
-      ? clock((job.totalBytes - job.copiedBytes) / rate) : "—";
+    /* Elapsed and remaining go by the console's clock and its average since
+       the copy began, as the log does; "Speed" stays the momentary rate. */
+    var now = job.now || Date.now()/1000;
+    $("s-elapsed").textContent = clock(job.started ? now - job.started : 0);
+    var copyFor = job.copyStarted ? now - job.copyStarted : 0;
+    var avg = copyFor > 0 ? job.copiedBytes / copyFor : 0;
+    $("s-eta").textContent = (avg > 0 && job.totalBytes > job.copiedBytes)
+      ? clock((job.totalBytes - job.copiedBytes) / avg) : "—";
 
     var f = job.currentFile || "";
     $("s-file").textContent = f ? f : "";

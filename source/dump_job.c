@@ -257,6 +257,7 @@ void job_get_status(job_status_t *out)
         if (folder_size_current > 0)
             out->total_bytes = (uint64_t)folder_size_current;
         out->copied_bytes = (uint64_t)total_bytes_copied;
+        out->copy_started = copy_start_time;
 
         strncpy(out->current_file, current_copied, sizeof(out->current_file) - 1);
         out->current_file[sizeof(out->current_file) - 1] = '\0';

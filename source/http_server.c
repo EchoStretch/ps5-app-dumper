@@ -373,10 +373,11 @@ static void json_job(sb_t *sb, const job_status_t *job)
     sb_puts(sb, ",\"message\":");
     sb_json_str(sb, job->message);
     sb_printf(sb, ",\"totalBytes\":%llu,\"copiedBytes\":%llu,"
-                  "\"started\":%lld,\"finished\":%lld}",
+                  "\"started\":%lld,\"copyStarted\":%lld,\"finished\":%lld,\"now\":%lld}",
               (unsigned long long)job->total_bytes,
               (unsigned long long)job->copied_bytes,
-              (long long)job->started, (long long)job->finished);
+              (long long)job->started, (long long)job->copy_started,
+              (long long)job->finished, (long long)time(NULL));
 }
 
 static void json_queue(sb_t *sb, const queue_status_t *q)
