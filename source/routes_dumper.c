@@ -614,6 +614,36 @@ static void handle_dump_icon(int fd, const params_t *p)
     send_file(fd, path, "image/png");
 }
 
+/* Takes the link off a title that is redirected to this dump, without moving
+   the dump: the game then starts from its installed package again. */
+static void handle_dump_unlink(int fd, const params_t *p)
+{
+    const char *mount  = param_get(p, "mount", NULL);
+    const char *dir    = param_get(p, "dir", "");
+    const char *folder = param_get(p, "folder", NULL);
+
+    if (!mount || !folder || target_is_known(mount) != 0) { send_error(fd, 400, "unknown drive"); return; }
+    if (!dump_folder_name_ok(folder) || !fs_path_is_safe(dir)) { send_error(fd, 400, "not a dump folder"); return; }
+
+    char id[16], path[384];
+    snprintf(id, sizeof(id), "%.9s", folder);
+    snprintf(path, sizeof(path), "%s%s%s/%s", mount, dir[0] ? "/" : "", dir, folder);
+
+    if (title_runs_from_folder(id)) {
+        send_error(fd, 409, "the game is running from this folder right now - close it first");
+        return;
+    }
+    if (!title_drop_mount_link(id, path)) {
+        send_error(fd, 409, "no installed game is linked to this dump");
+        return;
+    }
+
+    sb_t sb;
+    sb_init(&sb);
+    sb_printf(&sb, "{\"unlinked\":true,\"shadowMountRunning\":%s}", shadowmount_pid() ? "true" : "false");
+    send_sb(fd, 200, &sb);
+}
+
 /* Only ever because the user said so, with the consequences in front of them. */
 static void handle_shadowmount_stop(int fd, const params_t *p)
 {
@@ -734,6 +764,7 @@ void routes_dumper_init(void)
     http_route("GET",  "/api/dumps",          handle_dumps);
     http_route("GET",  "/api/dumps/icon",     handle_dump_icon);
     http_route("POST", "/api/shadowmount/stop", handle_shadowmount_stop);
+    http_route("POST", "/api/dumps/unlink",   handle_dump_unlink);
     http_route("POST", "/api/dumps/move",     handle_dump_move);
     http_route("POST", "/api/dumps/move/cancel", handle_dump_move_cancel);
     http_route("POST", "/api/dumps/move/clear",  handle_dump_move_clear);

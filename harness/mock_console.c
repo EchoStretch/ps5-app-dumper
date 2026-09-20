@@ -46,6 +46,10 @@ static struct { const char *id, *title, *ver; int disc; } LIB[] = {
 };
 #define NLIB ((int)(sizeof(LIB) / sizeof(LIB[0])))
 
+/* the Folder Game is linked to a dump on the pretend drive until that is undone */
+#define FOLDER_GAME_DUMP "usb0/homebrew/PPSA07777-app0"
+static int g_folder_linked = 1;
+
 static int lib_index(const char *id)
 {
     for (int i = 0; i < NLIB; i++)
@@ -137,7 +141,7 @@ static void fill_lib(library_entry_t *e, int i)
     e->is_disc = LIB[i].disc;
     e->has_pic = 1;
     e->installed_pct = title_installed_percent(LIB[i].id);
-    if (!strcmp(LIB[i].id, "PPSA07777")) strcpy(e->mounted_from, "/mnt/usb0/homebrew/PPSA07777-app0");
+    if (!strcmp(LIB[i].id, "PPSA07777") && g_folder_linked) strcpy(e->mounted_from, FOLDER_GAME_DUMP);
     e->is_running = (running_now(id) && !strcmp(id, LIB[i].id)) || title_runs_from_folder(LIB[i].id);
 }
 
@@ -164,7 +168,12 @@ static int g_shadowmount = 4711;
 int shadowmount_pid(void)  { return g_shadowmount; }
 int shadowmount_stop(void) { g_shadowmount = 0; return 0; }
 
-int title_drop_mount_link(const char *id, const char *target) { (void)id; (void)target; return 0; }
+int title_drop_mount_link(const char *id, const char *target)
+{
+    if (!g_folder_linked || strcmp(id, "PPSA07777") || strcmp(target, FOLDER_GAME_DUMP)) return 0;
+    g_folder_linked = 0;
+    return 1;
+}
 
 /* Bloodborne is still coming off its disc - and refused for that before its
    size is even looked at */

@@ -2964,11 +2964,13 @@ function renderDumps(){
                 '<span class="tags">' + dumpTags(d) + '</span>' +
                 '<span class="where">' + esc(dumpPath(d)) + '</span>' +
                 '<span class="foot"><span class="size">' + (d.bytes ? bytes(d.bytes) : "") + '</span>' +
-                '<button type="button" class="mini" data-move="' + at + '">Move</button></span></span></div>';
+                (d.inUse ? '<button type="button" class="mini" data-unlink="' + at + '" style="margin-left:auto">Unlink</button>' : "") +
+                '<button type="button" class="mini" data-move="' + at + '"' + (d.inUse ? ' style="margin-left:6px"' : "") + '>Move</button></span></span></div>';
       } else {
         html += '<div class="dumprow"><span class="meta"><span class="name">' + esc(d.title) + '</span>' +
                 '<span class="where">' + dumpTags(d) + esc(dumpPath(d)) + '</span></span>' +
                 '<span class="size">' + (d.bytes ? bytes(d.bytes) : "") + '</span>' +
+                (d.inUse ? '<button type="button" class="mini" data-unlink="' + at + '" style="margin-right:6px">Unlink</button>' : "") +
                 '<button type="button" class="mini" data-move="' + at + '">Move</button></div>';
       }
     });
@@ -2979,6 +2981,19 @@ function renderDumps(){
   $("dumplist").innerHTML = html;
   Array.prototype.forEach.call($("dumplist").querySelectorAll("[data-move]"), function(b){
     b.addEventListener("click", function(){ openMovePicker(state.dumps[Number(b.getAttribute("data-move"))]); });
+  });
+  /* takes the link off the installed game; the dump stays where it is */
+  Array.prototype.forEach.call($("dumplist").querySelectorAll("[data-unlink]"), function(b){
+    b.addEventListener("click", function(){
+      var d = state.dumps[Number(b.getAttribute("data-unlink"))];
+      b.disabled = true;
+      post("/api/dumps/unlink", {mount: d.mount, dir: d.dir, folder: d.folder}).then(function(r){
+        toast(r.shadowMountRunning
+          ? d.title + " unlinked - but ShadowMount is running and will link it again at its next scan."
+          : d.title + " unlinked - it starts from its installed package again.", r.shadowMountRunning ? "bad" : "ok");
+        loadDumps(); loadLibrary();
+      }).catch(function(e){ toast(e.message, "bad"); b.disabled = false; });
+    });
   });
 }
 Array.prototype.forEach.call($("dumps-view").querySelectorAll("button"), function(b){
