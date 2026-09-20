@@ -149,7 +149,8 @@ static void sb_json_str(sb_t *sb, const char *s)
 /*  Request parsing                                                    */
 /* ------------------------------------------------------------------ */
 
-#define MAX_PARAMS 16
+/* a queue may bring one settings parameter per title on top of its own */
+#define MAX_PARAMS 40
 
 typedef struct {
     char key[32];
@@ -395,6 +396,7 @@ static void json_queue(sb_t *sb, const queue_status_t *q)
         sb_json_str(sb, q->items[i].title_id);
         sb_puts(sb, ",\"title\":");
         sb_json_str(sb, q->items[i].title);
+        sb_printf(sb, ",\"custom\":%s", q->items[i].custom ? "true" : "false");
         sb_printf(sb, ",\"isDisc\":%s,\"discIn\":%s", q->items[i].is_disc ? "true" : "false",
                   title_on_disc(q->items[i].title_id) ? "true" : "false");
         sb_puts(sb, ",\"state\":");
@@ -670,6 +672,31 @@ static void handle_abort(int fd)
     send_json(fd, 200, "{\"stopping\":true}");
 }
 
+/* Applies a title's own settings, e.g. "d1f0b1p4q1s3", to cfg: decrypt,
+   fself, backport, ps4 level, ps5 level, split. Letters that are missing
+   keep the general setting; anything else makes the string invalid. */
+static int apply_item_settings(dumper_config_t *cfg, const char *spec)
+{
+    for (const char *p = spec; *p; ) {
+        char key = *p++;
+        if (*p < '0' || *p > '9') return -1;
+
+        int val = 0;
+        while (*p >= '0' && *p <= '9') val = val * 10 + (*p++ - '0');
+
+        switch (key) {
+            case 'd': cfg->enable_decrypter   = val ? 1 : 0;     break;
+            case 'f': cfg->enable_elf2fself   = val ? 1 : 0;     break;
+            case 'b': cfg->enable_backport    = val ? 1 : 0;     break;
+            case 'p': cfg->ps4_backport_level = clamp(val, 1, 6);  break;
+            case 'q': cfg->ps5_backport_level = clamp(val, 1, 10); break;
+            case 's': cfg->split              = clamp(val, 0, 3);  break;
+            default:  return -1;
+        }
+    }
+    return 0;
+}
+
 /* "PPSA01234,CUSA05678" -> the titles to dump, in that order. "discs" names
    those among them the user marked as disc games; when the page sends it,
    even empty, it overrules what the scanner believes. */
@@ -698,9 +725,33 @@ static void handle_queue_start(int fd, const params_t *p)
     dumper_config_t cfg = g_cfg;
     pthread_mutex_unlock(&g_cfg_mtx);
 
+    /* "o_<title id>" carries the settings of a title that has its own */
+    dumper_config_t *own = calloc(QUEUE_MAX + 1, sizeof(*own));
+    if (!own) { send_error(fd, 500, "out of memory"); return; }
+
+    const dumper_config_t *item_cfg[QUEUE_MAX + 1] = {0};
+    for (int i = 0; i < count && i <= QUEUE_MAX; i++) {
+        char key[32];
+        snprintf(key, sizeof(key), "o_%s", ids[i]);
+
+        const char *spec = param_get(p, key, NULL);
+        if (!spec || !*spec) continue;
+
+        own[i] = cfg;
+        if (apply_item_settings(&own[i], spec) != 0) {
+            free(own);
+            send_error(fd, 400, "invalid settings for a queued title");
+            return;
+        }
+        item_cfg[i] = &own[i];
+    }
+
     char err[160] = {0};
-    if (queue_start(ids, discs ? is_disc : NULL, count, target, cfg.queue_delay,
-                    &cfg, err, sizeof(err)) != 0) {
+    int rc = queue_start(ids, discs ? is_disc : NULL, item_cfg, count, target,
+                         cfg.queue_delay, &cfg, err, sizeof(err));
+    free(own);
+
+    if (rc != 0) {
         send_error(fd, 409, err[0] ? err : "could not start the queue");
         return;
     }
@@ -780,10 +831,11 @@ static void handle_library(int fd)
         sb_json_str(&sb, lib[i].version);
         sb_puts(&sb, ",\"source\":");
         sb_json_str(&sb, lib[i].source);
-        sb_printf(&sb, ",\"isPs4\":%s,\"hasIcon\":%s,\"isRunning\":%s,"
+        sb_printf(&sb, ",\"isPs4\":%s,\"hasIcon\":%s,\"hasPic\":%s,\"isRunning\":%s,"
                        "\"media\":\"%s\",\"discIn\":%s}",
                   lib[i].is_ps4 ? "true" : "false",
                   lib[i].has_icon ? "true" : "false",
+                  lib[i].has_pic ? "true" : "false",
                   lib[i].is_running ? "true" : "false",
                   lib[i].is_disc ? "disc" : "pkg",
                   lib[i].on_disc ? "true" : "false");
@@ -842,6 +894,21 @@ static void handle_library_icon(int fd, const params_t *p)
     char path[512];
     if (library_icon_path(title, path, sizeof(path)) != 0) {
         send_error(fd, 404, "no icon");
+        return;
+    }
+
+    send_file(fd, path, "image/png");
+}
+
+static void handle_library_pic(int fd, const params_t *p)
+{
+    const char *title = param_get(p, "title", NULL);
+    if (!title || !*title) { send_error(fd, 400, "no title given"); return; }
+
+    /* library_pic_path only accepts a title id, so no path can be injected */
+    char path[512];
+    if (library_pic_path(title, path, sizeof(path)) != 0) {
+        send_error(fd, 404, "no artwork");
         return;
     }
 
@@ -978,6 +1045,7 @@ static void route(int fd, const char *method, const char *path, const params_t *
     else if (is_get  && !strcmp(path, "/api/icon"))    handle_icon(fd, p);
     else if (is_get  && !strcmp(path, "/api/library")) handle_library(fd);
     else if (is_get  && !strcmp(path, "/api/libicon")) handle_library_icon(fd, p);
+    else if (is_get  && !strcmp(path, "/api/libpic"))  handle_library_pic(fd, p);
     else if (is_post && !strcmp(path, "/api/launch"))  handle_launch(fd, p);
     else if (is_get  && !strcmp(path, "/api/size"))    handle_size(fd, p);
     else if (is_get  && !strcmp(path, "/api/browse"))  handle_browse(fd, p);

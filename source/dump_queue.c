@@ -43,7 +43,7 @@ static pthread_mutex_t g_mtx = PTHREAD_MUTEX_INITIALIZER;
 /* serialises queue_start() so two requests cannot both pass the active check */
 static pthread_mutex_t g_start_mtx = PTHREAD_MUTEX_INITIALIZER;
 static queue_status_t  g_queue = { .current = -1 };
-static dumper_config_t g_queue_cfg;
+static dumper_config_t g_queue_cfg[QUEUE_MAX];   /* one per title */
 static volatile int    g_stop = 0;
 static volatile int    g_skip = 0;
 static pthread_t       g_worker;
@@ -239,7 +239,7 @@ static int process_item(int index)
 
     if (g_stop) return -1;
 
-    if (job_start(dir, snap.mount, &g_queue_cfg, err, sizeof(err)) != 0) {
+    if (job_start(dir, snap.mount, &g_queue_cfg[index], err, sizeof(err)) != 0) {
         set_item(index, QITEM_FAILED, "%s", err);
         return 0;
     }
@@ -322,7 +322,8 @@ int queue_is_active(void)
     return active;
 }
 
-int queue_start(const char *const *title_ids, const int *is_disc, int count,
+int queue_start(const char *const *title_ids, const int *is_disc,
+                const dumper_config_t *const *item_cfg, int count,
                 const char *mount, int settle_seconds,
                 const dumper_config_t *cfg, char *err, size_t err_size)
 {
@@ -358,6 +359,7 @@ int queue_start(const char *const *title_ids, const int *is_disc, int count,
         strncpy(item->title, entry.title[0] ? entry.title : entry.title_id,
                 sizeof(item->title) - 1);
 
+        item->custom = (item_cfg && item_cfg[i]) ? 1 : 0;
         item->is_disc = is_disc ? (is_disc[i] != 0) : entry.is_disc;
         /* what the user knows about a title is worth keeping */
         if (item->is_disc) title_remember_disc(entry.title_id);
@@ -382,7 +384,8 @@ int queue_start(const char *const *title_ids, const int *is_disc, int count,
 
     g_stop = 0;
     g_skip = 0;
-    g_queue_cfg = *cfg;
+    for (int i = 0; i < count; i++)
+        g_queue_cfg[i] = (item_cfg && item_cfg[i]) ? *item_cfg[i] : *cfg;
 
     pthread_mutex_lock(&g_mtx);
     g_queue = next;

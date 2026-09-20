@@ -103,6 +103,8 @@ static void *worker(void *arg)
        the only global left to propagate is the PS4 split mode. */
     g_split_mode = req->cfg.split;
     g_enable_logging = req->cfg.enable_logging;
+    g_ps4_backport_level = req->cfg.ps4_backport_level;
+    g_ps5_backport_level = req->cfg.ps5_backport_level;
 
     snprintf(g_log_path, sizeof(g_log_path), "%s/log.txt", req->dest);
 
@@ -129,6 +131,9 @@ static void *worker(void *arg)
 
     set_stage("Dumping");
     write_log(g_log_path, "Web UI: dumping %s to %s", req->app.dir, req->dest);
+    write_log(g_log_path, "Settings: decrypt=%d fself=%d backport=%d (ps4 level %d, ps5 level %d) split=%d",
+              req->cfg.enable_decrypter, req->cfg.enable_elf2fself, req->cfg.enable_backport,
+              req->cfg.ps4_backport_level, req->cfg.ps5_backport_level, req->cfg.split);
 
     if (req->app.is_ps4) {
         rc = dump_ps4_cusa_app(SANDBOX_PATH, req->app.dir, req->app.patch_dir,

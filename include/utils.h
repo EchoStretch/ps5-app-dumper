@@ -124,5 +124,10 @@ int  abort_requested(void);
 extern int g_enable_logging;
 extern char g_log_path[512];
 extern int g_split_mode;               // 0-3: split mode
+/* Backport targets of the dump in progress. 0 leaves the choice to
+   config.ini; the web UI sets them per job so a queue can dump each title
+   with its own settings, and so they hold without a drive to save them on. */
+extern int g_ps4_backport_level;
+extern int g_ps5_backport_level;
 
 #endif /* UTILS_H */

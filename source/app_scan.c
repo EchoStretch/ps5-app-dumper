@@ -522,6 +522,25 @@ int library_icon_path(const char *title_id, char *out, size_t out_size)
     return -1;
 }
 
+int library_pic_path(const char *title_id, char *out, size_t out_size)
+{
+    if (!out || out_size == 0 || !is_title_id(title_id)) return -1;
+
+    static const char *names[] = { "pic0.png", "pic1.png", NULL };
+    char dirs[2][256];
+    appmeta_dirs(title_id, dirs);
+
+    for (int n = 0; names[n]; n++) {
+        for (int i = 0; i < 2; i++) {
+            snprintf(out, out_size, "%s/%s", dirs[i], names[n]);
+            if (file_exists(out)) return 0;
+        }
+    }
+
+    out[0] = '\0';
+    return -1;
+}
+
 static int library_seen(const library_entry_t *list, int count, const char *title_id)
 {
     for (int i = 0; i < count; i++)
@@ -545,6 +564,7 @@ static void library_fill(library_entry_t *e, const char *title_id, const char *l
 
     char icon[512];
     e->has_icon = (library_icon_path(e->title_id, icon, sizeof(icon)) == 0);
+    e->has_pic  = (library_pic_path(e->title_id, icon, sizeof(icon)) == 0);
 
     char mounted[320];
     snprintf(mounted, sizeof(mounted), "%s/%s-app0", SANDBOX_PATH, e->title_id);

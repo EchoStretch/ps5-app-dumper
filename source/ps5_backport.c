@@ -120,6 +120,11 @@ static int read_ps5_custom_sdk(const char *key, uint32_t *out)
 /* --------------------------------------------------------------------- */
 static int read_ps5_backport_level(int *level)
 {
+    if (g_ps5_backport_level >= SDK_PAIRS_MIN && g_ps5_backport_level <= SDK_PAIRS_MAX) {
+        *level = g_ps5_backport_level;
+        return 0;
+    }
+
     const char *homebrew = get_usb_homebrew_path();
     if (!homebrew || !homebrew[0]) return -1;
 

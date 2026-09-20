@@ -41,6 +41,7 @@ typedef struct {
     char               title_id[16];
     char               title[128];
     int                is_disc;      /* wait for its disc before starting */
+    int                custom;       /* dumped with settings of its own   */
     queue_item_state_t state;
     char               message[192];
 } queue_item_t;
@@ -63,8 +64,13 @@ typedef struct {
 
    is_disc marks, per title, a disc game: the queue then holds until that
    disc is in the drive, however long the swap takes. NULL lets the scanner
-   decide. Returns 0 on success, -1 with the reason in err otherwise. */
-int  queue_start(const char *const *title_ids, const int *is_disc, int count,
+   decide.
+
+   item_cfg gives, per title, the settings to dump it with; a NULL entry -
+   or a NULL array - falls back to cfg. Returns 0 on success, -1 with the
+   reason in err otherwise. */
+int  queue_start(const char *const *title_ids, const int *is_disc,
+                 const dumper_config_t *const *item_cfg, int count,
                  const char *mount, int settle_seconds,
                  const dumper_config_t *cfg, char *err, size_t err_size);
 

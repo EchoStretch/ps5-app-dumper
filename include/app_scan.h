@@ -66,6 +66,7 @@ typedef struct {
     char source[24];      /* "internal", "ext0", ...            */
     int  is_ps4;
     int  has_icon;
+    int  has_pic;         /* wide key art is available          */
     int  is_running;      /* already mounted under pfsmnt       */
     int  on_disc;         /* served by the disc in the drive    */
     int  is_disc;         /* a disc game, inserted or not       */
@@ -93,6 +94,10 @@ int library_find(const char *title_id, library_entry_t *out);
 
 /* Resolves the icon of an installed title. Returns 0 on success. */
 int library_icon_path(const char *title_id, char *out, size_t out_size);
+
+/* Resolves the wide key art of an installed title (pic0/pic1). Returns 0 on
+   success; many titles ship none. */
+int library_pic_path(const char *title_id, char *out, size_t out_size);
 
 /* Fills out with up to max mount points, returns the number found. */
 int target_scan(target_entry_t *out, int max);
