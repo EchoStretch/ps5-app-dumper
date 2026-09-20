@@ -697,6 +697,13 @@ footer{
               <label class="sw"><input type="checkbox" id="c-auto"><span></span></label>
             </div>
             <div class="row">
+              <div class="txt">
+                <div class="label">Home-screen shortcut</div>
+                <div class="hint" id="tile-hint">Adds an "App Dumper" tile that opens this page</div>
+              </div>
+              <button type="button" class="mini" id="c-tile">Install</button>
+            </div>
+            <div class="row">
               <div class="txt"><div class="label">Config file</div><div class="hint" id="cfgpath">not available</div></div>
             </div>
           </details>
@@ -1840,6 +1847,29 @@ $("clearlog").addEventListener("click", function(){
 $("c-subdir").addEventListener("input", updateAction);
 
 $("c-browse").addEventListener("click", openPicker);
+
+/* The tile only opens this page in the console browser; the payload still
+   has to be running. Asked for once, never polled. */
+function showTileState(installed){
+  $("c-tile").textContent = installed ? "Reinstall" : "Install";
+  $("tile-hint").textContent = installed
+    ? "The \"App Dumper\" tile is on the home screen. It opens this page while the payload runs."
+    : "Adds an \"App Dumper\" tile that opens this page";
+}
+api("/api/tile").then(function(r){ showTileState(!!r.installed); }).catch(function(){});
+
+$("c-tile").addEventListener("click", function(){
+  var b = $("c-tile");
+  b.disabled = true;
+  b.textContent = "Installing…";
+  post("/api/tile").then(function(){
+    showTileState(true);
+    toast("Shortcut installed - look for \"App Dumper\" on the home screen.", "ok");
+  }).catch(function(e){
+    showTileState(false);
+    toast("Shortcut not installed: " + e.message, "bad");
+  }).then(function(){ b.disabled = false; });
+});
 $("pk-close").addEventListener("click", closePicker);
 $("pk-cancel").addEventListener("click", closePicker);
 $("pk-use").addEventListener("click", pkUse);

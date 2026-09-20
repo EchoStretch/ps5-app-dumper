@@ -36,6 +36,7 @@ along with this program; see the file COPYING. If not, see
 #include "web_assets.h"
 #include "app_scan.h"
 #include "fs_browse.h"
+#include "app_installer.h"
 #include "app_launch.h"
 #include "dump_job.h"
 #include "dump_queue.h"
@@ -889,6 +890,33 @@ static void handle_mkdir(int fd, const params_t *p)
     send_sb(fd, 200, &sb);
 }
 
+/* Whether the home-screen shortcut is in place. Reads two small files and
+   nothing else, so the settings tab can ask without waking a system service. */
+static void handle_tile_state(int fd)
+{
+    char json[64];
+    snprintf(json, sizeof(json), "{\"installed\":%s}",
+             tile_is_current(g_port) ? "true" : "false");
+    send_json(fd, 200, json);
+}
+
+static void handle_install_tile(int fd)
+{
+    /* Registering a title makes the shell rework its app database. Keep that
+       away from a dump that is reading the very same titles. */
+    if (job_is_active() || queue_is_active()) {
+        send_error(fd, 409, "wait for the dump to finish first");
+        return;
+    }
+
+    char err[160];
+    if (tile_install(g_port, err, sizeof(err)) != 0) {
+        send_error(fd, 500, err[0] ? err : "could not install the shortcut (see log.txt)");
+        return;
+    }
+    send_json(fd, 200, "{\"installed\":true}");
+}
+
 static void handle_quit(int fd)
 {
     if (job_is_active() || queue_is_active()) {
@@ -929,6 +957,8 @@ static void route(int fd, const char *method, const char *path, const params_t *
     else if (is_get  && !strcmp(path, "/api/size"))    handle_size(fd, p);
     else if (is_get  && !strcmp(path, "/api/browse"))  handle_browse(fd, p);
     else if (is_post && !strcmp(path, "/api/mkdir"))   handle_mkdir(fd, p);
+    else if (is_get  && !strcmp(path, "/api/tile"))    handle_tile_state(fd);
+    else if (is_post && !strcmp(path, "/api/tile"))    handle_install_tile(fd);
     else send_error(fd, 404, "no such endpoint");
 }
 
