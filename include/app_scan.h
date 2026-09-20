@@ -34,6 +34,7 @@ typedef struct {
     int  is_ps4;          /* 1 for CUSA titles                          */
     int  has_icon;
     int  on_disc;         /* served by the disc in the drive            */
+    int  is_disc;         /* a disc game, inserted or not               */
 } app_entry_t;
 
 /* A mount point the dump can be written to. */
@@ -67,14 +68,22 @@ typedef struct {
     int  has_icon;
     int  is_running;      /* already mounted under pfsmnt       */
     int  on_disc;         /* served by the disc in the drive    */
+    int  is_disc;         /* a disc game, inserted or not       */
 } library_entry_t;
 
 #define LIBRARY_SCAN_MAX 128
 
-/* 1 when the disc in the drive carries this title. A disc game whose disc
-   is not inserted cannot be told apart from a package install - it cannot
-   be started either, so for dumping the difference does not matter. */
+/* 1 when the disc in the drive carries this title. */
 int title_on_disc(const char *title_id);
+
+/* 1 when the title is a disc game, whether or not its disc is in the drive.
+   With the disc out that is known from having seen it before (remembered
+   next to config.ini) or from the disc-copy bitmap the install leaves
+   behind - a best guess, which the queue lets the user overrule. */
+int title_is_disc_game(const char *title_id);
+
+/* Records a title as a disc game, e.g. because the user said so. */
+void title_remember_disc(const char *title_id);
 
 /* Lists the titles installed on the console. */
 int library_scan(library_entry_t *out, int max);

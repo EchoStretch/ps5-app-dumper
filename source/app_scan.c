@@ -21,6 +21,7 @@ along with this program; see the file COPYING. If not, see
 #include <sys/param.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <pthread.h>
 
 #include "app_scan.h"
 #include "utils.h"
@@ -198,6 +199,7 @@ static void app_read_metadata(app_entry_t *app)
     char icon[512];
     app->has_icon = (app_icon_path(app, icon, sizeof(icon)) == 0);
     app->on_disc = title_on_disc(app->title_id);
+    app->is_disc = app->on_disc || title_is_disc_game(app->title_id);
 }
 
 int app_icon_path(const app_entry_t *app, char *out, size_t out_size)
@@ -404,13 +406,104 @@ static int is_title_id(const char *name)
    PS4 and PS5 discs alike. */
 #define DISC_APP_ROOT "/mnt/disc/app"
 
+/* ---- disc games seen so far ---------------------------------------- */
+
+#define DISC_MEMORY_MAX  128
+#define DISC_MEMORY_FILE "disc_titles.txt"
+
+static pthread_mutex_t g_disc_mtx = PTHREAD_MUTEX_INITIALIZER;
+static char            g_disc_known[DISC_MEMORY_MAX][16];
+static int             g_disc_known_count = 0;
+static int             g_disc_file_read = 0;
+
+static int disc_known_locked(const char *title_id)
+{
+    for (int i = 0; i < g_disc_known_count; i++)
+        if (strcmp(g_disc_known[i], title_id) == 0) return 1;
+    return 0;
+}
+
+static int disc_memory_path(char *out, size_t out_size)
+{
+    const char *hb = get_usb_homebrew_path();
+    if (!hb || !hb[0]) return -1;
+    snprintf(out, out_size, "%s/%s", hb, DISC_MEMORY_FILE);
+    return 0;
+}
+
+/* The list lives on the drive, which may turn up after the payload started,
+   so reading it is retried until it worked once. */
+static void disc_memory_load_locked(void)
+{
+    if (g_disc_file_read) return;
+
+    char path[256];
+    if (disc_memory_path(path, sizeof(path)) != 0) return;
+    g_disc_file_read = 1;
+
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+
+    char line[64];
+    while (fgets(line, sizeof(line), f) && g_disc_known_count < DISC_MEMORY_MAX) {
+        line[strcspn(line, "\r\n")] = '\0';
+        if (is_title_id(line) && !disc_known_locked(line))
+            strcpy(g_disc_known[g_disc_known_count++], line);
+    }
+    fclose(f);
+}
+
+void title_remember_disc(const char *title_id)
+{
+    if (!is_title_id(title_id)) return;
+
+    pthread_mutex_lock(&g_disc_mtx);
+    disc_memory_load_locked();
+
+    if (!disc_known_locked(title_id) && g_disc_known_count < DISC_MEMORY_MAX) {
+        strcpy(g_disc_known[g_disc_known_count++], title_id);
+
+        /* rewritten whole: what was learned before a drive showed up has
+           to reach the file as well */
+        char path[256];
+        FILE *f = disc_memory_path(path, sizeof(path)) == 0 ? fopen(path, "w") : NULL;
+        if (f) {
+            for (int i = 0; i < g_disc_known_count; i++)
+                fprintf(f, "%s\n", g_disc_known[i]);
+            fclose(f);
+        }
+    }
+    pthread_mutex_unlock(&g_disc_mtx);
+}
+
 int title_on_disc(const char *title_id)
 {
     if (!is_title_id(title_id)) return 0;
 
     char path[64];
     snprintf(path, sizeof(path), "%s/%s", DISC_APP_ROOT, title_id);
-    return dir_exists(path) ? 1 : 0;
+    if (!dir_exists(path)) return 0;
+
+    title_remember_disc(title_id);
+    return 1;
+}
+
+int title_is_disc_game(const char *title_id)
+{
+    if (!is_title_id(title_id)) return 0;
+    if (title_on_disc(title_id)) return 1;
+
+    pthread_mutex_lock(&g_disc_mtx);
+    disc_memory_load_locked();
+    int known = disc_known_locked(title_id);
+    pthread_mutex_unlock(&g_disc_mtx);
+    if (known) return 1;
+
+    /* A disc install keeps a bitmap of what was copied off the disc. Seen in
+       PS4 kernel logs; unconfirmed on PS5, hence only one signal of three. */
+    char path[96];
+    snprintf(path, sizeof(path), "/system_data/playgo/%s/bdcopy.pbm", title_id);
+    return file_exists(path) ? 1 : 0;
 }
 
 int library_icon_path(const char *title_id, char *out, size_t out_size)
@@ -457,6 +550,7 @@ static void library_fill(library_entry_t *e, const char *title_id, const char *l
     snprintf(mounted, sizeof(mounted), "%s/%s-app0", SANDBOX_PATH, e->title_id);
     e->is_running = dir_exists(mounted);
     e->on_disc = title_on_disc(e->title_id);
+    e->is_disc = e->on_disc || title_is_disc_game(e->title_id);
 }
 
 int library_scan(library_entry_t *out, int max)
