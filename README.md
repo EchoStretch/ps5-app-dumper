@@ -87,6 +87,10 @@ You should get an ELF binary such as `ps5-app-dumper.elf`.
 
 ---
 
+### Working on it without a console
+
+`harness/` builds the web server, the dump job, the queue and the dump store for the host and runs them against a pretend console: `make -C harness run`, then open `http://127.0.0.1:8099/`. It needs no SDK. See `harness/README.md` for what it can and cannot show.
+
 ## Usage
 
 Every method needs the USB drive **plugged into the console**. With the web interface the game can be started after the payload; in headless mode (`enable_webui = 0`) the game has to be **running already** when the payload launches.

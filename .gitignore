@@ -4,3 +4,4 @@ source/self_elf.c
 *.elf
 dist/
 .claude/worktrees/
+harness/out/

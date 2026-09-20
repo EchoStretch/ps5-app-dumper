@@ -1,6 +1,6 @@
 # webhb - carving the web-homebrew core out of the dumper
 
-Status: step 1 is done (the server is split, see below); the rest is a proposal. Working name `webhb`; everything stays in
+Status: steps 1 and 3 are done (server split, harness in the repo); the rest is a proposal. Working name `webhb`; everything stays in
 this repository until a second payload has proven the interface.
 
 ## Why
@@ -35,7 +35,7 @@ webhb/
   tile.c                 home-screen tile install + currency check (was app_installer.c)
   fsbrowse.c             folder picker backend                     (was fs_browse.c)
   web/whb.css, whb.js    client kit, inlined into the app's page at build time
-  harness/               host build: PS5-only calls mocked, `make sim`
+  harness/               host build: PS5-only calls mocked (today: /harness)
   webhb.mk               bin2c, build stamp, two-stage build
 source/                  the dumper: app_scan, app_launch, dump_*, pfs, pkg, decrypt, backport
   routes_dumper.c        the ~560 lines of dumper routes
@@ -102,8 +102,9 @@ Each step builds, passes the harness in a browser, and changes no behaviour.
 2. **Introduce `whb_app_t`** and move `single_instance`, `self_store`,
    `app_installer`, `fs_browse` over, replacing the hard-coded names
    (`PAYLOAD_PROCESS_NAME`, `DUMPER_ELF_NAME`, `TILE_TITLE_ID`, port 8081).
-3. **Bring the harness into the repo** (`webhb/harness`, `make sim`). Today it
-   lives in a session scratchpad and is rebuilt from memory notes.
+3. **Bring the harness into the repo** - done, as `harness/` (`make -C harness
+   sim|run|pldmgr|snapshot|render`). It stays outside `webhb/` for now because
+   its mock fakes the dumper's console; the generic half moves with step 2.
 4. **Split `utils.c`**: log, notify, storage and config leave; the copy
    routines and abort flag stay with the dumper.
 5. **Extract the client kit** from `web/index.html`.
