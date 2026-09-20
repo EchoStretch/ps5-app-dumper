@@ -2954,8 +2954,16 @@ try { if(localStorage.getItem(DUMPVIEW_KEY) === "list") state.dumpsView = "list"
 function dumpPath(d){ return d.mount + "/" + (d.dir ? d.dir + "/" : "") + d.folder; }
 function dumpTags(d){
   return (d.titleId.indexOf("CUSA") === 0 ? '<span class="tag ps4">PS4</span>' : '<span class="tag ps5">PS5</span>') +
+    (/-patch0$/.test(d.folder) ? '<span class="tag pkg" title="The update of this game - its base game is a folder of its own, ending in -app0">PATCH</span>' : "") +
     (d.state && d.state !== "done" ? '<span class="tag cut" title="This dump was not finished">UNFINISHED</span>' : "") +
     (d.inUse ? mountTag(dumpPath(d)) : "");
+}
+/* the other half of a PS4 dump made with split: <id>-app0 next to <id>-patch0 */
+function dumpSibling(d){
+  var other = /-patch0$/.test(d.folder) ? d.titleId + "-app0" : /-app0$/.test(d.folder) ? d.titleId + "-patch0" : null;
+  var found = null;
+  if(other) state.dumps.forEach(function(x){ if(x.mount === d.mount && x.dir === d.dir && x.folder === other) found = x; });
+  return found;
 }
 function dumpIcon(d){
   return "/api/dumps/icon?mount=" + encodeURIComponent(d.mount) + "&dir=" + encodeURIComponent(d.dir) +
@@ -2982,8 +2990,9 @@ function renderDumps(){
       var at = state.dumps.indexOf(d);
       if(cards){
         html += '<div class="dumpcard"><span class="pic">' +
-                (d.hasIcon ? '<img alt="" loading="lazy" src="' + esc(dumpIcon(d)) + '">'
-                           : '<span class="noimg">' + esc(d.titleId) + '</span>') + '</span>' +
+                '<span class="noimg">' + esc(d.titleId) + '</span>' +
+                '<img alt="" loading="lazy" onerror="this.style.display=\'none\'" src="' +
+                  esc(d.hasIcon ? dumpIcon(d) : "/api/libicon?title=" + encodeURIComponent(d.titleId)) + '"></span>' +
                 '<span class="txt"><span class="name" title="' + esc(d.title) + '">' + esc(d.title) + '</span>' +
                 '<span class="tags">' + dumpTags(d) + '</span>' +
                 '<span class="where">' + esc(dumpPath(d)) + '</span>' +
@@ -3043,6 +3052,9 @@ function openDelete(d){
   $("del-path").textContent = dumpPath(d);
   $("del-size").textContent = (d.bytes ? bytes(d.bytes) : "size not known") +
     (d.state && d.state !== "done" ? " - unfinished" : "") + (d.inUse ? " - an installed game is linked to it; the link goes too" : "");
+  var sib = dumpSibling(d);
+  $("del-note").textContent = "The folder and everything in it is removed from the drive for good. There is no bin to get it back from." +
+    (sib ? " Its other half, " + sib.folder + ", stays - it is a dump of its own and has its own Delete." : "");
   $("delconfirm").hidden = false;
 }
 function closeDelete(){ $("delconfirm").hidden = true; delTarget = null; }
