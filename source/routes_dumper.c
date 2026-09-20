@@ -546,6 +546,13 @@ static void handle_launch(int fd, const params_t *p)
         return;
     }
 
+    /* Said before anything is closed: starting a disc game without its disc
+       would end the running game and then fail. */
+    if (title_is_disc_game(title) && !title_on_disc(title)) {
+        send_error(fd, 409, "this game needs its disc - insert it and try again");
+        return;
+    }
+
     int close_running = param_get_int(p, "force", 0);
     char err[192] = {0};
 

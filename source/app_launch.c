@@ -23,6 +23,7 @@ along with this program; see the file COPYING. If not, see
 #include <ps5/kernel.h>
 
 #include "app_launch.h"
+#include "app_scan.h"
 #include "utils.h"
 
 /* Launch approach and this struct layout follow the ps5-payload-dev
@@ -135,8 +136,23 @@ static const char *launch_error_text(int rc)
             return "the console does not know this title";
         case 0x80020060u:
             return "the console rejected this title - it will not start from the home screen either";
+        /* SCE_PROCESS_STARTER_ERROR_NO_DISC_INSERT / _OTHER_DISC_INSERTED / _IN_DISC_LOAD */
+        case 0x80a40009u:
+            return "this game needs its disc - insert it and try again";
+        case 0x80a40027u:
+            return "this game needs its own disc, and another one is in the drive - swap it and try again";
+        case 0x80a40028u:
+            return "the console is still reading the disc - try again in a moment";
     }
     return NULL;
+}
+
+/* The console asking for a disc is the one sure sign that a title is a disc
+   game. Nothing on the file system told us so for J-STARS Victory VS+, which
+   was installed from a disc this payload had never seen in the drive. */
+static int asks_for_disc(int rc)
+{
+    return (unsigned)rc == 0x80a40009u || (unsigned)rc == 0x80a40027u;
 }
 
 /* Guards the system call against anything that is not a title id. */
@@ -233,6 +249,11 @@ int app_launch_title(const char *title_id, int close_running,
     }
 
     if (rc < 0) {
+        if (asks_for_disc(lnc_rc) || asks_for_disc(rc)) {
+            title_remember_disc(title_id);
+            write_log(g_log_path, "Web UI: %s is a disc game - remembered, it now shows as DISC OUT", title_id);
+        }
+
         const char *known = launch_error_text(lnc_rc ? lnc_rc : rc);
         if (known) FAIL("%s (0x%x)", known, lnc_rc ? lnc_rc : rc);
 
