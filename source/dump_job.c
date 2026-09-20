@@ -118,7 +118,7 @@ static void *worker(void *arg)
 
     /* every dump writes a log of its own; without a drive for our folder
        it falls back to one next to the dump */
-    log_use_dump(req->app.title_id);
+    log_use_job(req->app.title_id);
     if (!get_app_data_path()[0])
         snprintf(g_log_path, sizeof(g_log_path), "%s/log.txt", req->dest);
 

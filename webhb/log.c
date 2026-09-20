@@ -87,23 +87,23 @@ void log_ring_walk(unsigned since, log_line_cb cb, void *ctx)
     pthread_mutex_unlock(&g_log_ring_mtx);
 }
 
-/* The log of everything that is not one particular dump: start-up, the
-   queue's moves, the web UI. A dump switches to a file of its own and comes
-   back here when it is over. */
+/* The log of everything that is not one particular job: start-up, the web
+   UI, what happens in between. A long piece of work - a dump, say - can
+   switch to a file of its own and comes back here when it is over. */
 void log_use_general(void)
 {
     if (get_app_data_path()[0]) snprintf(g_log_path, sizeof(g_log_path), "%s/logs/%s.log", get_app_data_path(),
                                             whb_app()->log_basename ? whb_app()->log_basename : whb_app()->data_dirname);
 }
 
-void log_use_dump(const char *title_id)
+void log_use_job(const char *name)
 {
-    if (!get_app_data_path()[0] || !title_id) return;
+    if (!get_app_data_path()[0] || !name) return;
 
     char stamp[32];
     time_t now = time(NULL);
     strftime(stamp, sizeof(stamp), "%Y-%m-%d_%H%M%S", localtime(&now));
-    snprintf(g_log_path, sizeof(g_log_path), "%s/logs/%s_%s.log", get_app_data_path(), stamp, title_id);
+    snprintf(g_log_path, sizeof(g_log_path), "%s/logs/%s_%s.log", get_app_data_path(), stamp, name);
 }
 
 int write_log(const char *log_file_path, const char *fmt, ...)

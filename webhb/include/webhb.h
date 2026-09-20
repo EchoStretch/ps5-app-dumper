@@ -368,9 +368,10 @@ int storage_is_internal(void);
 /* "/data": the console's own storage, offered as a dump destination too. */
 const char *storage_internal_root(void);
 
-/* Which file write_log() goes to: the general one, or one per dump. */
+/* Which file write_log() goes to: the general one, or logs/<time>_<name>.log
+   for one job. */
 void log_use_general(void);
-void log_use_dump(const char *title_id);
+void log_use_job(const char *name);
 
 /* The index of the first USB drive that is plugged in, -1 for none. */
 int  storage_first_usb(void);
