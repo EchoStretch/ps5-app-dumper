@@ -190,7 +190,7 @@ static void on_listening(int port)
        that only ever happens because the user asked for it. */
     if (tile_exists() && !tile_is_current(port))
         write_log(g_log_path, "Tile: the home-screen shortcut is out of date - "
-                              "update it under Options > Advanced");
+                              "update it under Menu > Settings");
 }
 
 void whb_routes_init(void)

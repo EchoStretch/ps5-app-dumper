@@ -115,6 +115,16 @@ h1 span{color:var(--accent)}
   color:var(--ink-dim);background:rgba(13,17,23,.7);white-space:nowrap
 }
 .dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex:none}
+.live.menu{cursor:pointer;color:var(--ink);-webkit-appearance:none;appearance:none}
+.live.menu[aria-expanded=true]{color:var(--accent);border-color:rgba(47,157,255,.5)}
+.bars{display:block;width:12px;flex:none}
+.bars b{display:block;height:2px;border-radius:1px;background:currentColor}
+.bars b + b{margin-top:3px}
+/* the settings page: one column of cards, spaced by margins (no flex gap needed) */
+.page{max-width:760px;margin:0 auto}
+.page .card{margin-bottom:18px}
+.pagehead{display:flex;align-items:center;margin:0 0 16px}
+.pagehead h2{margin:0 0 0 14px;font-family:var(--mono);font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-dim)}
 .live.lock{cursor:pointer;color:var(--amber,#ffb020);border-color:rgba(255,176,32,.45);-webkit-appearance:none;appearance:none}
 .live.on .dot{animation:pulse 2s ease-in-out infinite}
 .live.off{color:var(--red);border-color:rgba(255,77,94,.35)}
@@ -667,6 +677,7 @@ footer{
       <div class="link">
         <button type="button" class="live lock" id="lockchip" hidden title="This device may look, but not change anything yet">Locked</button>
         <span class="live on" id="conn"><i class="dot"></i><span id="conntext">Connected</span></span>
+        <button type="button" class="live menu" id="menubtn" aria-label="Settings" aria-expanded="false"><i class="bars" aria-hidden="true"><b></b><b></b><b></b></i><span>Menu</span></button>
       </div>
     </div>
   </header>
@@ -831,6 +842,22 @@ footer{
               <div class="txt"><div class="label">PS4 target</div><div class="hint">Backport level 1-6</div></div>
               <select id="c-bp4"></select>
             </div>
+          </details>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <div class="page" id="view-settings" hidden>
+    <div class="pagehead">
+      <button type="button" class="mini" id="settings-back">&larr; Back</button>
+      <h2>Settings</h2>
+    </div>
+
+    <section class="card">
+      <div class="head"><h2>Payload</h2></div>
+      <div class="body">
             <div class="row">
               <div class="txt">
                 <div class="label">Dump right at launch</div>
@@ -852,6 +879,22 @@ footer{
               </div>
               <button type="button" class="mini" id="c-store">Save</button>
             </div>
+            <div class="row">
+              <div class="txt"><div class="label">Config file</div><div class="hint" id="cfgpath">not available</div></div>
+            </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="head"><h2>Access</h2></div>
+      <div class="body">
+            <div class="row">
+              <div class="txt">
+                <div class="label">Ask other devices for a code</div>
+                <div class="hint" id="require-hint">Phones and PCs may look, but have to enter the code from the TV before they can start, stop or delete anything.</div>
+              </div>
+              <label class="sw"><input type="checkbox" id="c-require" disabled><span></span></label>
+            </div>
             <div class="row" id="row-access" hidden>
               <div class="txt">
                 <div class="label">Code for other devices</div>
@@ -859,15 +902,9 @@ footer{
               </div>
               <span class="mono" id="access-code" style="font-family:var(--mono);font-size:18px;letter-spacing:.18em;color:var(--accent)"></span>
             </div>
-            <div class="row">
-              <div class="txt"><div class="label">Config file</div><div class="hint" id="cfgpath">not available</div></div>
-            </div>
-          </details>
-        </div>
-      </section>
-
-    </div>
-  </main>
+      </div>
+    </section>
+  </div>
 
   <footer>PS5 APP DUMPER &middot; EchoStretch &middot; GPL-3.0 &middot;
     <button type="button" id="quit" class="linkish">shut down payload</button>
@@ -2574,6 +2611,24 @@ $("c-subdir").addEventListener("input", updateAction);
 
 $("c-browse").addEventListener("click", openPicker);
 
+/* ---------------- settings page ---------------- */
+/* What is not about a dump lives on a page of its own. It is a second view of
+   this one file - the page has to stay a single cached document - and the
+   hash makes the back button work. */
+function showView(){
+  var settings = location.hash === "#settings";
+  $("view-settings").hidden = !settings;
+  document.querySelector("main").hidden = settings;
+  document.querySelector(".actions").hidden = settings;
+  $("menubtn").setAttribute("aria-expanded", String(settings));
+  if(settings){ showAccess(); window.scrollTo(0, 0); }
+}
+$("menubtn").addEventListener("click", function(){
+  location.hash = location.hash === "#settings" ? "" : "#settings";
+});
+$("settings-back").addEventListener("click", function(){ location.hash = ""; });
+window.addEventListener("hashchange", showView);
+
 /* ---------------- access ---------------- */
 /* A locked device is told so right away, not only when a tap is refused. */
 var unlockOffered = false;
@@ -2582,6 +2637,14 @@ function showAccess(){
     var locked = !!(a.required && !a.unlocked);
     $("lockchip").hidden = !locked;
     if(locked && !unlockOffered){ unlockOffered = true; openUnlock(); }
+    /* whether others need a code is for the console's own browser to decide */
+    $("c-require").checked = !!a.required;
+    $("c-require").disabled = !a.local;
+    $("require-hint").textContent = a.local
+      ? "Phones and PCs may look, but have to enter the code from the TV before they can start, stop or delete anything."
+      : "Can only be changed in the console's own browser. " + (a.required
+          ? "Devices like this one enter the code from the TV once."
+          : "Right now every device on the network may change things.");
     var row = $("row-access");
     row.hidden = !(a.required && a.unlocked && a.code);
     $("access-code").textContent = a.code || "";
@@ -2612,6 +2675,13 @@ function tryUnlock(){
     $("ul-msg").textContent = e.message;
   }).then(function(){ $("ul-go").disabled = false; });
 }
+$("c-require").addEventListener("change", function(){
+  var want = $("c-require").checked ? 1 : 0;
+  post("/api/config", {requireCode: want}).then(function(r){
+    applyConfig(r.config);
+    toast(want ? "Other devices need the code again." : "Other devices may change things without a code.", want ? "ok" : "bad");
+  }).catch(function(e){ toast(e.message, "bad"); }).then(showAccess);
+});
 $("lockchip").addEventListener("click", openUnlock);
 $("ul-go").addEventListener("click", tryUnlock);
 $("ul-code").addEventListener("keydown", function(e){ if(e.key === "Enter" || e.keyCode === 13) tryUnlock(); });
@@ -2622,6 +2692,7 @@ $("ul-show").addEventListener("click", function(){
   }).catch(function(e){ $("ul-msg").textContent = e.message; });
 });
 showAccess();
+showView();
 
 /* The tile only opens this page in the console browser; the payload still
    has to be running. Asked for once, never polled. */
@@ -2638,7 +2709,7 @@ function showTileState(installed, current){
 api("/api/tile").then(function(r){
   showTileState(!!r.installed, !!r.current);
   if(r.installed && !r.current)
-    toast("The home-screen tile is out of date - update it under Options > Advanced.", "bad");
+    toast("The home-screen tile is out of date - update it under Menu > Settings.", "bad");
 }).catch(function(){});
 
 $("c-tile").addEventListener("click", function(){
