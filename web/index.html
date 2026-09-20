@@ -273,6 +273,10 @@ section.card{
 /* library rows are not selectable, they carry their own start button */
 .lib-list{display:flex;flex-direction:column;gap:8px;max-height:54vh;max-height:min(54vh,470px);overflow-y:auto;
   scrollbar-width:thin;scrollbar-color:rgba(47,157,255,.35) transparent}
+/* A scrolling column must not shrink its rows: the console's WebKit squeezes
+   flex children below their content instead of letting the box scroll - the
+   pictures then stick out of their rows as soon as the list outgrows it. */
+.lib-list > *,.q-list > *{flex:none}
 .lib-list::-webkit-scrollbar{width:8px}
 .lib-list::-webkit-scrollbar-thumb{background:rgba(47,157,255,.3);border-radius:4px}
 .tile.lib{cursor:default}
