@@ -1,0 +1,70 @@
+/* Copyright (C) 2025 EchoStretch
+
+This program is free software; you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the
+Free Software Foundation; either version 3, or (at your option) any
+later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; see the file COPYING. If not, see
+<http://www.gnu.org/licenses/>.  */
+
+#ifndef DUMP_LIBRARY_H
+#define DUMP_LIBRARY_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+/* The dumps that exist, wherever they are: on the drives and on the console
+   itself, in the configured dump folders or anywhere else within a few
+   levels of a destination's root. And moving them about. */
+
+#define DUMPLIB_MAX 96
+
+typedef struct {
+    char     mount[64];     /* the destination it is on, "/mnt/usb0" or "/data" */
+    int      internal;
+    char     dir[128];      /* the folder that holds it, relative to mount; "" = root */
+    char     folder[64];    /* "PPSA25428-app0"                                  */
+    char     title_id[16];
+    char     title[128];    /* from the info file, else from the installed title */
+    char     state[16];     /* "done", "running", "failed", "aborted"; "" when no
+                               info file sits next to it (an older or foreign dump) */
+    uint64_t bytes;         /* from the info file, 0 when not known              */
+    int      in_use;        /* an installed title is redirected to this folder   */
+} dumplib_entry_t;
+
+/* Finds them. with_internal = 0 leaves the console's storage out - its folder
+   names are not for everybody on the network. Returns how many. */
+int dumplib_scan(dumplib_entry_t *out, int max, int with_internal);
+
+typedef enum { MOVE_IDLE = 0, MOVE_RUNNING, MOVE_DONE, MOVE_FAILED, MOVE_ABORTED } move_state_t;
+
+typedef struct {
+    move_state_t state;
+    char     folder[64];
+    char     from[256];     /* the folder that held it  */
+    char     to[256];       /* the folder that gets it  */
+    uint64_t total_bytes;   /* 0 for a move within one drive - that is a rename */
+    uint64_t copied_bytes;
+    char     message[192];
+} move_status_t;
+
+/* Moves <mount>/<dir>/<folder> to <to_mount>/<to_dir>/<folder>, its info file
+   with it. Within one drive that is done when this returns; across drives it
+   runs in the background - copy, compare, and only then delete the original.
+   Returns 0 when done or started, -1 with a reason in err. */
+int  dumplib_move(const char *mount, const char *dir, const char *folder,
+                  const char *to_mount, const char *to_dir, char *err, size_t err_size);
+int  dumplib_move_active(void);
+void dumplib_move_cancel(void);
+void dumplib_move_status(move_status_t *out);
+/* Forgets the result of the last move. */
+void dumplib_move_clear(void);
+
+#endif /* DUMP_LIBRARY_H */

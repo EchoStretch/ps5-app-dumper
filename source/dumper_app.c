@@ -20,6 +20,7 @@ along with this program; see the file COPYING. If not, see
 #include "web_assets.h"
 #include "dump_job.h"
 #include "dump_queue.h"
+#include "dump_library.h"
 #include "version.h"
 
 /* embedded at build time by tools/bin2c.sh (see the Makefile) */
@@ -28,7 +29,7 @@ extern const size_t        tile_icon0_png_len;
 
 int dumper_busy(void)
 {
-    return job_is_active() || queue_is_active();
+    return job_is_active() || queue_is_active() || dumplib_move_active();
 }
 
 const whb_app_t *dumper_app(void)

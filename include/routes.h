@@ -23,7 +23,7 @@ along with this program; see the file COPYING. If not, see
 /* What the web-homebrew core is told about this payload. */
 const whb_app_t *dumper_app(void);
 
-/* 1 while a dump or a queue is running. */
+/* 1 while a dump, a queue or the move of a dump is running. */
 int dumper_busy(void);
 
 /* Registers the dumper's routes. Call both, and whb_routes_init(), before

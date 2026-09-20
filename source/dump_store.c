@@ -260,6 +260,22 @@ int dump_remove_incomplete(const char *dest, const char *folder)
 /*  Listing                                                            */
 /* ------------------------------------------------------------------ */
 
+int dump_folder_name_ok(const char *name) { return is_dump_folder_name(name); }
+
+int dump_info_string(const char *dest, const char *folder, const char *key, char *out, size_t out_size)
+{
+    char path[512];
+    info_path(dest, folder, path, sizeof(path));
+    return info_read(path, key, out, out_size);
+}
+
+int dump_remove_tree(const char *path)
+{
+    const char *name = path ? strrchr(path, '/') : NULL;
+    if (!name || !is_dump_folder_name(name + 1)) return -1;
+    return remove_tree(path);
+}
+
 int dump_list_incomplete(const char *dest, dump_entry_t *out, int max)
 {
     DIR *d = opendir(dest);

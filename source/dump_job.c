@@ -24,6 +24,7 @@ along with this program; see the file COPYING. If not, see
 #include <sys/mount.h>
 
 #include "dump_job.h"
+#include "dump_library.h"
 #include "app_scan.h"
 #include "dump_store.h"
 #include "ps4_dumper.h"
@@ -238,6 +239,7 @@ int job_start(const char *app_dir, const char *mount,
 
     if (!app_dir || !mount || !cfg) FAIL("missing parameters");
     if (job_is_active())            FAIL("a dump is already running");
+    if (dumplib_move_active())      FAIL("a dump is being moved - wait for that to finish");
     if (target_is_known(mount) != 0) FAIL("unknown destination");
 
     /* A title can be played long before all of it is on the console; a dump

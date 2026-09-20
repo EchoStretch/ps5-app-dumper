@@ -28,6 +28,7 @@ along with this program; see the file COPYING. If not, see
 #include "dump_job.h"
 #include "dump_queue.h"
 #include "dump_store.h"
+#include "dump_library.h"
 #include "utils.h"
 
 static void json_job(sb_t *sb, const job_status_t *job)
@@ -104,8 +105,19 @@ static void handle_status(int fd, const params_t *q)
     json_queue(&sb, queue);
     sb_puts(&sb, ",\"log\":");
     json_log(&sb, (unsigned)param_get_int(q, "since", 0));
+    move_status_t mv;
+    dumplib_move_status(&mv);
+    static const char *const move_names[] = { "idle", "running", "done", "failed", "aborted" };
+    sb_printf(&sb, ",\"move\":{\"state\":\"%s\",\"totalBytes\":%llu,\"copiedBytes\":%llu,\"folder\":",
+              move_names[mv.state], (unsigned long long)mv.total_bytes, (unsigned long long)mv.copied_bytes);
+    sb_json_str(&sb, mv.folder);
+    sb_puts(&sb, ",\"from\":");    sb_json_str(&sb, mv.from);
+    sb_puts(&sb, ",\"to\":");      sb_json_str(&sb, mv.to);
+    sb_puts(&sb, ",\"message\":"); sb_json_str(&sb, mv.message);
+    sb_puts(&sb, "}");
+
     sb_printf(&sb, ",\"busy\":%s}",
-              (job_is_active() || queue->active) ? "true" : "false");
+              (job_is_active() || queue->active || mv.state == MOVE_RUNNING) ? "true" : "false");
 
     free(queue);
 
@@ -547,6 +559,68 @@ static void handle_library(int fd, const params_t *p)
     send_sb(fd, 200, &sb);
 }
 
+/* ------------------------------------------------------------------ */
+/*  The dumps that exist                                               */
+/* ------------------------------------------------------------------ */
+
+static void handle_dumps(int fd, const params_t *p)
+{
+    /* what is on the console is only listed for those who are in */
+    int with_internal = http_peer_is_local(fd) || whb_access_token_ok(param_get(p, "token", NULL));
+
+    dumplib_entry_t *list = calloc(DUMPLIB_MAX, sizeof(*list));
+    if (!list) { send_error(fd, 500, "out of memory"); return; }
+    int count = dumplib_scan(list, DUMPLIB_MAX, with_internal);
+
+    sb_t sb;
+    sb_init(&sb);
+    sb_printf(&sb, "{\"consoleListed\":%s,\"dumps\":[", with_internal ? "true" : "false");
+    for (int i = 0; i < count; i++) {
+        if (i) sb_puts(&sb, ",");
+        sb_puts(&sb, "{\"mount\":");   sb_json_str(&sb, list[i].mount);
+        sb_puts(&sb, ",\"dir\":");     sb_json_str(&sb, list[i].dir);
+        sb_puts(&sb, ",\"folder\":");  sb_json_str(&sb, list[i].folder);
+        sb_puts(&sb, ",\"titleId\":"); sb_json_str(&sb, list[i].title_id);
+        sb_puts(&sb, ",\"title\":");   sb_json_str(&sb, list[i].title[0] ? list[i].title : list[i].title_id);
+        sb_puts(&sb, ",\"state\":");   sb_json_str(&sb, list[i].state);
+        sb_printf(&sb, ",\"internal\":%s,\"inUse\":%s,\"bytes\":%llu}",
+                  list[i].internal ? "true" : "false", list[i].in_use ? "true" : "false",
+                  (unsigned long long)list[i].bytes);
+    }
+    sb_puts(&sb, "]}");
+    free(list);
+    send_sb(fd, 200, &sb);
+}
+
+static void handle_dump_move(int fd, const params_t *p)
+{
+    char err[256] = {0};
+    if (dumplib_move(param_get(p, "mount", NULL), param_get(p, "dir", ""), param_get(p, "folder", NULL),
+                     param_get(p, "toMount", NULL), param_get(p, "toDir", ""), err, sizeof(err)) != 0) {
+        send_error(fd, 409, err[0] ? err : "could not move the dump");
+        return;
+    }
+
+    move_status_t mv;
+    dumplib_move_status(&mv);
+    send_json(fd, 200, mv.state == MOVE_RUNNING ? "{\"started\":true,\"copying\":true}"
+                                                : "{\"started\":true,\"copying\":false}");
+}
+
+static void handle_dump_move_cancel(int fd, const params_t *p)
+{
+    (void)p;
+    dumplib_move_cancel();
+    send_json(fd, 200, "{\"stopping\":true}");
+}
+
+static void handle_dump_move_clear(int fd, const params_t *p)
+{
+    (void)p;
+    dumplib_move_clear();
+    send_json(fd, 200, "{\"cleared\":true}");
+}
+
 static void handle_launch(int fd, const params_t *p)
 {
     const char *title = param_get(p, "title", NULL);
@@ -626,6 +700,10 @@ void routes_dumper_init(void)
     http_route("POST", "/api/abort",          handle_abort);
     http_route("GET",  "/api/dumps/presence", handle_dump_presence);
     http_route("POST", "/api/dumps/delete",   handle_dump_delete);
+    http_route("GET",  "/api/dumps",          handle_dumps);
+    http_route("POST", "/api/dumps/move",     handle_dump_move);
+    http_route("POST", "/api/dumps/move/cancel", handle_dump_move_cancel);
+    http_route("POST", "/api/dumps/move/clear",  handle_dump_move_clear);
     http_route("POST", "/api/queue/start",    handle_queue_start);
     http_route("POST", "/api/queue/skip",     handle_queue_skip);
     http_route("POST", "/api/queue/clear",    handle_queue_clear);

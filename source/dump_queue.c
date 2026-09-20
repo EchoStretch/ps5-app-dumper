@@ -22,6 +22,7 @@ along with this program; see the file COPYING. If not, see
 #include <unistd.h>
 
 #include "dump_queue.h"
+#include "dump_library.h"
 #include "dump_job.h"
 #include "dump_store.h"
 #include "app_scan.h"
@@ -389,6 +390,7 @@ int queue_start(const char *const *title_ids, const int *is_disc,
     if (count > QUEUE_MAX)               FAIL("a queue holds at most %d titles", QUEUE_MAX);
     if (queue_is_active())               FAIL("a queue is already running");
     if (job_is_active())                 FAIL("a dump is already running");
+    if (dumplib_move_active())           FAIL("a dump is being moved - wait for that to finish");
     if (target_is_known(mount) != 0)     FAIL("unknown destination");
     if (strlen(mount) >= sizeof(((queue_status_t *)0)->mount))
                                          FAIL("destination path is too long");

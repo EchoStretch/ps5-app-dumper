@@ -12,7 +12,7 @@ CC   ?= cc
 # process list are PS5 business and faked in mock_console.c
 REAL := $(filter-out %/tile.c %/instance.c,$(wildcard $(ROOT)/webhb/*.c)) \
         $(ROOT)/source/routes_settings.c $(ROOT)/source/routes_dumper.c $(ROOT)/source/dumper_app.c \
-        $(ROOT)/source/dump_job.c $(ROOT)/source/dump_queue.c $(ROOT)/source/dump_store.c \
+        $(ROOT)/source/dump_job.c $(ROOT)/source/dump_queue.c $(ROOT)/source/dump_store.c $(ROOT)/source/dump_library.c \
         $(ROOT)/source/utils.c
 
 GEN  := $(OUT)/web_assets.c $(OUT)/tile_assets.c
