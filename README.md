@@ -141,7 +141,15 @@ socat -t 99999999 - TCP:<ip>:9021 < ps5-app-dumper.elf
 
 ## Configuration
 
-`config.ini` lives next to the dump, in `<drive>/homebrew/`. It is created on first run and rewritten whenever a setting is changed in the web interface.
+`config.ini` lives in `<drive>/ps5-app-dumper/`, the payload's own folder on the first writable USB drive, together with the list of known disc titles and `logs/` (a general `dumper.log` plus one log per dump). It is created on first run and rewritten whenever a setting is changed in the web interface. A `config.ini` that an older version left in `<drive>/homebrew/` is moved over automatically. Dumps still go to `<drive>/homebrew/` unless `dump_subdir` says otherwise.
+
+### Existing and unfinished dumps
+
+Every dump leaves a small `<folder>.dump-info.json` next to its folder: the title, the settings it was made with, and whether it was finished. With that the payload never mixes two dumps in one folder:
+
+* a dump that was **cut short** is removed before its title is dumped again, and is listed under *Unfinished dumps* in the destination panel, where it can be deleted;
+* a **finished** dump is only replaced when you confirm it - the start button asks. A queue, which runs unattended, passes such a title over, and so does `auto_start`;
+* a folder **without** an info file - an older dump, or something else - counts as finished and is never deleted unasked.
 
 | Key | Default | Meaning |
 | --- | --- | --- |

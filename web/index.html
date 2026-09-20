@@ -423,6 +423,15 @@ button.tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .bar i{display:block;height:100%;border-radius:2px;background:linear-gradient(90deg,var(--accent-deep),var(--accent));transition:width .4s}
 .bar i.low{background:linear-gradient(90deg,#c4740a,var(--amber))}
 
+/* dumps that were cut short */
+.cut{border-top:1px solid var(--line-soft);padding:10px 12px 12px}
+.cut-head{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--amber);margin-bottom:8px}
+.cut-row{display:flex;align-items:center;padding:7px 0;border-top:1px solid var(--line-soft)}
+.cut-row:first-of-type{border-top:0}
+.cut-row .meta{flex:1;min-width:0;padding-right:10px}
+.cut-row .name{font-size:13.5px}
+.cut-row .id{font-size:10px}
+
 /* ---------------- settings ---------------- */
 .row{
   display:flex;align-items:center;gap:12px;padding:11px 0;
@@ -714,6 +723,7 @@ footer{
       <section class="card" id="sec-drives">
         <div class="head"><h2>Destination</h2><span class="num" id="drivecount">0</span></div>
         <div class="body tight" id="drives"><div class="skel"></div></div>
+        <div class="cut" id="incomplete" hidden></div>
       </section>
 
       <section class="card" id="sec-queue">
@@ -755,8 +765,8 @@ footer{
           </div>
           <div class="row">
             <div class="txt">
-              <div class="label">Write log.txt</div>
-              <div class="hint">Full log next to the dump</div>
+              <div class="label">Write logs</div>
+              <div class="hint">One log per dump, in ps5-app-dumper/logs on the drive</div>
             </div>
             <label class="sw"><input type="checkbox" id="c-logging"><span></span></label>
           </div>
@@ -935,7 +945,11 @@ function toast(msg, kind){
 function api(path, opts){
   return fetch(path, opts).then(function(r){
     return r.json().catch(function(){ return {}; }).then(function(body){
-      if(!r.ok) throw new Error(body.error || ("HTTP " + r.status));
+      if(!r.ok){
+        var err = new Error(body.error || ("HTTP " + r.status));
+        err.body = body;
+        throw err;
+      }
       return body;
     });
   });
@@ -1823,8 +1837,7 @@ function updateAction(){
     return;
   }
 
-  go.classList.remove("arm");
-  go.textContent = "Start dump";
+  if(!go.classList.contains("arm")) go.textContent = "Start dump";
 
   var ready = !!(app && state.target);
   go.disabled = !ready;
@@ -2072,6 +2085,7 @@ function loadDevices(){
   return api("/api/devices").then(function(d){
     state.apps = d.apps || [];
     state.targets = d.targets || [];
+    state.incomplete = d.incomplete || [];
     state.configPath = d.configPath;
 
     if(state.app && !selectedApp()) state.app = null;
@@ -2103,7 +2117,7 @@ function loadDevices(){
     }
 
     if(state.app && !state.busy) fetchSize(state.app);
-    renderApps(); renderDrives(); updateAction();
+    renderApps(); renderDrives(); renderIncomplete(); updateAction();
     renderLibrary();
   }).catch(function(e){
     /* while the payload is down the banner says it all */
@@ -2120,15 +2134,72 @@ function start(){
   $("logbox").innerHTML = "";
   state.samples = [];
 
-  post("/api/dump", {app: app.dir, target: state.target}).then(function(d){
+  var go = $("btn-go"), request = {app: app.dir, target: state.target};
+  if(go.classList.contains("arm")) request.overwrite = 1;
+  clearTimeout(overwriteArm);
+  go.classList.remove("arm");
+
+  post("/api/dump", request).then(function(d){
     state.busy = true;
     state.job = d.job;
     renderJob(d.job);
     updateAction();
     toast("Dumping " + app.title, "ok");
   }).catch(function(e){
+    if(e.body && e.body.exists){
+      /* a finished dump of this title is there - replacing it is a decision */
+      go.disabled = false;
+      go.classList.add("arm");
+      go.textContent = "Already dumped - replace it?";
+      toast(e.message + ". Press again to delete it and dump anew.", "bad");
+      overwriteArm = setTimeout(function(){ go.classList.remove("arm"); updateAction(); }, 6000);
+      return;
+    }
     toast(e.message, "bad");
     updateAction();
+  });
+}
+var overwriteArm;
+
+/* ---------------- dumps that were cut short ---------------- */
+var cutSig = null, cutArm;
+
+function renderIncomplete(){
+  var box = $("incomplete"), list = state.incomplete || [];
+  var sig = list.map(function(c){ return c.mount + "/" + c.folder + c.state; }).join("~") + "#" + state.busy;
+  if(sig === cutSig) return;
+  cutSig = sig;
+
+  box.hidden = !list.length;
+  if(!list.length){ box.innerHTML = ""; return; }
+
+  box.innerHTML = '<div class="cut-head">Unfinished dumps</div>' + list.map(function(c, i){
+    return '<div class="cut-row"><span class="meta"><span class="name">' + esc(c.title) + '</span>' +
+      '<span class="id">' + esc(c.dest + "/" + c.folder) + " &middot; " + esc(c.state === "running" ? "interrupted" : c.state) + '</span></span>' +
+      '<button type="button" class="mini" data-cut="' + i + '"' + (state.busy ? " disabled" : "") + '>Delete</button></div>';
+  }).join("");
+
+  Array.prototype.forEach.call(box.querySelectorAll("[data-cut]"), function(el){
+    el.addEventListener("click", function(){
+      var c = list[Number(el.getAttribute("data-cut"))];
+      if(!el.classList.contains("warn")){
+        el.classList.add("warn");
+        el.textContent = "Delete for good?";
+        clearTimeout(cutArm);
+        cutArm = setTimeout(function(){ el.classList.remove("warn"); el.textContent = "Delete"; }, 4000);
+        return;
+      }
+      clearTimeout(cutArm);
+      el.disabled = true;
+      el.textContent = "Deleting…";
+      post("/api/dumps/delete", {mount: c.mount, folder: c.folder}).then(function(){
+        toast("Removed " + c.folder, "ok");
+        loadDevices();
+      }).catch(function(e){
+        toast(e.message, "bad");
+        cutSig = null; renderIncomplete();
+      });
+    });
   });
 }
 
