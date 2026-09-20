@@ -43,7 +43,7 @@ Before a dump starts, single or queued, its size is compared with the free space
 
 **Home-screen shortcut:** open **Settings** and press **Install** next to *Home-screen shortcut* to put an "App Dumper" tile on the console's home screen. The tile opens the web interface in the console's browser. It is a shortcut only: it does **not** start the payload, so load the payload first as usual. The tile remembers the port the web interface was using when it was installed; if that changes, press **Reinstall**. Installing is refused while a dump or a queue is running. To remove the tile, delete it from the home screen like any other title.
 
-**Turning it off:** set `enable_webui = 0` to go back to the old behaviour (dump the running title immediately and exit), or `auto_start = 1` to keep the setting but dump right away.
+**Turning it off:** set `enable_webui = 0` to go back to the old behaviour (dump the running title immediately and exit). With `auto_start = 1` the payload dumps the running title right at launch *and* serves the web interface, so the dump can be watched or stopped and the switch can be turned off again.
 
 > The interface has no password. Anyone on your network who can reach the console can start a dump while the payload runs — use it on a network you trust, and shut the payload down from the footer link when you are done.
 
@@ -142,7 +142,7 @@ socat -t 99999999 - TCP:<ip>:9021 < ps5-app-dumper.elf
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `enable_webui` | `1` | Serve the web interface instead of dumping right away |
-| `auto_start` | `0` | Dump the running title immediately, even with the web UI enabled |
+| `auto_start` | `0` | Dump the running title right at launch; the web UI comes up as well |
 | `web_port` | `8081` | First TCP port tried for the web interface |
 | `dump_subdir` | `homebrew` | Folder below the drive that receives the dump |
 | `queue_delay` | `30` | Seconds a queued title gets to load before its dump starts, 5-600 |
