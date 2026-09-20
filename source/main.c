@@ -123,7 +123,8 @@ static void *auto_dump_thread(void *arg)
 
         if (best < 0)
             problem = "no drive to dump to";
-        else if (job_start(apps[0].dir, targets[best].mount, cfg, err, sizeof(err)) != 0)
+        /* never overwrites: nobody is there to be asked */
+        else if (job_start(apps[0].dir, targets[best].mount, cfg, 0, err, sizeof(err)) != 0)
             problem = err[0] ? err : "the dump could not be started";
         else
             printf_notification("Auto dump: %s\nWatch or stop it in the web UI",

@@ -40,6 +40,7 @@ along with this program; see the file COPYING. If not, see
 #include "app_launch.h"
 #include "dump_job.h"
 #include "dump_queue.h"
+#include "dump_store.h"
 #include "self_store.h"
 #include "version.h"
 #include "utils.h"
@@ -547,10 +548,45 @@ static void handle_devices(int fd)
                   (unsigned long long)targets[i].free_bytes);
     }
 
-    sb_puts(&sb, "],\"config\":");
+    /* dumps that were cut short, per drive, so they can be cleared away */
     pthread_mutex_lock(&g_cfg_mtx);
-    json_config(&sb, &g_cfg);
+    dumper_config_t cfg_now = g_cfg;
     pthread_mutex_unlock(&g_cfg_mtx);
+
+    sb_puts(&sb, "],\"incomplete\":[");
+    dump_entry_t *cut = calloc(DUMP_LIST_MAX, sizeof(*cut));
+    int cut_total = 0;
+    for (int i = 0; cut && i < target_count; i++) {
+        char dest[384];
+        job_dest_path(targets[i].mount, &cfg_now, dest, sizeof(dest));
+
+        int n = dump_list_incomplete(dest, cut, DUMP_LIST_MAX);
+        for (int k = 0; k < n; k++) {
+            /* the dump in progress is unfinished too, but not abandoned */
+            job_status_t running;
+            job_get_status(&running);
+            if (job_is_active() && strcmp(running.title_id, cut[k].title_id) == 0) continue;
+
+            if (cut_total++) sb_puts(&sb, ",");
+            sb_puts(&sb, "{\"mount\":");
+            sb_json_str(&sb, targets[i].mount);
+            sb_puts(&sb, ",\"dest\":");
+            sb_json_str(&sb, dest);
+            sb_puts(&sb, ",\"folder\":");
+            sb_json_str(&sb, cut[k].folder);
+            sb_puts(&sb, ",\"titleId\":");
+            sb_json_str(&sb, cut[k].title_id);
+            sb_puts(&sb, ",\"title\":");
+            sb_json_str(&sb, cut[k].title[0] ? cut[k].title : cut[k].title_id);
+            sb_puts(&sb, ",\"state\":");
+            sb_json_str(&sb, cut[k].state);
+            sb_puts(&sb, "}");
+        }
+    }
+    free(cut);
+
+    sb_puts(&sb, "],\"config\":");
+    json_config(&sb, &cfg_now);
 
     sb_puts(&sb, ",\"configPath\":");
     const char *hb = get_app_data_path();
@@ -648,7 +684,19 @@ static void handle_dump(int fd, const params_t *p)
     pthread_mutex_unlock(&g_cfg_mtx);
 
     char err[160] = {0};
-    if (job_start(app, target, &cfg, err, sizeof(err)) != 0) {
+    int rc = job_start(app, target, &cfg, param_get_int(p, "overwrite", 0), err, sizeof(err));
+
+    if (rc == JOB_ERR_EXISTS) {
+        /* the page asks, and comes back with overwrite=1 */
+        sb_t sb;
+        sb_init(&sb);
+        sb_puts(&sb, "{\"error\":");
+        sb_json_str(&sb, err);
+        sb_puts(&sb, ",\"exists\":true}");
+        send_sb(fd, 409, &sb);
+        return;
+    }
+    if (rc != 0) {
         send_error(fd, 409, err[0] ? err : "could not start the dump");
         return;
     }
@@ -661,6 +709,32 @@ static void handle_dump(int fd, const params_t *p)
     json_job(&sb, &job);
     sb_puts(&sb, "}");
     send_sb(fd, 200, &sb);
+}
+
+/* Clears away a dump that was cut short. dump_remove_incomplete() only ever
+   deletes a folder whose info file says it is an unfinished dump of ours. */
+static void handle_dump_delete(int fd, const params_t *p)
+{
+    const char *mount  = param_get(p, "mount", NULL);
+    const char *folder = param_get(p, "folder", NULL);
+
+    if (!mount || !folder || target_is_known(mount) != 0) { send_error(fd, 400, "unknown drive"); return; }
+    if (job_is_active() || queue_is_active())              { send_error(fd, 409, "a dump is running"); return; }
+
+    pthread_mutex_lock(&g_cfg_mtx);
+    dumper_config_t cfg = g_cfg;
+    pthread_mutex_unlock(&g_cfg_mtx);
+
+    char dest[384];
+    job_dest_path(mount, &cfg, dest, sizeof(dest));
+
+    if (dump_remove_incomplete(dest, folder) != 0) {
+        send_error(fd, 409, "not an unfinished dump of this tool - nothing was deleted");
+        return;
+    }
+
+    write_log(g_log_path, "Web UI: removed the unfinished dump %s/%s", dest, folder);
+    send_json(fd, 200, "{\"deleted\":true}");
 }
 
 static void handle_abort(int fd)
@@ -1145,6 +1219,7 @@ static void route(int fd, const char *method, const char *path, const params_t *
     else if (is_post && !strcmp(path, "/api/config"))  handle_config_post(fd, p);
     else if (is_post && !strcmp(path, "/api/dump"))    handle_dump(fd, p);
     else if (is_post && !strcmp(path, "/api/abort"))   handle_abort(fd);
+    else if (is_post && !strcmp(path, "/api/dumps/delete")) handle_dump_delete(fd, p);
     else if (is_post && !strcmp(path, "/api/queue/start")) handle_queue_start(fd, p);
     else if (is_post && !strcmp(path, "/api/queue/clear")) handle_queue_clear(fd);
     else if (is_post && !strcmp(path, "/api/queue/skip"))  handle_queue_skip(fd);

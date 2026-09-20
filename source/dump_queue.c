@@ -23,6 +23,7 @@ along with this program; see the file COPYING. If not, see
 
 #include "dump_queue.h"
 #include "dump_job.h"
+#include "dump_store.h"
 #include "app_scan.h"
 #include "app_launch.h"
 #include "utils.h"
@@ -220,6 +221,20 @@ static int process_item(int index)
 
     write_log(g_log_path, "Queue: %d/%d %s", index + 1, snap.count, title_id);
 
+    /* A title that is on the drive already is passed over: a queue runs
+       unattended, and starting a game only to find that out would cost
+       minutes. A dump that was cut short does not count - job_start()
+       clears it away and does it again. */
+    char dest[384];
+    job_dest_path(snap.mount, &g_queue_cfg[index], dest, sizeof(dest));
+
+    if (dump_presence(dest, title_id, strncmp(title_id, "CUSA", 4) == 0,
+                      g_queue_cfg[index].split) == DUMP_PRESENT) {
+        write_log(g_log_path, "Queue: %s is already dumped in %s, skipped", title_id, dest);
+        set_item(index, QITEM_SKIPPED, "already dumped in %s - skipped", dest);
+        return 0;
+    }
+
     /* a title that is already up is dumped as it is */
     if (!title_mounted(dir)) {
         int rc = 0;
@@ -239,7 +254,12 @@ static int process_item(int index)
 
     if (g_stop) return -1;
 
-    if (job_start(dir, snap.mount, &g_queue_cfg[index], err, sizeof(err)) != 0) {
+    int started = job_start(dir, snap.mount, &g_queue_cfg[index], 0, err, sizeof(err));
+    if (started == JOB_ERR_EXISTS) {
+        set_item(index, QITEM_SKIPPED, "%s - skipped", err);
+        return 0;
+    }
+    if (started != 0) {
         set_item(index, QITEM_FAILED, "%s", err);
         return 0;
     }

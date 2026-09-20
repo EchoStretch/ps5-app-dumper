@@ -47,11 +47,22 @@ typedef struct {
     time_t      finished;
 } job_status_t;
 
-/* Starts a dump in the background. Returns 0 on success, -1 when a job is
+#define JOB_ERR_EXISTS (-2)
+
+/* Where a dump to this drive goes: the mount plus the configured folder. */
+void job_dest_path(const char *mount, const dumper_config_t *cfg, char *out, size_t out_size);
+
+/* Starts a dump in the background. Returns 0 on success and -1 when a job is
    already running or the arguments do not resolve, with the reason placed
-   in err (when given). */
+   in err (when given).
+
+   A dump of this title that was cut short is cleared away first - two
+   halves in one folder are worth nothing. A finished one, or a folder of
+   unknown origin, is only replaced with overwrite set; without it the call
+   returns JOB_ERR_EXISTS and touches nothing. */
 int  job_start(const char *app_dir, const char *mount,
-               const dumper_config_t *cfg, char *err, size_t err_size);
+               const dumper_config_t *cfg, int overwrite,
+               char *err, size_t err_size);
 
 /* Asks the running job to stop. The copy routines look for this between
    blocks, so it takes effect within moments even inside a huge file. */
