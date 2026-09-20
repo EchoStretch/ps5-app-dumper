@@ -1,6 +1,6 @@
 # webhb - carving the web-homebrew core out of the dumper
 
-Status: steps 1 and 3 are done (server split, harness in the repo); the rest is a proposal. Working name `webhb`; everything stays in
+Status: steps 1 to 3 are done (server split, `whb_app_t` and the four modules moved, harness in the repo); the rest is a proposal. Working name `webhb`; everything stays in
 this repository until a second payload has proven the interface.
 
 ## Why
@@ -47,12 +47,12 @@ source/                  the dumper: app_scan, app_launch, dump_*, pfs, pkg, dec
 ```c
 typedef struct {
     const char *name;            /* "PS5 App Dumper"                         */
+    const char *short_name;      /* "App Dumper" - tile and phone home screen */
     const char *version;         /* "1.12"                                   */
     const char *process_name;    /* "ps5-app-dumper.elf" - must end in .elf  */
     const char *data_dirname;    /* "ps5-app-dumper" -> <drive>/ps5-app-dumper */
     const char *elf_basename;    /* "ps5-app-dumper" -> ..._v1.12.elf        */
     const char *tile_title_id;   /* "APDU00001", NULL for no tile            */
-    const char *tile_title;      /* "App Dumper"                             */
     int         default_port;    /* 8081                                     */
     const unsigned char *page;      size_t page_len;   /* bin2c'd index.html */
     const unsigned char *icon_png;  size_t icon_len;   /* 512x512            */
@@ -73,6 +73,16 @@ void        whb_send_file(whb_req_t *req, const char *path, const char *content_
 int         whb_run(const whb_app_t *app);  /* claims the name, takes over an idle
                                                copy, finds the drive, serves */
 ```
+
+As it stands after step 2, `webhb/include/webhb.h` has the struct (with
+`short_name` where this sketch first had `tile_title`: the tile and a phone's
+home screen want the same thing, a name that fits under an icon), plus
+`whb_app_set()`, `whb_app()`, `whb_busy()`, `whb_elf_name()` and
+`whb_routes_init()`. `whb_run()` has to wait: the port comes out of config.ini
+and headless mode branches off in between, so `main.c` still drives the
+start-up itself until the config store has moved (step 6). The request type
+`whb_req_t` and the `whb_` names for the server functions are not in yet
+either - handlers are still `(int fd, const params_t *p)`.
 
 `busy()` is the one callback the core needs: single-instance takeover, `quit`
 and the cached page's reload all ask it instead of knowing about dumps.
@@ -99,12 +109,28 @@ Each step builds, passes the harness in a browser, and changes no behaviour.
    the ~250 platform lines, `source/routes_dumper.c` the dumper's. The platform
    routes stay in `source/` until step 2 gives them `whb_app_t` to stand on.
    Verified by diffing the answers of 40 requests before and after: identical.
-2. **Introduce `whb_app_t`** and move `single_instance`, `self_store`,
-   `app_installer`, `fs_browse` over, replacing the hard-coded names
-   (`PAYLOAD_PROCESS_NAME`, `DUMPER_ELF_NAME`, `TILE_TITLE_ID`, port 8081).
+2. **Introduce `whb_app_t`** - done. `source/dumper_app.c` describes the dumper;
+   `instance.c`, `selfstore.c`, `tile.c`, `fsbrowse.c` and the routes that need
+   nothing else (`webhb/routes.c`: page, cache manifest, icons, web manifest,
+   `/api/self*`, `/api/tile`, `/api/quit`) live in `webhb/`. The macros
+   `PAYLOAD_PROCESS_NAME`, `DUMPER_ELF_NAME`, `TILE_TITLE_ID`, `APP_DATA_DIRNAME`
+   and the literal port and app name are gone. Left with the dumper as
+   `source/routes_settings.c`: `/api/config` (stands on `dumper_config_t`, step 6)
+   and `/api/browse`, `/api/mkdir` (ask `target_is_known()` in `app_scan.c`,
+   step 4). Verified by the snapshot, an SDK build and a byte comparison of the
+   tile's param.json, which decides whether an installed tile counts as current.
+
+   Loose ends, deliberately not touched because they would change behaviour:
+   - `instance.c` still recognises a copy by the dumper's `/api/status` answer
+     (`"job":`). Two webhb apps on neighbouring ports would need a status that
+     names the app - that is `/api/whb/status`.
+   - The core's 409 texts still say "a dump is running".
+   - Routes keep their `/api/...` paths; the `/api/whb/` prefix is a change to
+     the page and waits for the name decision below.
 3. **Bring the harness into the repo** - done, as `harness/` (`make -C harness
    sim|run|pldmgr|snapshot|render`). It stays outside `webhb/` for now because
-   its mock fakes the dumper's console; the generic half moves with step 2.
+   its mock fakes the dumper's console. It builds `webhb/` without `tile.c`
+   and `instance.c`, which only make sense on the console.
 4. **Split `utils.c`**: log, notify, storage and config leave; the copy
    routines and abort flag stay with the dumper.
 5. **Extract the client kit** from `web/index.html`.

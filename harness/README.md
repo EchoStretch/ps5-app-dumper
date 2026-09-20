@@ -14,8 +14,8 @@ make -C harness render      # what headless Chrome makes of the page (needs `run
 
 What is real and what is not: `mock_console.c` fakes the mounted games, the
 library, the launch services, the two dumpers, notifications and the tile.
-Everything else - `webhb/`, the routes, `dump_job`, `dump_queue`, `dump_store`,
-`utils`, `fs_browse`, `self_store` - is the payload's own code. The pretend
+Everything else - `webhb/` (bar `tile.c` and `instance.c`), the routes,
+`dump_job`, `dump_queue`, `dump_store`, `utils` - is the payload's own code. The pretend
 console is awkward on purpose; its header comment lists the five titles and
 what each one is there to provoke.
 
@@ -31,6 +31,8 @@ make -C harness snapshot && diff /tmp/before.txt harness/out/snapshot.txt
 `../..` and empty parameters among them - and normalises timestamps, so the two
 files are identical unless an answer really changed. The hash of the served
 page is part of it. This is how the split of `http_server.c` was verified.
+It refuses to run while something else answers on the port: a simulator left
+over from `make run` would otherwise answer in place of the fresh one.
 
 ## Checking the page
 
