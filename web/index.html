@@ -171,7 +171,13 @@ section.card{
 .head .spacer{margin-left:auto}
 .opt-plat{display:flex;gap:5px;align-items:center}
 .subdir-ctl{display:flex;gap:6px;align-items:center}
-.subdir-ctl input{max-width:120px}
+.subdir-ctl input{max-width:150px}
+/* a path needs the whole width: the control goes below its label */
+.row.stack{display:block}
+.row.stack .subdir-ctl{margin-top:8px}
+.row.stack .subdir-ctl input{flex:1;max-width:none;width:100%;min-width:0}
+.inuse{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);
+  border:1px solid rgba(47,157,255,.45);border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:middle;white-space:nowrap}
 
 /* folder picker modal */
 .picker{position:fixed;top:0;right:0;bottom:0;left:0;z-index:50;
@@ -795,14 +801,24 @@ footer{
             </div>
             <label class="sw"><input type="checkbox" id="c-logging"><span></span></label>
           </div>
-          <div class="row">
+          <div class="row stack" id="row-subdir">
             <div class="txt">
-              <div class="label">Destination folder</div>
-              <div class="hint" id="subdir-hint">Below the selected drive</div>
+              <div class="label">Dump folder on USB drives <span class="inuse" id="inuse-usb" hidden>in use</span></div>
+              <div class="hint" id="subdir-hint">Below the drive's root</div>
             </div>
             <div class="subdir-ctl">
               <input type="text" id="c-subdir" spellcheck="false" autocapitalize="off" autocomplete="off">
               <button type="button" class="mini" id="c-browse">Browse</button>
+            </div>
+          </div>
+          <div class="row stack" id="row-subdir-console" hidden>
+            <div class="txt">
+              <div class="label">Dump folder on the console <span class="inuse" id="inuse-console" hidden>in use</span></div>
+              <div class="hint" id="subdir-console-hint">Below /data</div>
+            </div>
+            <div class="subdir-ctl">
+              <input type="text" id="c-subdir-console" spellcheck="false" autocapitalize="off" autocomplete="off">
+              <button type="button" class="mini" id="c-browse-console">Browse</button>
             </div>
           </div>
           <div class="row" id="row-split">
@@ -1465,7 +1481,7 @@ function presentCount(){
 
 function refreshPresence(){
   var ids = state.queue.map(function(q){ return q.titleId; }).join(",");
-  var key = ids + "@" + state.target + "@" + $("c-subdir").value;
+  var key = ids + "@" + state.target + "@" + currentSubdir();
   if(!ids || !state.target || queueOnConsole()){ presenceFor = null; return; }
   if(key === presenceFor) return;
   presenceFor = key;
@@ -1708,12 +1724,9 @@ function renderDrives(){
   Array.prototype.forEach.call(box.querySelectorAll(".drive"), function(el){
     el.addEventListener("click", function(){
       if(state.busy || el.disabled) return;
-      /* each kind of destination has a folder of its own: what was typed
-         for the old one is stored before the field shows the new one's */
-      if(subdirDirty()) saveConfigNow();
       state.target = el.getAttribute("data-mount");
       markPressed(box, "data-mount", state.target);
-      showSubdir();
+      markSubdirInUse();
       updateAction();
     });
   });
@@ -1735,18 +1748,28 @@ function targetIsConsole(){
   var t = selectedTarget();
   return !!(t && t.internal);
 }
-var subdirForConsole = false;
-function subdirOf(c, onConsole){ return (onConsole ? c.dumpSubdirConsole : c.dumpSubdir) || ""; }
+function consoleTarget(){
+  var found = null;
+  state.targets.forEach(function(t){ if(t.internal) found = t; });
+  return found;
+}
+/* the folder that applies to the destination selected right now */
+function currentSubdir(){
+  return $(targetIsConsole() ? "c-subdir-console" : "c-subdir").value.trim();
+}
 function showSubdir(){
   if(!state.config) return;
   /* a poll must not overwrite what is being typed */
-  if(document.activeElement === $("c-subdir") && subdirForConsole === targetIsConsole()) return;
-  subdirForConsole = targetIsConsole();
-  $("c-subdir").value = subdirOf(state.config, subdirForConsole);
-  $("subdir-hint").textContent = subdirForConsole ? "On the console, below /data" : "On a USB drive, below its root";
+  if(document.activeElement !== $("c-subdir"))         $("c-subdir").value = state.config.dumpSubdir || "";
+  if(document.activeElement !== $("c-subdir-console")) $("c-subdir-console").value = state.config.dumpSubdirConsole || "";
+  markSubdirInUse();
 }
-function subdirDirty(){
-  return !!state.config && $("c-subdir").value.trim() !== subdirOf(state.config, subdirForConsole);
+function markSubdirInUse(){
+  var con = consoleTarget(), onConsole = targetIsConsole();
+  $("row-subdir-console").hidden = !con;
+  $("inuse-usb").hidden = !state.target || onConsole;
+  $("inuse-console").hidden = !onConsole;
+  if(con) $("subdir-console-hint").textContent = "Below " + con.mount + " - for dumps to Console storage";
 }
 function applyConfig(c){
   state.config = c;
@@ -1793,8 +1816,8 @@ function collectConfig(){
     autoStart:       $("c-auto").checked ? 1 : 0,
     ps5BackportLevel:$("c-bp5").value,
     ps4BackportLevel:$("c-bp4").value,
-    dumpSubdir:        subdirForConsole ? subdirOf(state.config || {}, false) : $("c-subdir").value.trim(),
-    dumpSubdirConsole: subdirForConsole ? $("c-subdir").value.trim() : subdirOf(state.config || {}, true),
+    dumpSubdir:        $("c-subdir").value.trim(),
+    dumpSubdirConsole: $("c-subdir-console").value.trim(),
     queueDelay:      parseInt($("c-qdelay").value, 10) || 30,
     split:           split
   };
@@ -1826,6 +1849,7 @@ function wireSettings(){
   $("c-bp5").addEventListener("change", saveConfig);
   $("c-bp4").addEventListener("change", saveConfig);
   $("c-subdir").addEventListener("change", saveConfig);
+  $("c-subdir-console").addEventListener("change", saveConfig);
   $("c-qdelay").addEventListener("change", saveConfig);
   Array.prototype.forEach.call($("c-split").querySelectorAll("button"), function(b){
     b.addEventListener("click", function(){
@@ -1925,7 +1949,7 @@ function queueSummary(){
   if(!state.targets.length) return text + ' <span style="color:var(--red)">· plug in a USB drive</span>';
   if(!state.target)         return text + ' <span style="color:var(--red)">· select a destination drive</span>';
 
-  var sub = $("c-subdir").value.trim();
+  var sub = currentSubdir();
   text += " → <b>" + esc(state.target + (sub ? "/" + sub : "")) + "</b>";
 
   var notes = [];
@@ -2020,7 +2044,7 @@ function updateAction(){
   else if(!state.targets.length)sum.textContent = "Plug in a USB drive.";
   else if(!state.target)        sum.textContent = "Select a destination drive.";
   else {
-    var sub = $("c-subdir").value.trim();
+    var sub = currentSubdir();
     var size = state.sizes[app.dir];
     var drive = selectedTarget();
     var text = "<b>" + esc(app.title) + "</b>" +
@@ -2436,18 +2460,20 @@ function betterTarget(t, best){
   if(!!t.internal !== !!best.internal) return !t.internal;
   return t.freeBytes > best.freeBytes;
 }
-function pkDriveForBrowse(){
-  if(state.target) return state.target;
+function pkDriveForBrowse(forConsole){
+  if(forConsole){ var con = consoleTarget(); return con ? con.mount : null; }
+  if(state.target && !targetIsConsole()) return state.target;
   var best = null;
-  state.targets.forEach(function(t){ if(betterTarget(t, best)) best = t; });
+  state.targets.forEach(function(t){ if(!t.internal && betterTarget(t, best)) best = t; });
   return best ? best.mount : null;
 }
 
-function openPicker(){
-  if(state.busy) return;
-  var mount = pkDriveForBrowse();
-  if(!mount){ toast("Select a destination drive first.", "bad"); return; }
+function openPicker(forConsole){
+  if(state.busy){ toast("A dump is running - type the folder in, or browse when it is done.", "bad"); return; }
+  var mount = pkDriveForBrowse(forConsole);
+  if(!mount){ toast(forConsole ? "The console's storage is not available." : "Plug in a USB drive to choose a folder on it.", "bad"); return; }
   pk.mount = mount;
+  pk.forConsole = !!forConsole;
   pk.path = "";
   $("picker").hidden = false;
   $("pk-name").value = "";
@@ -2524,7 +2550,7 @@ function pkCreate(){
 }
 
 function pkUse(){
-  $("c-subdir").value = pk.path;
+  $(pk.forConsole ? "c-subdir-console" : "c-subdir").value = pk.path;
   closePicker();
   saveConfig();
   updateAction();
@@ -2641,8 +2667,10 @@ $("clearlog").addEventListener("click", function(){
   $("logbox").innerHTML = '<div class="empty">console cleared</div>';
 });
 $("c-subdir").addEventListener("input", updateAction);
+$("c-subdir-console").addEventListener("input", updateAction);
 
-$("c-browse").addEventListener("click", openPicker);
+$("c-browse").addEventListener("click", function(){ openPicker(false); });
+$("c-browse-console").addEventListener("click", function(){ openPicker(true); });
 
 /* ---------------- settings page ---------------- */
 /* What is not about a dump lives on a page of its own. It is a second view of
