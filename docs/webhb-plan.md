@@ -1,6 +1,6 @@
 # webhb - carving the web-homebrew core out of the dumper
 
-Status: steps 1 to 6 are done (server split, `whb_app_t` and the four modules moved, harness in the repo, log / notifications / storage out of `utils.c`, the client kit, the config store, `whb_start()` / `whb_serve()`); `webhb/` no longer includes a single header of the dumper, and no route that is not about dumping is left outside it. Open: the second payload (step 7), which is what will show where the kit still assumes the dumper's page. Working name `webhb`; everything stays in
+Status: steps 1 to 6 are done (server split, `whb_app_t` and the four modules moved, harness in the repo, log / notifications / storage out of `utils.c`, the client kit, the config store, `whb_start()` / `whb_serve()`); `webhb/` no longer includes a single header of the dumper, and no route that is not about dumping is left outside it. The second payload (step 7) exists as well: `examples/klogview/`, a kernel log viewer, running on the console next to the dumper. What is left are the loose ends listed with the steps and the decisions at the end. Working name `webhb`; everything stays in
 this repository until a second payload has proven the interface.
 
 ## Why
@@ -202,8 +202,23 @@ Each step builds, passes the harness in a browser, and changes no behaviour.
    (`if_empty`), as before, so "the root of the drive" does not survive a
    restart. The legacy `read_*_config()` readers in `utils.c` are dead code
    from upstream and were left alone.
-7. **Prove it with a second payload** - small and wanted anyway, e.g. a klog
-   viewer. If that takes an evening, the interface is right.
+7. **Prove it with a second payload** - done: `examples/klogview/`, the kernel
+   log in a browser (live view, filter, marks, optional `logs/klog.txt`).
+   `main.c` has about 200 lines, the page sixty lines of script; it took an
+   evening's fraction. What it needed from the core and did not find went in:
+   `webhb/webhb.mk` (inlining, stamp, icon, two-stage build, `make sim`),
+   `webhb/host/stubs.c`, a `/api/status` of the core's own, telling a running
+   copy by the file name in `/api/self` instead of by the dumper's status (the
+   viewer would have asked the dumper to quit), a kit that leaves alone what a
+   page does not have, `whb.app.onLog`, and two names that were the dumper's
+   (`log_basename`, `lockedFrom`). On the console (FW 12.00): kernel lines
+   arrive, a resent copy replaces only its own predecessor, the dumper on
+   8081 is not touched.
+
+   Still the app's to copy: the markup the kit works on (header, offline
+   banner, unlock dialog, toast, the settings rows) and the flex-gap probe in
+   the head. The dumper's own Makefile and harness do not use `webhb.mk` /
+   `host/stubs.c` yet - they predate them and work.
 
 Steps 1-3 already pay off for the dumper alone.
 
