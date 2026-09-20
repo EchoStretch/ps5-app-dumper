@@ -52,6 +52,10 @@ q() {
     q POST /api/unlock "code=abc"; q POST /api/access/show ""; q POST /api/quit ""
     B="http://127.0.0.1:$PORT"
   fi
+  # the dump library: nothing there, then the refusals
+  q GET /api/dumps; q POST /api/dumps/move "mount=usb0&dir=&folder=homebrew&toMount=usb0&toDir=x"
+  q POST /api/dumps/move "mount=usb0&dir=&folder=PPSA01234-app0&toMount=usb0&toDir=../x"
+  q POST /api/dumps/move "mount=usb0&dir=&folder=PPSA01234-app0&toMount=usb0&toDir=x"; q POST /api/dumps/move/cancel ""
   q POST /api/quit ""
 } > "$OUT" 2>&1
 

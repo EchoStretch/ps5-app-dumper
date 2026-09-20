@@ -125,6 +125,29 @@ h1 span{color:var(--accent)}
 .page .card{margin-bottom:18px}
 .pagehead{display:flex;align-items:center;margin:0 0 16px}
 .pagehead h2{margin:0 0 0 14px;font-family:var(--mono);font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-dim)}
+.link{position:relative}
+.menu-pop{position:absolute;right:0;top:100%;margin-top:8px;z-index:40;min-width:190px;padding:6px;
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow)}
+.menu-pop button{display:block;width:100%;text-align:left;font:inherit;font-family:var(--mono);font-size:11.5px;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);background:none;border:0;border-radius:7px;
+  padding:10px 12px;cursor:pointer}
+.menu-pop button:hover,.menu-pop button.on{background:rgba(47,157,255,.14);color:var(--ink)}
+.pagehead .spacer{margin-left:auto}
+.dumpgroup{margin:0 0 8px;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
+.dumprow{display:flex;align-items:center;padding:11px 0;border-top:1px solid var(--line-soft)}
+.dumprow:first-child{border-top:0}
+.dumprow .meta{flex:1;min-width:0}
+.dumprow .name{display:block;font-size:14.5px}
+.dumprow .where{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-faint);margin-top:3px;word-break:break-all}
+.dumprow .size{font-family:var(--mono);font-size:11.5px;color:var(--ink-dim);margin:0 12px;white-space:nowrap;flex:none}
+.dumprow .mini{flex:none}
+.move-what{font-size:13.5px;margin-bottom:10px;word-break:break-all}
+.move-foot{display:flex;align-items:center;margin-top:10px}
+.move-foot .spacer{margin-left:auto}
+.move-foot .mini{margin-left:8px}
+.picker-drives{padding:9px 16px 0;flex:none}
+.picker-drives button{margin:0 6px 6px 0}
+.picker-drives button[aria-pressed=true]{border-color:var(--accent);color:var(--ink)}
 .live.lock{cursor:pointer;color:var(--amber,#ffb020);border-color:rgba(255,176,32,.45);-webkit-appearance:none;appearance:none}
 .live.on .dot{animation:pulse 2s ease-in-out infinite}
 .live.off{color:var(--red);border-color:rgba(255,77,94,.35)}
@@ -685,7 +708,12 @@ footer{
       <div class="link">
         <button type="button" class="live lock" id="lockchip" hidden title="This device may look, but not change anything yet">Locked</button>
         <span class="live on" id="conn"><i class="dot"></i><span id="conntext">Connected</span></span>
-        <button type="button" class="live menu" id="menubtn" aria-label="Settings" aria-expanded="false"><i class="bars" aria-hidden="true"><b></b><b></b><b></b></i><span>Menu</span></button>
+        <button type="button" class="live menu" id="menubtn" aria-label="Menu" aria-expanded="false"><i class="bars" aria-hidden="true"><b></b><b></b><b></b></i><span>Menu</span></button>
+        <div class="menu-pop" id="menupop" hidden>
+          <button type="button" data-go="">Dump console</button>
+          <button type="button" data-go="#dumps">Dumps</button>
+          <button type="button" data-go="#settings">Settings</button>
+        </div>
       </div>
     </div>
   </header>
@@ -867,9 +895,34 @@ footer{
     </div>
   </main>
 
+  <div class="page" id="view-dumps" hidden>
+    <div class="pagehead">
+      <button type="button" class="mini" data-back="1">&larr; Back</button>
+      <h2>Dumps</h2>
+      <span class="spacer"></span>
+      <button type="button" class="mini" id="dumps-rescan">Rescan</button>
+    </div>
+
+    <section class="card" id="movecard" hidden>
+      <div class="head"><h2>Moving</h2><span class="spacer"></span><span class="num" id="move-pct"></span></div>
+      <div class="body">
+        <div class="move-what" id="move-what"></div>
+        <div class="bar" id="move-bar"><i style="width:0%"></i></div>
+        <div class="move-foot">
+          <span class="hint" id="move-msg"></span>
+          <span class="spacer"></span>
+          <button type="button" class="mini" id="move-stop">Stop</button>
+          <button type="button" class="mini" id="move-ok" hidden>OK</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="dumplist"></div>
+  </div>
+
   <div class="page" id="view-settings" hidden>
     <div class="pagehead">
-      <button type="button" class="mini" id="settings-back">&larr; Back</button>
+      <button type="button" class="mini" data-back="1">&larr; Back</button>
       <h2>Settings</h2>
     </div>
 
@@ -944,10 +997,11 @@ footer{
 <div class="picker" id="picker" hidden>
   <div class="picker-box" role="dialog" aria-modal="true" aria-label="Choose destination folder">
     <div class="picker-head">
-      <span>Choose folder</span>
+      <span id="pk-title">Choose folder</span>
       <span class="spacer"></span>
       <button type="button" class="ghost act" id="pk-close" style="padding:5px 11px;font-size:11px;letter-spacing:.1em">Close</button>
     </div>
+    <div class="picker-drives" id="pk-drives" hidden></div>
     <div class="picker-path"><span id="pk-drive"></span><span id="pk-crumb"></span></div>
     <div class="picker-list" id="pk-list"></div>
     <div class="picker-new">
@@ -2286,6 +2340,7 @@ function pollStatus(){
     state.job = d.job;
     state.squeue = d.queue || null;
     renderJob(d.job);
+    if(d.move) renderMove(d.move);
 
     if(wasBusy && !state.busy){
       presenceFor = null;      /* what is on the drive has just changed */
@@ -2518,7 +2573,53 @@ function openPicker(forConsole){
   pkBrowse("");
 }
 
-function closePicker(){ $("picker").hidden = true; }
+/* Choosing where a dump goes: the same dialog, with the destinations to
+   switch between, and "Move here" instead of storing a setting. */
+function openMovePicker(d){
+  if(state.busy){ toast("A dump or a move is running.", "bad"); return; }
+  if(!d) return;
+  pk.move = d;
+  pk.forConsole = false;
+  pk.mount = d.mount;
+  $("pk-name").value = "";
+  $("pk-use").textContent = "Move here";
+  $("pk-create").textContent = "Create & move";
+  $("pk-title").textContent = "Move " + d.folder + " to…";
+  renderPickerDrives();
+  $("picker").hidden = false;
+  pkBrowse(d.dir || "");
+}
+function renderPickerDrives(){
+  var box = $("pk-drives");
+  box.hidden = !pk.move;
+  if(!pk.move) return;
+  var html = "";
+  state.targets.forEach(function(t){
+    if(!t.writable) return;
+    html += '<button type="button" class="mini" data-pkdrive="' + esc(t.mount) + '" aria-pressed="' + (t.mount === pk.mount) + '">' +
+            (t.internal ? "Console storage" : esc(t.mount)) + '</button>';
+  });
+  box.innerHTML = html;
+  Array.prototype.forEach.call(box.querySelectorAll("[data-pkdrive]"), function(b){
+    b.addEventListener("click", function(){
+      pk.mount = b.getAttribute("data-pkdrive");
+      renderPickerDrives();
+      /* start where dumps on that destination usually go */
+      var internal = false;
+      state.targets.forEach(function(t){ if(t.mount === pk.mount) internal = !!t.internal; });
+      pkBrowse(pk.mount === pk.move.mount ? (pk.move.dir || "")
+               : ((internal ? state.config.dumpSubdirConsole : state.config.dumpSubdir) || ""));
+    });
+  });
+}
+function closePicker(){
+  $("picker").hidden = true;
+  pk.move = null;
+  $("pk-use").textContent = "Use this folder";
+  $("pk-create").textContent = "Create & use";
+  $("pk-title").textContent = "Choose folder";
+  $("pk-drives").hidden = true;
+}
 
 function pkBrowse(path){
   pk.path = path;
@@ -2531,6 +2632,12 @@ function pkBrowse(path){
     pk.path = d.path || "";
     renderPicker(d.dirs || []);
   }).catch(function(e){
+    /* a folder that does not exist yet: start one level up instead */
+    if(path && /cannot open/.test(e.message)){
+      var parts = path.split("/"); parts.pop();
+      pkBrowse(parts.join("/"));
+      return;
+    }
     list.innerHTML = '<div class="pk-empty">' + esc(e.message) + '</div>';
   });
 }
@@ -2543,7 +2650,7 @@ function renderPicker(dirs){
   $("pk-crumb").textContent = pk.path ? "/" + pk.path : "/";
 
   /* destination preview */
-  $("pk-dest").textContent = pk.mount + (pk.path ? "/" + pk.path : "") + "/…";
+  $("pk-dest").textContent = pk.mount + (pk.path ? "/" + pk.path : "") + "/" + (pk.move ? pk.move.folder : "…");
 
   var list = $("pk-list");
   var html = "";
@@ -2588,6 +2695,16 @@ function pkCreate(){
 }
 
 function pkUse(){
+  if(pk.move){
+    var d = pk.move, toMount = pk.mount, toDir = pk.path;
+    closePicker();
+    post("/api/dumps/move", {mount: d.mount, dir: d.dir, folder: d.folder, toMount: toMount, toDir: toDir}).then(function(r){
+      if(r.copying) toast("Copying " + d.folder + " - the original goes once the copy is complete.", "ok");
+      else toast(d.folder + " moved to " + toMount + (toDir ? "/" + toDir : ""), "ok");
+      loadDumps(); pollStatus();
+    }).catch(function(e){ toast(e.message, "bad"); });
+    return;
+  }
   $(pk.forConsole ? "c-subdir-console" : "c-subdir").value = pk.path;
   closePicker();
   saveConfig();
@@ -2714,19 +2831,106 @@ $("c-browse-console").addEventListener("click", function(){ openPicker(true); })
 /* What is not about a dump lives on a page of its own. It is a second view of
    this one file - the page has to stay a single cached document - and the
    hash makes the back button work. */
+var VIEWS = { "#settings": "view-settings", "#dumps": "view-dumps" };
 function showView(){
-  var settings = location.hash === "#settings";
-  $("view-settings").hidden = !settings;
-  document.querySelector("main").hidden = settings;
-  document.querySelector(".actions").hidden = settings;
-  $("menubtn").setAttribute("aria-expanded", String(settings));
-  if(settings){ showAccess(); window.scrollTo(0, 0); }
+  var page = VIEWS[location.hash] || null;
+  for(var h in VIEWS) if(VIEWS.hasOwnProperty(h)) $(VIEWS[h]).hidden = VIEWS[h] !== page;
+  document.querySelector("main").hidden = !!page;
+  document.querySelector(".actions").hidden = !!page;
+  closeMenu();
+  if(page === "view-settings") showAccess();
+  if(page === "view-dumps") loadDumps();
+  if(page) window.scrollTo(0, 0);
 }
-$("menubtn").addEventListener("click", function(){
-  location.hash = location.hash === "#settings" ? "" : "#settings";
+function closeMenu(){
+  $("menupop").hidden = true;
+  $("menubtn").setAttribute("aria-expanded", "false");
+}
+$("menubtn").addEventListener("click", function(e){
+  e.stopPropagation();
+  var open = $("menupop").hidden;
+  $("menupop").hidden = !open;
+  $("menubtn").setAttribute("aria-expanded", String(open));
+  Array.prototype.forEach.call($("menupop").querySelectorAll("button"), function(b){
+    b.classList.toggle("on", (b.getAttribute("data-go") || "") === (VIEWS[location.hash] ? location.hash : ""));
+  });
 });
-$("settings-back").addEventListener("click", function(){ location.hash = ""; });
+document.addEventListener("click", closeMenu);
+Array.prototype.forEach.call($("menupop").querySelectorAll("button"), function(b){
+  b.addEventListener("click", function(){ location.hash = b.getAttribute("data-go"); closeMenu(); });
+});
+Array.prototype.forEach.call(document.querySelectorAll("[data-back]"), function(b){
+  b.addEventListener("click", function(){ location.hash = ""; });
+});
 window.addEventListener("hashchange", showView);
+
+/* ---------------- dumps ---------------- */
+/* What has been dumped, wherever it lies, and moving it: within a drive at
+   once, between a drive and the console by copying. */
+state.dumps = []; state.move = null;
+function loadDumps(){
+  $("dumplist").innerHTML = state.dumps.length ? $("dumplist").innerHTML : '<div class="empty">looking for dumps…</div>';
+  api("/api/dumps?token=" + encodeURIComponent(accessToken())).then(function(d){
+    state.dumps = d.dumps || [];
+    state.dumpsConsoleListed = !!d.consoleListed;
+    renderDumps();
+  }).catch(function(e){ $("dumplist").innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; });
+}
+function renderDumps(){
+  var groups = {}, order = [];
+  state.dumps.forEach(function(d){
+    if(!groups[d.mount]){ groups[d.mount] = []; order.push(d.mount); }
+    groups[d.mount].push(d);
+  });
+  var html = "";
+  order.forEach(function(mount){
+    var list = groups[mount];
+    list.sort(function(a, b){ return a.title < b.title ? -1 : a.title > b.title ? 1 : a.folder < b.folder ? -1 : 1; });
+    html += '<section class="card"><div class="head"><h2>' + (list[0].internal ? "Console storage" : esc(mount)) +
+            '</h2><span class="num">' + list.length + '</span></div><div class="body">';
+    list.forEach(function(d){
+      var at = state.dumps.indexOf(d);
+      var tags = (d.titleId.indexOf("CUSA") === 0 ? '<span class="tag ps4">PS4</span>' : '<span class="tag ps5">PS5</span>') +
+        (d.state && d.state !== "done" ? '<span class="tag cut" title="This dump was not finished">UNFINISHED</span>' : "") +
+        (d.inUse ? mountTag(d.mount + "/" + (d.dir ? d.dir + "/" : "") + d.folder) : "");
+      html += '<div class="dumprow"><span class="meta"><span class="name">' + esc(d.title) + '</span>' +
+              '<span class="where">' + tags + esc(d.mount + "/" + (d.dir ? d.dir + "/" : "") + d.folder) + '</span></span>' +
+              '<span class="size">' + (d.bytes ? bytes(d.bytes) : "") + '</span>' +
+              '<button type="button" class="mini" data-move="' + at + '">Move</button></div>';
+    });
+    html += '</div></section>';
+  });
+  if(!order.length) html = '<div class="empty-state"><strong>No dumps found</strong>Dumps show up here once there are some, on any drive or on the console.</div>';
+  if(!state.dumpsConsoleListed) html += '<p class="hint" style="margin:0 4px 18px">Dumps on the console are listed once this device has entered the code.</p>';
+  $("dumplist").innerHTML = html;
+  Array.prototype.forEach.call($("dumplist").querySelectorAll("[data-move]"), function(b){
+    b.addEventListener("click", function(){ openMovePicker(state.dumps[Number(b.getAttribute("data-move"))]); });
+  });
+}
+function renderMove(m){
+  var was = state.move ? state.move.state : "idle";
+  state.move = m;
+  var shown = m && m.state !== "idle";
+  $("movecard").hidden = !shown;
+  if(!shown) return;
+  var running = m.state === "running";
+  var pct = m.totalBytes ? Math.min(100, m.copiedBytes / m.totalBytes * 100) : (running ? 0 : 100);
+  $("move-pct").textContent = running ? pct.toFixed(0) + "%" : m.state;
+  $("move-what").textContent = m.folder + ":  " + m.from + "  →  " + m.to;
+  $("move-bar").firstElementChild.style.width = pct.toFixed(1) + "%";
+  $("move-msg").textContent = running ? bytes(m.copiedBytes) + " of " + bytes(m.totalBytes) : m.message;
+  $("move-stop").hidden = !running;
+  $("move-ok").hidden = running;
+  if(was === "running" && !running){
+    toast(m.message, m.state === "done" ? "ok" : "bad");
+    loadDumps(); loadDevices();
+  }
+}
+$("dumps-rescan").addEventListener("click", loadDumps);
+$("move-stop").addEventListener("click", function(){ post("/api/dumps/move/cancel").catch(function(e){ toast(e.message, "bad"); }); });
+$("move-ok").addEventListener("click", function(){
+  post("/api/dumps/move/clear").then(function(){ renderMove({state: "idle"}); }).catch(function(e){ toast(e.message, "bad"); });
+});
 
 /* ---------------- access ---------------- */
 /* A locked device is told so right away, not only when a tap is refused. */
