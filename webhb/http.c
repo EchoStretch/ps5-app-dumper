@@ -542,52 +542,88 @@ void http_server_stop(void)
     if (g_listen_fd >= 0) shutdown(g_listen_fd, SHUT_RDWR);
 }
 
-int http_server_run(int port)
+/* Opens the listening socket on port, or on one of the span - 1 ports above
+   it when that one is taken. Returns the descriptor and the port it got, or
+   -1 with what failed in *what. */
+static int open_listener(int *port, int span, const char **what)
 {
-    /* a client that disappears mid-response must not take the payload down */
-    signal(SIGPIPE, SIG_IGN);
-
-    g_listen_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (g_listen_fd < 0) {
-        printf_notification("Web UI: socket() failed (%s)", strerror(errno));
-        return -1;
-    }
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) { *what = "socket()"; return -1; }
 
     int one = 1;
-    setsockopt(g_listen_fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    addr.sin_port = htons((uint16_t)port);
 
-    /* the homebrew launcher usually holds 8080, so walk a few ports up */
     int bound = 0;
-    for (int attempt = 0; attempt < 10; attempt++) {
-        addr.sin_port = htons((uint16_t)(port + attempt));
-        if (bind(g_listen_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
-            port += attempt;
+    for (int attempt = 0; attempt < span && !bound; attempt++) {
+        addr.sin_port = htons((uint16_t)(*port + attempt));
+        if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
+            *port += attempt;
             bound = 1;
-            break;
         }
     }
 
-    if (!bound) {
-        printf_notification("Web UI: ports %d-%d are busy (%s)",
-                            port, port + 9, strerror(errno));
-        close(g_listen_fd);
-        g_listen_fd = -1;
+    if (!bound || listen(fd, 8) != 0) {
+        int err = errno;
+        *what = bound ? "listen()" : "bind()";
+        close(fd);
+        errno = err;
+        return -1;
+    }
+    return fd;
+}
+
+/* What accept() says on the console when the network is switched off under
+   it - rest mode does that. Known to psdevwiki as
+   SCE_NET_ERROR_EINACTIVEDISABLED (0x804101A3); the libc has no name for it. */
+#define ERRNO_NET_INACTIVE 163
+/* How often a lost network is looked for again. */
+#define NET_RETRY_SECONDS  3
+
+/* The listening socket died with the network. Waits for the network to come
+   back and listens on the same port again, so that the tile, bookmarks and the
+   cached page still find the web UI. Returns 0, or -1 when asked to stop. */
+static int listen_again(void)
+{
+    close(g_listen_fd);
+    g_listen_fd = -1;
+
+    while (g_running) {
+        sleep(NET_RETRY_SECONDS);
+
+        int port = g_port;
+        const char *what = NULL;
+        int fd = open_listener(&port, 1, &what);
+        if (fd < 0) continue;
+
+        g_listen_fd = fd;
+        write_log(g_log_path, "Web UI: the network is back - listening on port %d again", g_port);
+        return 0;
+    }
+    return -1;
+}
+
+int http_server_run(int port)
+{
+    /* a client that disappears mid-response must not take the payload down */
+    signal(SIGPIPE, SIG_IGN);
+
+    /* the homebrew launcher usually holds 8080, so walk a few ports up */
+    const char *what = NULL;
+    g_listen_fd = open_listener(&port, 10, &what);
+    if (g_listen_fd < 0) {
+        if (!strcmp(what, "bind()"))
+            printf_notification("Web UI: ports %d-%d are busy (%s)", port, port + 9, strerror(errno));
+        else
+            printf_notification("Web UI: %s failed (%s)", what, strerror(errno));
         return -1;
     }
 
-    if (listen(g_listen_fd, 8) != 0) {
-        printf_notification("Web UI: listen() failed (%s)", strerror(errno));
-        close(g_listen_fd);
-        g_listen_fd = -1;
-        return -1;
-    }
-
+    int one = 1;
     g_running = 1;
     g_port = port;
 
@@ -618,6 +654,16 @@ int http_server_run(int port)
                 if (errno == EMFILE || errno == ENFILE || errno == ENOMEM)
                     usleep(100000);   /* give the system a moment to recover */
                 continue;
+            }
+
+            /* The network went away, and the socket with it: the console
+               was put into rest mode, or its network was restarted. That
+               used to end the payload; now it waits for the network. */
+            if (g_running && errno == ERRNO_NET_INACTIVE) {
+                write_log(g_log_path, "Web UI: the network was switched off (rest mode?) - "
+                                      "waiting for it to come back");
+                if (listen_again() == 0) continue;
+                break;
             }
 
             if (g_running)
@@ -663,7 +709,7 @@ int http_server_run(int port)
         pthread_attr_destroy(&attr);
     }
 
-    close(g_listen_fd);
+    if (g_listen_fd >= 0) close(g_listen_fd);
     g_listen_fd = -1;
 
     /* If this shows up without the user asking for a shutdown, something
