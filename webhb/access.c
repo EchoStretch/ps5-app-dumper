@@ -34,7 +34,6 @@ along with this program; see the file COPYING. If not, see
 #include <pthread.h>
 
 #include "webhb.h"
-#include "utils.h"
 
 #define CODE_LEN        6
 #define TOKEN_LEN       32

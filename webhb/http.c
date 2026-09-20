@@ -36,7 +36,6 @@ along with this program; see the file COPYING. If not, see
 #include <net/if.h>
 
 #include "webhb.h"
-#include "utils.h"
 
 #define MAX_CONNECTIONS   8
 #define REQUEST_MAX       8192

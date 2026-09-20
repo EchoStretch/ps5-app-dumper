@@ -38,16 +38,6 @@ int progress_thread_run = 1;
 time_t copy_start_time = 0;
 pthread_t progress_thread = 0;
 
-static char g_usb_homebrew[128] = {0};   /* <drive>/homebrew: default home of dumps */
-static char g_app_data[128] = {0};      /* <drive>/ps5-app-dumper: settings, logs  */
-
-/* ------------------------------------------------------------------ */
-/*  In-memory log ring                                                 */
-/* ------------------------------------------------------------------ */
-
-static char     g_log_ring[LOG_RING_CAPACITY][LOG_LINE_MAX];
-static unsigned g_log_ring_seq = 0;   /* sequence number of the newest line */
-static pthread_mutex_t g_log_ring_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 /* ------------------------------------------------------------------ */
 /*  Cooperative abort                                                  */
@@ -55,263 +45,20 @@ static pthread_mutex_t g_log_ring_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 static volatile int g_abort_requested = 0;
 
-int g_enable_logging = 1;
-char g_log_path[512] = {0};
 int g_split_mode = 3;  // default: split both
 int g_ps4_backport_level = 0;
 int g_ps5_backport_level = 0;
-
-void log_ring_push(const char *line)
-{
-    if (!line || !*line) return;
-
-    pthread_mutex_lock(&g_log_ring_mtx);
-    g_log_ring_seq++;
-    char *slot = g_log_ring[g_log_ring_seq % LOG_RING_CAPACITY];
-    strncpy(slot, line, LOG_LINE_MAX - 1);
-    slot[LOG_LINE_MAX - 1] = '\0';
-
-    /* newlines would break the one-line-per-entry contract of the UI */
-    for (char *p = slot; *p; p++)
-        if (*p == '\n' || *p == '\r') *p = ' ';
-
-    pthread_mutex_unlock(&g_log_ring_mtx);
-}
-
-unsigned log_ring_seq(void)
-{
-    pthread_mutex_lock(&g_log_ring_mtx);
-    unsigned seq = g_log_ring_seq;
-    pthread_mutex_unlock(&g_log_ring_mtx);
-    return seq;
-}
-
-void log_ring_walk(unsigned since, log_line_cb cb, void *ctx)
-{
-    if (!cb) return;
-
-    pthread_mutex_lock(&g_log_ring_mtx);
-    unsigned newest = g_log_ring_seq;
-    unsigned oldest = (newest > LOG_RING_CAPACITY) ? newest - LOG_RING_CAPACITY + 1 : 1;
-    if (since + 1 > oldest) oldest = since + 1;
-
-    for (unsigned seq = oldest; seq <= newest; seq++) {
-        char copy[LOG_LINE_MAX];
-        strncpy(copy, g_log_ring[seq % LOG_RING_CAPACITY], sizeof(copy) - 1);
-        copy[sizeof(copy) - 1] = '\0';
-
-        pthread_mutex_unlock(&g_log_ring_mtx);
-        cb(ctx, seq, copy);
-        pthread_mutex_lock(&g_log_ring_mtx);
-    }
-    pthread_mutex_unlock(&g_log_ring_mtx);
-}
 
 void request_abort(void) { g_abort_requested = 1; }
 void clear_abort(void)   { g_abort_requested = 0; }
 int  abort_requested(void) { return g_abort_requested; }
 
-/* ------------------------------------------------------------------ */
-/*  Where our own files live                                           */
-/* ------------------------------------------------------------------ */
-
-/* <root>/homebrew/<data_dirname>, the usual place for a homebrew's files, on
-   a USB drive or on the console itself. A drive wins when it carries a
-   config.ini: that one travels with the stick and can be edited on a PC.
-   Without such a drive the console's own storage is used, so settings, the
-   access code and logs no longer depend on something being plugged in. */
-#ifndef INTERNAL_ROOT          /* the host harness points this at a scratch folder */
-#define INTERNAL_ROOT "/data"
-#endif
-
-static const char *const g_usb_mounts[] = {
-    "/mnt/usb0", "/mnt/usb1", "/mnt/usb2", "/mnt/usb3",
-    "/mnt/usb4", "/mnt/usb5", "/mnt/usb6", "/mnt/usb7"
-};
-#define USB_MOUNTS ((int)(sizeof(g_usb_mounts) / sizeof(g_usb_mounts[0])))
-
-static int file_exists_config_here(void);
-static int g_data_on_usb = -1;   /* index into g_usb_mounts, -1: not on a drive */
-
-const char *storage_internal_root(void) { return INTERNAL_ROOT; }
-
-static void data_dir_of(const char *root, char *out, size_t out_size)
-{
-    snprintf(out, out_size, "%s/homebrew/%s", root, whb_app()->data_dirname);
-}
-
-static int can_write_in(const char *dir)
-{
-    char probe[256];
-    snprintf(probe, sizeof(probe), "%s/.probe", dir);
-
-    int fd = open(probe, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd == -1) return 0;
-    int ok = (write(fd, "PROBE", 5) == 5);
-    close(fd);
-    unlink(probe);
-    return ok;
-}
-
-/* Moves a file an older version kept elsewhere on the same drive into our
-   folder. A rename within one drive; on failure the old file simply stays
-   where it is. */
-static void adopt_legacy(const char *legacy_dir, const char *name, const char *appdir)
-{
-    char from[256], to[256];
-    snprintf(from, sizeof(from), "%s/%s", legacy_dir, name);
-    snprintf(to,   sizeof(to),   "%s/%s", appdir, name);
-
-    struct stat st;
-    if (stat(to, &st) == 0 || stat(from, &st) != 0) return;
-    if (rename(from, to) == 0)
-        write_log(g_log_path, "Moved %s into %s", from, appdir);
-}
-
-/* Two older layouts: everything in <drive>/homebrew (up to v1.11), then a
-   folder of our own at the top of the drive. */
-static void adopt_older_layouts(const char *root, const char *appdir)
-{
-    char top[128], homebrew[128];
-    snprintf(top,      sizeof(top),      "%s/%s", root, whb_app()->data_dirname);
-    snprintf(homebrew, sizeof(homebrew), "%s/homebrew", root);
-
-    /* only a drive that has something to move gets our folder */
-    char probe[256];
-    int found = 0;
-    const char *places[] = { top, homebrew };
-    for (int k = 0; k < 2 && !found; k++) {
-        snprintf(probe, sizeof(probe), "%s/config.ini", places[k]);
-        if (file_exists(probe)) found = 1;
-        snprintf(probe, sizeof(probe), "%s/disc_titles.txt", places[k]);
-        if (file_exists(probe)) found = 1;
-    }
-    if (!found) return;
-    mkdirs(appdir);
-
-    adopt_legacy(top, "config.ini", appdir);
-    adopt_legacy(top, "disc_titles.txt", appdir);
-    adopt_legacy(top, "logs", appdir);
-    rmdir(top);   /* goes only when nothing else was in it */
-
-    adopt_legacy(homebrew, "config.ini", appdir);
-    adopt_legacy(homebrew, "disc_titles.txt", appdir);
-}
-
-static void use_data_dir(const char *appdir, int usb_index, int writable)
-{
-    snprintf(g_app_data, sizeof(g_app_data), "%s", appdir);
-    g_data_on_usb = usb_index;
-
-    if (!writable) { g_log_path[0] = '\0'; return; }   /* nowhere to write a log to */
-
-    char logs[192];
-    snprintf(logs, sizeof(logs), "%s/logs", appdir);
-    mkdirs(logs);
-    log_use_general();
-}
-
-/* Which USB drive brings settings of its own, -1 for none. ro_dir gets the
-   folder to read them from when the drive cannot be written to. */
-static int usb_with_config(char *appdir, size_t appdir_size, int *writable)
-{
-    for (int i = 0; i < USB_MOUNTS; i++) {
-        const char *root = g_usb_mounts[i];
-        if (!dir_exists(root)) continue;
-
-        char dir[128], config[256];
-        data_dir_of(root, dir, sizeof(dir));
-        adopt_older_layouts(root, dir);
-
-        snprintf(config, sizeof(config), "%s/config.ini", dir);
-        if (file_exists(config)) {
-            snprintf(appdir, appdir_size, "%s", dir);
-            *writable = 1;   /* as far as known; checked when it is taken up */
-            return i;
-        }
-
-        /* a drive we cannot write to can still hand us its settings, from
-           wherever an older version left them */
-        const char *old[2]; char top[128], homebrew[128];
-        snprintf(top,      sizeof(top),      "%s/%s", root, whb_app()->data_dirname);
-        snprintf(homebrew, sizeof(homebrew), "%s/homebrew", root);
-        old[0] = top; old[1] = homebrew;
-        for (int k = 0; k < 2; k++) {
-            snprintf(config, sizeof(config), "%s/config.ini", old[k]);
-            if (!file_exists(config)) continue;
-            snprintf(appdir, appdir_size, "%s", old[k]);
-            *writable = 0;
-            return i;
-        }
-    }
-    return -1;
-}
-
-/* Decides where our files live right now. Returns 1 when that is somewhere
-   else than before - the settings then want reading again. */
-int storage_refresh(void)
-{
-    char before[sizeof(g_app_data)];
-    snprintf(before, sizeof(before), "%s", g_app_data);
-
-    /* the first drive found stays the home of headless dumps */
-    g_usb_homebrew[0] = '\0';
-    for (int i = 0; i < USB_MOUNTS && !g_usb_homebrew[0]; i++)
-        if (dir_exists(g_usb_mounts[i]))
-            snprintf(g_usb_homebrew, sizeof(g_usb_homebrew), "%s/homebrew", g_usb_mounts[i]);
-
-    char appdir[128];
-    int writable = 0;
-    int usb = usb_with_config(appdir, sizeof(appdir), &writable);
-
-    if (usb >= 0) {
-        if (strcmp(appdir, before) != 0) {
-            if (writable) writable = can_write_in(appdir);
-            use_data_dir(appdir, usb, writable);
-            if (!writable) printf_notification("USB (read-only fallback): %s", g_usb_mounts[usb]);
-            write_log(g_log_path, "Settings and logs: %s (the drive's own config.ini wins)", appdir);
-        }
-        return strcmp(g_app_data, before) != 0;
-    }
-
-    /* no drive with settings: the console itself */
-    data_dir_of(INTERNAL_ROOT, appdir, sizeof(appdir));
-    if (strcmp(appdir, before) == 0) return 0;   /* polled: no probe writes */
-    mkdirs(appdir);
-    if (can_write_in(appdir)) {
-        if (strcmp(appdir, before) != 0) {
-            use_data_dir(appdir, -1, 1);
-            write_log(g_log_path, "Settings and logs: %s", appdir);
-        }
-        return strcmp(g_app_data, before) != 0;
-    }
-
-    /* no usable internal storage either: the first drive we can write to */
-    for (int i = 0; i < USB_MOUNTS; i++) {
-        if (!dir_exists(g_usb_mounts[i])) continue;
-        data_dir_of(g_usb_mounts[i], appdir, sizeof(appdir));
-        mkdirs(appdir);
-        if (!can_write_in(appdir)) continue;
-        if (strcmp(appdir, before) != 0) use_data_dir(appdir, i, 1);
-        return strcmp(g_app_data, before) != 0;
-    }
-
-    g_app_data[0] = '\0';
-    g_data_on_usb = -1;
-    return before[0] != '\0';
-}
-
 static int file_exists_config_here(void)
 {
     char path[256];
-    if (!g_app_data[0]) return 1;   /* nowhere to create one */
-    snprintf(path, sizeof(path), "%s/config.ini", g_app_data);
+    if (!get_app_data_path()[0]) return 1;   /* nowhere to create one */
+    snprintf(path, sizeof(path), "%s/config.ini", get_app_data_path());
     return file_exists(path);
-}
-
-int storage_is_internal(void)
-{
-    return g_app_data[0] && g_data_on_usb < 0;
 }
 
 /* Kept for the headless mode, which dumps to <drive>/homebrew and so needs a
@@ -327,9 +74,7 @@ int find_usb_and_setup(void)
         config_save(&defaults);
     }
 
-    for (int i = 0; i < USB_MOUNTS; i++)
-        if (dir_exists(g_usb_mounts[i])) return i;
-    return -1;
+    return storage_first_usb();
 }
 
 const char* detect_fs_type(const char *mountpoint) {
@@ -357,37 +102,11 @@ void debug_list_usbs(void) {
     pclose(fp);
 }
 
-const char* get_app_data_path(void) {
-    return g_app_data;
-}
-
-/* The log of everything that is not one particular dump: start-up, the
-   queue's moves, the web UI. A dump switches to a file of its own and comes
-   back here when it is over. */
-void log_use_general(void)
-{
-    if (g_app_data[0]) snprintf(g_log_path, sizeof(g_log_path), "%s/logs/dumper.log", g_app_data);
-}
-
-void log_use_dump(const char *title_id)
-{
-    if (!g_app_data[0] || !title_id) return;
-
-    char stamp[32];
-    time_t now = time(NULL);
-    strftime(stamp, sizeof(stamp), "%Y-%m-%d_%H%M%S", localtime(&now));
-    snprintf(g_log_path, sizeof(g_log_path), "%s/logs/%s_%s.log", g_app_data, stamp, title_id);
-}
-
-const char* get_usb_homebrew_path(void) {
-    return g_usb_homebrew;
-}
-
 int read_decrypter_config(void) {
-    if (g_app_data[0] == '\0') return 1;
+    if (get_app_data_path()[0] == '\0') return 1;
 
     char config_path[256];
-    snprintf(config_path, sizeof(config_path), "%s/config.ini", g_app_data);
+    snprintf(config_path, sizeof(config_path), "%s/config.ini", get_app_data_path());
 
     FILE *f = fopen(config_path, "r");
     if (!f) return 1;
@@ -408,10 +127,10 @@ int read_decrypter_config(void) {
 }
 
 int read_logging_config(void) {
-    if (g_app_data[0] == '\0') return 1;
+    if (get_app_data_path()[0] == '\0') return 1;
 
     char config_path[256];
-    snprintf(config_path, sizeof(config_path), "%s/config.ini", g_app_data);
+    snprintf(config_path, sizeof(config_path), "%s/config.ini", get_app_data_path());
 
     FILE *f = fopen(config_path, "r");
     if (!f) return 1;
@@ -434,10 +153,10 @@ int read_logging_config(void) {
 
 int read_backport_config(void)
 {
-    if (g_app_data[0] == '\0') return 1; 
+    if (get_app_data_path()[0] == '\0') return 1; 
 
     char cfg_path[512];
-    snprintf(cfg_path, sizeof(cfg_path), "%s/config.ini", g_app_data);
+    snprintf(cfg_path, sizeof(cfg_path), "%s/config.ini", get_app_data_path());
 
     FILE *f = fopen(cfg_path, "r");
     if (!f) return 1;
@@ -460,10 +179,10 @@ int read_backport_config(void)
 
 int read_elf2fself_config(void)
 {
-    if (g_app_data[0] == '\0') return 1;
+    if (get_app_data_path()[0] == '\0') return 1;
 
     char config_path[256];
-    snprintf(config_path, sizeof(config_path), "%s/config.ini", g_app_data);
+    snprintf(config_path, sizeof(config_path), "%s/config.ini", get_app_data_path());
 
     FILE *f = fopen(config_path, "r");
     if (!f) return 1;
@@ -486,10 +205,10 @@ int read_elf2fself_config(void)
 
 int read_split_config(void)
 {
-    if (g_app_data[0] == '\0') return 3;
+    if (get_app_data_path()[0] == '\0') return 3;
 
     char config_path[256];
-    snprintf(config_path, sizeof(config_path), "%s/config.ini", g_app_data);
+    snprintf(config_path, sizeof(config_path), "%s/config.ini", get_app_data_path());
 
     FILE *f = fopen(config_path, "r");
     if (!f) return 3;
@@ -543,8 +262,8 @@ void config_defaults(dumper_config_t *cfg)
 int config_path(char *out, size_t out_size)
 {
     if (!out || out_size == 0) return -1;
-    if (g_app_data[0] == '\0') { out[0] = '\0'; return -1; }
-    snprintf(out, out_size, "%s/config.ini", g_app_data);
+    if (get_app_data_path()[0] == '\0') { out[0] = '\0'; return -1; }
+    snprintf(out, out_size, "%s/config.ini", get_app_data_path());
     return 0;
 }
 
@@ -640,7 +359,7 @@ int config_save_internal(const dumper_config_t *cfg, char *path, size_t path_siz
     if (!cfg) return -1;
 
     char dir[160], file[200];
-    data_dir_of(INTERNAL_ROOT, dir, sizeof(dir));
+    storage_internal_data_dir(dir, sizeof(dir));
     mkdirs(dir);
     snprintf(file, sizeof(file), "%s/config.ini", dir);
     if (path && path_size) snprintf(path, path_size, "%s", file);
@@ -731,100 +450,6 @@ static int config_write(const dumper_config_t *cfg, const char *path)
     fsync(fileno(f));
     fclose(f);
     return 0;
-}
-
-int dir_exists(const char *path)
-{
-    struct stat st;
-    return (stat(path, &st) == 0 && S_ISDIR(st.st_mode));
-}
-
-int file_exists(const char *path)
-{
-    struct stat st;
-    return (stat(path, &st) == 0 && S_ISREG(st.st_mode));
-}
-
-void mkdirs(const char *path)
-{
-    if (!path || !*path) return;
-
-    char tmp[512];
-    strncpy(tmp, path, sizeof(tmp)-1);
-    tmp[sizeof(tmp)-1] = '\0';
-
-    for (char *p = tmp + 1; *p; p++)
-    {
-        if (*p == '/')
-        {
-            *p = '\0';
-            mkdir(tmp, 0777);
-            *p = '/';
-        }
-    }
-    mkdir(tmp, 0777);
-}
-
-int write_log(const char *log_file_path, const char *fmt, ...)
-{
-    char msg[LOG_LINE_MAX];
-    va_list ap;
-
-    va_start(ap, fmt);
-    vsnprintf(msg, sizeof(msg), fmt, ap);
-    va_end(ap);
-
-    /* the ring backs the live console of the web UI and stays alive even
-       when file logging is turned off */
-    log_ring_push(msg);
-
-    if (!g_enable_logging || !log_file_path || !log_file_path[0]) return 0;
-
-    FILE *f = fopen(log_file_path, "a");
-    if (!f) return -1;
-
-    char timestamp[64];
-    time_t t = time(NULL);
-    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&t));
-
-    fprintf(f, "[%s] %s\n", timestamp, msg);
-    fflush(f);
-    fsync(fileno(f));
-    fclose(f);
-    return 0;
-}
-
-static void send_notification(const char *fmt, va_list ap, int to_console)
-{
-    SceNotificationRequest noti;
-    memset(&noti, 0, sizeof(noti));
-
-    vsnprintf(noti.message, sizeof(noti.message), fmt, ap);
-
-    noti.type = 0;
-    noti.use_icon_image_uri = 1;
-    noti.target_id = -1;
-    strncpy(noti.uri, "cxml://psnotification/tex_icon_system", sizeof(noti.uri)-1);
-
-    sceKernelSendNotificationRequest(0, &noti, sizeof(noti), 0);
-    printf("%s\n", noti.message);
-    if (to_console) log_ring_push(noti.message);
-}
-
-void printf_notification(const char *fmt, ...)
-{
-    va_list ap;
-    va_start(ap, fmt);
-    send_notification(fmt, ap, 1);
-    va_end(ap);
-}
-
-void printf_notification_quiet(const char *fmt, ...)
-{
-    va_list ap;
-    va_start(ap, fmt);
-    send_notification(fmt, ap, 0);
-    va_end(ap);
 }
 
 int read_npwr_id(const char *npbind_path, char *npwr_out, size_t out_size)

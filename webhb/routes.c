@@ -21,7 +21,6 @@ along with this program; see the file COPYING. If not, see
 #include <stdint.h>
 
 #include "webhb.h"
-#include "utils.h"
 
 /* What this copy is, and whether it carries an ELF it could store. */
 static void handle_self(int fd, const params_t *p)

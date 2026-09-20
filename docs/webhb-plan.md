@@ -1,6 +1,6 @@
 # webhb - carving the web-homebrew core out of the dumper
 
-Status: steps 1 to 3 are done (server split, `whb_app_t` and the four modules moved, harness in the repo); the rest is a proposal. Working name `webhb`; everything stays in
+Status: steps 1 to 4 are done (server split, `whb_app_t` and the four modules moved, harness in the repo, log / notifications / storage out of `utils.c`); `webhb/` no longer includes a single header of the dumper. The rest is a proposal. Working name `webhb`; everything stays in
 this repository until a second payload has proven the interface.
 
 ## Why
@@ -131,8 +131,19 @@ Each step builds, passes the harness in a browser, and changes no behaviour.
    sim|run|pldmgr|snapshot|render`). It stays outside `webhb/` for now because
    its mock fakes the dumper's console. It builds `webhb/` without `tile.c`
    and `instance.c`, which only make sense on the console.
-4. **Split `utils.c`**: log, notify, storage and config leave; the copy
-   routines and abort flag stay with the dumper.
+4. **Split `utils.c`** - done for log, notifications and storage: `webhb/log.c`
+   (ring, `write_log`, general and per-job files), `webhb/notify.c`,
+   `webhb/storage.c` (the data folder `<root>/homebrew/<data_dirname>` on a drive
+   or on the console, "a drive with a config.ini wins", migration of the older
+   layouts, `dir_exists` / `file_exists` / `mkdirs`). Their declarations moved
+   into `webhb.h`; `utils.h` includes it, so the dumper's sources did not change.
+   The core's files include `webhb.h` and nothing else; a link of them alone
+   leaves only `sceKernelSendNotificationRequest`, the embedded `self_elf` and
+   `tile_*` (not built on the host) undefined. Snapshot identical (52 requests).
+   **Config stays** in `utils.c` with `dumper_config_t` until step 6, and with it
+   `find_usb_and_setup()` (creates the default config.ini) and
+   `source/routes_settings.c`. The copy routines and the abort flag stay with
+   the dumper for good.
 5. **Extract the client kit** from `web/index.html`.
 6. **Generalise the config store** (registered keys instead of one struct).
 7. **Prove it with a second payload** - small and wanted anyway, e.g. a klog

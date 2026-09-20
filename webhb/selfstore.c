@@ -26,7 +26,6 @@ along with this program; see the file COPYING. If not, see
 #include <arpa/inet.h>
 
 #include "webhb.h"
-#include "utils.h"
 
 /* pldmgr's web server; the upload is a plain POST with the file as body,
    the same request its own page sends. */

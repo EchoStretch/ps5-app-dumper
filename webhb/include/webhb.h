@@ -18,6 +18,7 @@ along with this program; see the file COPYING. If not, see
 #define WEBHB_H
 
 #include <stddef.h>
+#include <time.h>
 
 #include "webhb_http.h"
 
@@ -179,5 +180,89 @@ int fs_list_dirs(const char *mount, const char *rel,
    returns -1 on validation failure or if the directory cannot be created. */
 int fs_make_subdir(const char *mount, const char *rel, const char *name,
                    char *out_rel, size_t out_size);
+
+/* ------------------------------------------------------------------ */
+/*  File basics                                                        */
+/* ------------------------------------------------------------------ */
+
+int dir_exists(const char *path);
+int file_exists(const char *path);
+void mkdirs(const char *path);
+int write_log(const char *log_file_path, const char *fmt, ...);
+void printf_notification(const char *fmt, ...);
+/* Same toast on the console, but kept out of the web UI's live console. */
+void printf_notification_quiet(const char *fmt, ...);
+
+
+/* ------------------------------------------------------------------ */
+/*  Notifications                                                      */
+/* ------------------------------------------------------------------ */
+
+/* Full PS5 notification struct */
+typedef struct {
+    int type;                //0x00
+    int req_id;              //0x04
+    int priority;            //0x08
+    int msg_id;              //0x0C
+    int target_id;           //0x10
+    int user_id;             //0x14
+    int unk1;                //0x18
+    int unk2;                //0x1C
+    int app_id;              //0x20
+    int error_num;           //0x24
+    int unk3;                //0x28
+    char use_icon_image_uri; //0x2C
+    char message[1024];      //0x2D
+    char uri[1024];          //0x42D
+    char unkstr[1024];       //0x82D
+} SceNotificationRequest;   //Size = 0xC30
+
+int sceKernelSendNotificationRequest(int device, SceNotificationRequest *req, size_t size, int blocking);
+
+/* ------------------------------------------------------------------ */
+/*  Where the payload's own files live - see storage.c                 */
+/* ------------------------------------------------------------------ */
+
+const char* get_usb_homebrew_path(void);   /* <drive>/homebrew - where a headless dump goes */
+
+/* <root>/homebrew/<the app's data_dirname>: config.ini, the disc list and
+   logs/. On the USB drive that carries a config.ini, otherwise on the console
+   itself (/data). Files older versions kept elsewhere on a drive are moved
+   over the first time. */
+const char* get_app_data_path(void);
+
+/* Looks again where our files live - a drive may have come or gone. Returns
+   1 when the place changed, and the settings want reading again. */
+int storage_refresh(void);
+/* 1 when settings and logs are on the console rather than on a drive. */
+int storage_is_internal(void);
+/* "/data": the console's own storage, offered as a dump destination too. */
+const char *storage_internal_root(void);
+
+/* Which file write_log() goes to: the general one, or one per dump. */
+void log_use_general(void);
+void log_use_dump(const char *title_id);
+
+/* The index of the first USB drive that is plugged in, -1 for none. */
+int  storage_first_usb(void);
+/* <internal root>/homebrew/<data_dirname>, whether or not it is in use. */
+void storage_internal_data_dir(char *out, size_t out_size);
+
+extern int  g_enable_logging;
+extern char g_log_path[512];
+
+/* ------------------------------------------------------------------ */
+/*  In-memory log ring (feeds the live console of the web UI)          */
+/* ------------------------------------------------------------------ */
+
+#define LOG_RING_CAPACITY 400
+#define LOG_LINE_MAX      320
+
+typedef void (*log_line_cb)(void *ctx, unsigned seq, const char *line);
+
+void     log_ring_push(const char *line);
+void     log_ring_walk(unsigned since, log_line_cb cb, void *ctx);
+unsigned log_ring_seq(void);
+
 
 #endif /* WEBHB_H */

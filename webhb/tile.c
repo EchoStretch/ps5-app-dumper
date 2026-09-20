@@ -41,7 +41,6 @@ along with this program; see the file COPYING. If not, see
 #include <ps5/kernel.h>
 
 #include "webhb.h"
-#include "utils.h"
 
 #define SYSTEM_LIB_DIR "/system/common/lib/"
 

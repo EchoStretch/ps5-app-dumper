@@ -29,7 +29,6 @@ along with this program; see the file COPYING. If not, see
 #include <arpa/inet.h>
 
 #include "webhb.h"
-#include "utils.h"
 
 /* http_server_run() walks this many ports up from the configured one. */
 #define PORT_SPAN      10
