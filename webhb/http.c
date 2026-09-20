@@ -208,6 +208,8 @@ static const char *status_text(int code)
     switch (code) {
         case 200: return "OK";
         case 400: return "Bad Request";
+        case 401: return "Unauthorized";
+        case 429: return "Too Many Requests";
         case 404: return "Not Found";
         case 409: return "Conflict";
         case 500: return "Internal Server Error";
@@ -353,6 +355,34 @@ void http_route(const char *method, const char *path, http_handler_t fn)
     }
 }
 
+#define MAX_OPEN_ROUTES 8
+static const char *g_open_routes[MAX_OPEN_ROUTES];
+static int g_open_count = 0;
+
+void http_route_open(const char *path)
+{
+    if (g_open_count < MAX_OPEN_ROUTES) g_open_routes[g_open_count++] = path;
+}
+
+int http_peer_is_local(int fd)
+{
+    struct sockaddr_in peer;
+    socklen_t len = sizeof(peer);
+    if (getpeername(fd, (struct sockaddr *)&peer, &len) != 0) return 0;
+    return peer.sin_family == AF_INET &&
+           (ntohl(peer.sin_addr.s_addr) >> 24) == 127;
+}
+
+/* Reading is free; changing something takes the token, unless the request
+   comes from the console itself. See access.c. */
+static int may_pass(int fd, const char *method, const char *path, const params_t *p)
+{
+    if (strcmp(method, "POST") != 0) return 1;
+    for (int i = 0; i < g_open_count; i++)
+        if (strcmp(g_open_routes[i], path) == 0) return 1;
+    return http_peer_is_local(fd) || whb_access_token_ok(param_get(p, "token", NULL));
+}
+
 void http_on_listening(void (*fn)(int port))
 {
     g_on_listening = fn;
@@ -362,6 +392,10 @@ static void dispatch(int fd, const char *method, const char *path, const params_
 {
     for (int i = 0; i < g_route_count; i++) {
         if (strcmp(g_routes[i].method, method) == 0 && strcmp(g_routes[i].path, path) == 0) {
+            if (!may_pass(fd, method, path, p)) {
+                send_error(fd, 401, "enter the code shown on the TV first");
+                return;
+            }
             g_routes[i].fn(fd, p);
             return;
         }
@@ -559,7 +593,11 @@ int http_server_run(int port)
 
     char ip[64];
     local_ipv4(ip, sizeof(ip));
-    printf_notification("%s: open http://%s:%d", whb_app()->name, ip, port);
+    /* the toast carries the access code, the log - open to all - does not */
+    whb_access_notify(ip, port);
+    char line[160];
+    snprintf(line, sizeof(line), "%s: open http://%s:%d", whb_app()->name, ip, port);
+    log_ring_push(line);
     write_log(g_log_path, "Web UI listening on http://%s:%d", ip, port);
 
     if (g_on_listening) g_on_listening(port);

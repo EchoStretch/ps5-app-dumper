@@ -68,6 +68,22 @@ const char *whb_elf_name(void);
 void whb_routes_init(void);
 
 /* ------------------------------------------------------------------ */
+/*  Access control - see access.c                                      */
+/* ------------------------------------------------------------------ */
+
+/* Takes the stored code (6 digits) and token (32 hex digits); whatever is
+   missing or malformed is made up, once per session. required = 0 switches
+   the check off. Returns 1 when something was made up and wants storing -
+   fetch it with whb_access_get(). */
+int  whb_access_init(const char *code, const char *token, int required);
+void whb_access_get(char *code, size_t code_size, char *token, size_t token_size);
+int  whb_access_required(void);
+int  whb_access_token_ok(const char *token);
+/* The start notification: where to find the web UI, and the code. */
+void whb_access_notify(const char *ip, int port);
+void whb_access_routes_init(void);
+
+/* ------------------------------------------------------------------ */
 /*  One running copy                                                   */
 /* ------------------------------------------------------------------ */
 

@@ -196,6 +196,7 @@ static void on_listening(int port)
 void whb_routes_init(void)
 {
     http_on_listening(on_listening);
+    whb_access_routes_init();
 
     http_route("GET",  "/",                     handle_index);
     http_route("GET",  "/index.html",           handle_index);

@@ -115,6 +115,11 @@ typedef struct {
     int  auto_start;           /* 1 -> legacy behaviour: dump the running app and exit */
     char dump_subdir[64];      /* folder below the mount point, e.g. "homebrew" */
     int  queue_delay;          /* seconds a queued title gets to load before its dump */
+    /* access control of the web UI (webhb/access.c); never served over HTTP
+       with the rest of the settings */
+    int  require_code;         /* 0 -> anyone on the network may change things */
+    char access_code[8];
+    char access_token[40];
 } dumper_config_t;
 
 void config_defaults(dumper_config_t *cfg);

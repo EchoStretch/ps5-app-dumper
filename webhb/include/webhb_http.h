@@ -90,6 +90,13 @@ typedef void (*http_handler_t)(int fd, const params_t *p);
    http_server_run(); the strings must outlive the server. */
 void http_route(const char *method, const char *path, http_handler_t fn);
 
+/* Exempts a POST path from the access check in the dispatcher - for the
+   routes a locked-out browser needs to get in. */
+void http_route_open(const char *path);
+
+/* 1 when the request on fd came in over 127.0.0.1. */
+int http_peer_is_local(int fd);
+
 /* Called once, with the port the server ended up on. */
 void http_on_listening(void (*fn)(int port));
 

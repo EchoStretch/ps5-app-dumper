@@ -405,6 +405,9 @@ void config_defaults(dumper_config_t *cfg)
     cfg->auto_start         = 0;
     strncpy(cfg->dump_subdir, "homebrew", sizeof(cfg->dump_subdir) - 1);
     cfg->queue_delay        = 30;
+    cfg->require_code       = 1;
+    cfg->access_code[0]     = '\0';
+    cfg->access_token[0]    = '\0';
 }
 
 int config_path(char *out, size_t out_size)
@@ -478,6 +481,9 @@ void config_load(dumper_config_t *cfg)
         else if (!strcmp(key, "web_port"))           cfg->web_port           = clamp_int(atoi(val), 1024, 65535);
         else if (!strcmp(key, "auto_start"))         cfg->auto_start         = atoi(val) ? 1 : 0;
         else if (!strcmp(key, "queue_delay"))        cfg->queue_delay        = clamp_int(atoi(val), 5, 600);
+        else if (!strcmp(key, "require_code"))       cfg->require_code       = atoi(val) ? 1 : 0;
+        else if (!strcmp(key, "access_code"))        snprintf(cfg->access_code, sizeof(cfg->access_code), "%s", val);
+        else if (!strcmp(key, "access_token"))       snprintf(cfg->access_token, sizeof(cfg->access_token), "%s", val);
         else if (!strcmp(key, "dump_subdir")) {
             strncpy(cfg->dump_subdir, val, sizeof(cfg->dump_subdir) - 1);
             cfg->dump_subdir[sizeof(cfg->dump_subdir) - 1] = '\0';
@@ -509,6 +515,15 @@ int config_save(const dumper_config_t *cfg)
         "enable_webui = %d\n"
         "auto_start = %d\n"
         "web_port = %d\n"
+        "\n"
+        "; === Access ===\n"
+        "; Phones and PCs have to enter access_code once before they may change anything;\n"
+        "; the console's own browser never has to. access_token is what they keep afterwards -\n"
+        "; delete both lines to lock every device out again and get a new code.\n"
+        "; require_code = 0 -> anyone on the network may use the web UI\n"
+        "require_code = %d\n"
+        "access_code = %s\n"
+        "access_token = %s\n"
         "\n"
         "; === Destination ===\n"
         "; dump_subdir -> folder below the mount point that receives the dump\n"
@@ -550,6 +565,7 @@ int config_save(const dumper_config_t *cfg)
         "; 3 = both split (CUSAxxxxx-app/ + CUSAxxxxx-patch/)\n"
         "split = %d\n",
         cfg->enable_webui, cfg->auto_start, cfg->web_port,
+        cfg->require_code, cfg->access_code, cfg->access_token,
         cfg->dump_subdir[0] ? cfg->dump_subdir : "homebrew",
         cfg->queue_delay,
         cfg->enable_decrypter,

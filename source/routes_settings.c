@@ -41,6 +41,17 @@ void cfg_snapshot(dumper_config_t *out)
     pthread_mutex_unlock(&g_cfg_mtx);
 }
 
+/* Hands the stored code and token to the core, and takes back what it had to
+   make up. Call with g_cfg_mtx held, after every config_load(). */
+static void access_adopt(void)
+{
+    if (!whb_access_init(g_cfg.access_code, g_cfg.access_token, g_cfg.require_code)) return;
+
+    whb_access_get(g_cfg.access_code, sizeof(g_cfg.access_code),
+                   g_cfg.access_token, sizeof(g_cfg.access_token));
+    if (config_save(&g_cfg) != 0) g_cfg_unsaved = 1;
+}
+
 void cfg_drive_appeared(void)
 {
     pthread_mutex_lock(&g_cfg_mtx);
@@ -49,6 +60,7 @@ void cfg_drive_appeared(void)
         if (config_save(&g_cfg) == 0) g_cfg_unsaved = 0;
     } else {
         config_load(&g_cfg);
+        access_adopt();
     }
     g_enable_logging = g_cfg.enable_logging;
     g_split_mode = g_cfg.split;
@@ -208,6 +220,7 @@ void routes_settings_init(void)
 {
     pthread_mutex_lock(&g_cfg_mtx);
     config_load(&g_cfg);
+    access_adopt();
     pthread_mutex_unlock(&g_cfg_mtx);
 
     http_route("GET",  "/api/config",           handle_config_get);
