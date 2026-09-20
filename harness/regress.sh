@@ -9,6 +9,12 @@ SIM="$1"; OUT="$2"; PORT="${3:-8099}"
 HERE="$(cd "$(dirname "$0")" && pwd)"; RUN="$HERE/out/run"; B="http://127.0.0.1:$PORT"
 
 pkill -f "$SIM" 2>/dev/null; sleep 0.5
+# A simulator left over from `make run` goes by another command line and
+# survives the line above. Ours would then move one port up, and the old one
+# would answer every question here - with whatever state it has gathered.
+if curl -s -m 2 -o /dev/null "$B/api/status"; then
+    echo "something already answers on $B - stop it first (make run left open?)" >&2; exit 1
+fi
 rm -rf "$RUN/usb0"; mkdir -p "$RUN/usb0"
 ( cd "$RUN" && "$SIM" usb0 "$PORT" > "$RUN/sim.log" 2>&1 & )
 for i in 1 2 3 4 5 6 7 8 9 10; do curl -s -o /dev/null "$B/api/status" && break; sleep 0.4; done
