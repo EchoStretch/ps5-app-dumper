@@ -213,7 +213,8 @@ int main(void)
     if (cfg.auto_start)
         schedule_auto_dump(&cfg);
 
-    routes_platform_init();
+    whb_routes_init();
+    routes_settings_init();
     routes_dumper_init();
 
     if (http_server_run(cfg.web_port) != 0) {
