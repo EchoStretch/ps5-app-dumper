@@ -12,19 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="App Dumper">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%230d1726'/><rect x='2' y='2' width='60' height='60' rx='12' fill='none' stroke='%232f9dff' stroke-opacity='.55' stroke-width='2'/><g fill='none' stroke='%232f9dff' stroke-width='4.4' stroke-linecap='round' stroke-linejoin='round'><path d='M32 14v22'/><path d='M23.5 28.5 32 37l8.5-8.5'/><path d='M15 40v6.5a3.5 3.5 0 0 0 3.5 3.5h27a3.5 3.5 0 0 0 3.5-3.5V40'/></g></svg>">
-<script>
-/* Flexbox `gap` cannot be asked for with @supports (grid has it too), so it
-   is measured: two empty children in a column are as tall as the gap. */
-(function(){
-  var f = document.createElement("div");
-  f.style.cssText = "display:flex;flex-direction:column;row-gap:1px;position:absolute;visibility:hidden";
-  f.appendChild(document.createElement("div"));
-  f.appendChild(document.createElement("div"));
-  document.documentElement.appendChild(f);
-  if(f.scrollHeight !== 1) document.documentElement.className += " no-flexgap";
-  document.documentElement.removeChild(f);
-})();
-</script>
+<!-- @WHB:head@ -->
 <style>
 /* ------------------------------------------------------------------ *
  *  PS5 App Dumper - console operator console
@@ -350,8 +338,7 @@ button.tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
         <div class="sub" id="sub">Web console</div>
       </div>
       <div class="link">
-        <button type="button" class="live lock" id="lockchip" hidden title="This device may look, but not change anything yet">Locked</button>
-        <span class="live on" id="conn"><i class="dot"></i><span id="conntext">Connected</span></span>
+        <!-- @WHB:chips@ -->
         <button type="button" class="live menu" id="menubtn" aria-label="Menu" aria-expanded="false"><i class="bars" aria-hidden="true"><b></b><b></b><b></b></i><span>Menu</span></button>
         <div class="menu-pop" id="menupop" hidden>
           <button type="button" data-go="">Home</button>
@@ -362,14 +349,7 @@ button.tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
     </div>
   </header>
 
-  <div class="banner offline" id="offline" hidden>
-    <span class="spin" id="offline-spin" hidden></span>
-    <span class="offline-txt">
-      <b>PS5 App Dumper is not running.</b>
-      <span id="offline-msg">This page comes from the browser's cache. Start the payload the way you usually do - it connects by itself.</span>
-    </span>
-    <button type="button" class="mini" id="offline-start" hidden>Start it</button>
-  </div>
+  <!-- @WHB:offline@ -->
 
   <main>
     <div class="col">
@@ -591,20 +571,8 @@ button.tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
               </div>
               <label class="sw"><input type="checkbox" id="c-auto"><span></span></label>
             </div>
-            <div class="row">
-              <div class="txt">
-                <div class="label">Home-screen shortcut</div>
-                <div class="hint" id="tile-hint">Adds an "App Dumper" tile that opens this page</div>
-              </div>
-              <button type="button" class="mini" id="c-tile">Install</button>
-            </div>
-            <div class="row" id="row-store">
-              <div class="txt">
-                <div class="label">Keep this version in Payload Manager</div>
-                <div class="hint" id="store-hint">Stores this payload in pldmgr, so it can be started from there - and from the home-screen shortcut.</div>
-              </div>
-              <button type="button" class="mini" id="c-store">Save</button>
-            </div>
+            <!-- @WHB:row-tile@ -->
+            <!-- @WHB:row-store@ -->
             <div class="row">
               <div class="txt"><div class="label">Config file</div><div class="hint" id="cfgpath">not available</div></div>
               <button type="button" class="mini" id="c-cfgcopy" hidden>Copy to console</button>
@@ -612,30 +580,11 @@ button.tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
       </div>
     </section>
 
-    <section class="card">
-      <div class="head"><h2>Access</h2></div>
-      <div class="body">
-            <div class="row">
-              <div class="txt">
-                <div class="label">Ask other devices for a code</div>
-                <div class="hint" id="require-hint">Phones and PCs may look, but have to enter the code from the TV before they can start, stop or delete anything.</div>
-              </div>
-              <label class="sw"><input type="checkbox" id="c-require" disabled><span></span></label>
-            </div>
-            <div class="row" id="row-access" hidden>
-              <div class="txt">
-                <div class="label">Code for other devices</div>
-                <div class="hint" id="access-hint">Phones and PCs enter it once before they may change anything. The console's own browser never has to.</div>
-              </div>
-              <span class="mono" id="access-code" style="font-family:var(--mono);font-size:18px;letter-spacing:.18em;color:var(--accent)"></span>
-            </div>
-      </div>
-    </section>
+    <!-- @WHB:access@ -->
   </div>
 
   <footer>PS5 APP DUMPER &middot; EchoStretch &middot; GPL-3.0 &middot;
-    <button type="button" id="quit" class="linkish">shut down payload</button>
-    <div id="buildline" style="margin-top:6px;opacity:.75"><span id="ver"></span>page build <span id="build">@BUILD@</span> &middot; cache: <span id="cachestate">–</span></div>
+    <!-- @WHB:foot@ -->
   </footer>
 </div>
 
@@ -694,27 +643,9 @@ button.tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
   </div>
 </div>
 
-<div class="picker" id="unlock" hidden>
-  <div class="picker-box" role="dialog" aria-modal="true" aria-label="Enter the code from the TV" style="max-width:400px">
-    <div class="picker-head">
-      <span>Code from the TV</span>
-      <span class="spacer"></span>
-      <button type="button" class="ghost act" id="ul-close" style="padding:5px 11px;font-size:11px;letter-spacing:.1em">Close</button>
-    </div>
-    <div class="picker-path" style="white-space:normal;line-height:1.5">Looking is free. To start, stop or delete something from this device, enter the six-digit code the console showed when the payload started.</div>
-    <div class="picker-new">
-      <input type="text" id="ul-code" placeholder="000000" maxlength="6" inputmode="numeric" pattern="[0-9]*" spellcheck="false" autocomplete="one-time-code">
-      <button type="button" class="mini" id="ul-go">Unlock</button>
-    </div>
-    <div class="picker-foot">
-      <span class="picker-dest" id="ul-msg"></span>
-      <span class="spacer"></span>
-      <button type="button" class="act ghost" id="ul-show">Show the code on the TV</button>
-    </div>
-  </div>
-</div>
+<!-- @WHB:unlock@ -->
 
-<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<!-- @WHB:toast@ -->
 
 <script>
 (function(){
@@ -2443,6 +2374,7 @@ document.addEventListener("keydown", function(e){ if(e.key === "Escape" && !$("p
 
 /* ---------------- the kit ---------------- */
 whb.app = {
+  name: "PS5 App Dumper",
   elf: "ps5-app-dumper", shortName: "App Dumper", storage: "ps5-app-dumper",
   busyText: "A dump is running.", afterBusy: "after the dump",
   lockedFrom: "start, stop or delete anything",

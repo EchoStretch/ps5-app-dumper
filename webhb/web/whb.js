@@ -2,10 +2,12 @@
  *  whb.js - what the page of every web homebrew does, whatever the app
  *
  *  Not a module: the build puts this text where the app's page has its
- *  @WHB_JS@ line (tools/inline.sh), inside the page's own function, so
+ *  @WHB_JS@ line (tools/inline.sh; the markup it works on comes the same
+ *  way, as @WHB:name@ lines - see inline.sh for the list), inside the page's own function, so
  *  the page stays one cached document. The app fills in whb.app and
  *  calls whbBoot() once its own functions exist:
  *
+ *    name          "PS5 App Dumper" - for the banner that says it is not running
  *    elf           "ps5-app-dumper" - how the payload's file name starts, to
  *                  find it in a payload manager while the page runs from
  *                  the cache
@@ -38,7 +40,7 @@
 var WHB_API = "/api/whb";
 
 var whb = {
-  app: { elf: "payload", shortName: "Homebrew", storage: "whb", busyText: "The payload is busy.",
+  app: { name: "The payload", elf: "payload", shortName: "Homebrew", storage: "whb", busyText: "The payload is busy.",
          afterBusy: "when the work is done", views: {}, settingsView: null },
   online: true, failures: 0,
   logSeq: 0,          /* how far the live console has read the log */
@@ -408,7 +410,7 @@ function showTileState(installed, current){
     ? "The tile on the home screen is from an older version, or points at another port. Update it."
     : installed
       ? "The \"" + whb.app.shortName + "\" tile is on the home screen. It opens this page, and can start the payload if it is not running."
-      : "Adds an \"" + whb.app.shortName + "\" tile that opens this page";
+      : "Adds a" + (/^[aeiou]/i.test(whb.app.shortName) ? "n" : "") + " \"" + whb.app.shortName + "\" tile that opens this page";
 }
 /* ---------------- this copy: version, and a place in Payload Manager ---------------- */
 var self = null;
@@ -448,6 +450,9 @@ function checkStored(){
 /* Wires up what the kit owns and asks the first questions. Call once, after
    whb.app is filled in and the app's own functions exist. */
 function whbBoot(){
+  var gone = document.querySelector("#offline b");
+  if(gone) gone.textContent = whb.app.name + " is not running.";
+
   on("offline-start", "click", startPayload);
 
   put("build", BUILD);

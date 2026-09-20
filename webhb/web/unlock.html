@@ -1,0 +1,19 @@
+<div class="picker" id="unlock" hidden>
+  <div class="picker-box" role="dialog" aria-modal="true" aria-label="Enter the code from the TV" style="max-width:400px">
+    <div class="picker-head">
+      <span>Code from the TV</span>
+      <span class="spacer"></span>
+      <button type="button" class="ghost act" id="ul-close" style="padding:5px 11px;font-size:11px;letter-spacing:.1em">Close</button>
+    </div>
+    <div class="picker-path" style="white-space:normal;line-height:1.5">Looking is free. To change anything from this device, enter the six-digit code the console showed when the payload started.</div>
+    <div class="picker-new">
+      <input type="text" id="ul-code" placeholder="000000" maxlength="6" inputmode="numeric" pattern="[0-9]*" spellcheck="false" autocomplete="one-time-code">
+      <button type="button" class="mini" id="ul-go">Unlock</button>
+    </div>
+    <div class="picker-foot">
+      <span class="picker-dest" id="ul-msg"></span>
+      <span class="spacer"></span>
+      <button type="button" class="act ghost" id="ul-show">Show the code on the TV</button>
+    </div>
+  </div>
+</div>

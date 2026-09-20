@@ -2,7 +2,7 @@
 #
 #   WHB_ROOT     where the repository's root is, seen from the app's Makefile
 #   WHB_APP      base name of the ELF                       (klogview)
-#   WHB_PAGE     the app's page, with its @WHB_CSS@ / @WHB_JS@ lines
+#   WHB_PAGE     the app's page, with its @WHB_CSS@ / @WHB_JS@ / @WHB:name@ lines
 #   WHB_ICON     512x512 PNG: favicon, home-screen icon, tile
 #   WHB_SOURCES  the app's own C files
 #   WHB_CFLAGS   more flags, if any
@@ -28,7 +28,7 @@ WHB_CONSOLE_ONLY := %/tile.c %/instance.c %/drives.c %/start.c
 WHB_GEN  := $(WHB_OUT)/web_assets.c $(WHB_OUT)/icon_assets.c
 WHB_ID   := $(shell git rev-parse --short HEAD 2>/dev/null || echo nogit)-$(shell date +%m%d-%H%M)
 
-$(WHB_OUT)/web_assets.c: $(WHB_PAGE) $(WHB)/web/whb.css $(WHB)/web/whb.js $(WHB_ROOT)/tools/inline.sh $(WHB_ROOT)/tools/bin2c.sh
+$(WHB_OUT)/web_assets.c: $(WHB_PAGE) $(wildcard $(WHB)/web/*) $(WHB_ROOT)/tools/inline.sh $(WHB_ROOT)/tools/bin2c.sh
 	@mkdir -p $(WHB_OUT)
 	$(WHB_ROOT)/tools/inline.sh $(WHB_PAGE) $(WHB)/web | sed "s/@BUILD@/$(WHB_ID)/g" > $(WHB_OUT)/index.html
 	$(WHB_ROOT)/tools/bin2c.sh $(WHB_OUT)/index.html web_index_html > $@

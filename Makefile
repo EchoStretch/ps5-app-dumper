@@ -44,7 +44,7 @@ BUILD_ID := $(shell git rev-parse --short HEAD 2>/dev/null || echo nogit)-$(shel
 # one file, which is what lets the browser cache it as a whole.
 WHB_KIT := webhb/web
 
-$(WEB_GEN): $(WEB_PAGE) $(WHB_KIT)/whb.css $(WHB_KIT)/whb.js tools/inline.sh tools/bin2c.sh
+$(WEB_GEN): $(WEB_PAGE) $(wildcard $(WHB_KIT)/*) tools/inline.sh tools/bin2c.sh
 	./tools/inline.sh $(WEB_PAGE) $(WHB_KIT) | sed "s/@BUILD@/$(BUILD_ID)/g" > $(WEB_GEN).html
 	./tools/bin2c.sh $(WEB_GEN).html web_index_html > $@
 	rm -f $(WEB_GEN).html
