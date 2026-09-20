@@ -228,7 +228,8 @@ static int process_item(int index)
     char dest[384];
     job_dest_path(snap.mount, &g_queue_cfg[index], dest, sizeof(dest));
 
-    if (dump_presence(dest, title_id, strncmp(title_id, "CUSA", 4) == 0,
+    if (!snap.replace_existing &&
+        dump_presence(dest, title_id, strncmp(title_id, "CUSA", 4) == 0,
                       g_queue_cfg[index].split) == DUMP_PRESENT) {
         write_log(g_log_path, "Queue: %s is already dumped in %s, skipped", title_id, dest);
         set_item(index, QITEM_SKIPPED, "already dumped in %s - skipped", dest);
@@ -254,7 +255,8 @@ static int process_item(int index)
 
     if (g_stop) return -1;
 
-    int started = job_start(dir, snap.mount, &g_queue_cfg[index], 0, err, sizeof(err));
+    int started = job_start(dir, snap.mount, &g_queue_cfg[index], snap.replace_existing,
+                            err, sizeof(err));
     if (started == JOB_ERR_EXISTS) {
         set_item(index, QITEM_SKIPPED, "%s - skipped", err);
         return 0;
@@ -353,7 +355,7 @@ int queue_is_active(void)
 
 int queue_start(const char *const *title_ids, const int *is_disc,
                 const dumper_config_t *const *item_cfg, int count,
-                const char *mount, int settle_seconds,
+                const char *mount, int settle_seconds, int replace_existing,
                 const dumper_config_t *cfg, char *err, size_t err_size)
 {
     #define FAIL(...) do { if (err && err_size) snprintf(err, err_size, __VA_ARGS__); \
@@ -401,6 +403,7 @@ int queue_start(const char *const *title_ids, const int *is_disc,
     next.count = count;
     next.current = -1;
     next.settle_seconds = settle_seconds;
+    next.replace_existing = replace_existing ? 1 : 0;
     next.started = time(NULL);
     strncpy(next.mount, mount, sizeof(next.mount) - 1);
 
@@ -429,8 +432,8 @@ int queue_start(const char *const *title_ids, const int *is_disc,
     }
 
     g_worker_valid = 1;
-    write_log(g_log_path, "Queue: started with %d titles, %d s to load each",
-              count, settle_seconds);
+    write_log(g_log_path, "Queue: started with %d titles, %d s to load each, existing dumps are %s",
+              count, settle_seconds, replace_existing ? "replaced" : "skipped");
 
     pthread_mutex_unlock(&g_start_mtx);
     return 0;

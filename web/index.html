@@ -393,6 +393,8 @@ button.tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .q-set-foot .hint{font-size:11.5px;color:var(--ink-faint);flex:1;line-height:1.35;padding-right:10px}
 .q-btn.on{border-color:var(--accent);color:var(--accent)}
 .tag.own{color:var(--accent)}
+.tag.there{color:var(--green)}
+.tag.cut{color:var(--amber)}
 .q-foot{border-top:1px solid var(--line-soft);padding:4px 16px 14px}
 .q-foot input{max-width:72px;text-align:right}
 .q-foot .unit{font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
@@ -739,6 +741,16 @@ footer{
             <input type="text" id="c-qdelay" inputmode="numeric" spellcheck="false" autocomplete="off">
             <span class="unit">sec</span>
           </div>
+          <div class="row">
+            <div class="txt">
+              <div class="label">Existing dumps</div>
+              <div class="hint" id="q-existing-hint">What to do with a title that is on the drive already</div>
+            </div>
+            <div class="seg" id="q-existing" role="group" aria-label="Existing dumps">
+              <button type="button" data-v="0">Skip</button>
+              <button type="button" data-v="1">Replace</button>
+            </div>
+          </div>
           <div class="q-go">
             <button type="button" class="act ghost" id="q-empty">Empty the queue</button>
           </div>
@@ -900,6 +912,8 @@ var state = {
   library: null, launching: null, canLaunch: true,
   queue: [],             /* titles picked in this browser, not started yet */
   queueOpen: null,       /* title id whose settings panel is open */
+  queueReplace: false,   /* dump again what is on the drive already */
+  presence: {},          /* title id -> "present" | "incomplete" | "absent" */
   squeue: null,          /* the queue the console is working on, or its result */
   online: true, failures: 0,
   samples: []            /* {t, bytes} for the speed estimate */
@@ -1307,6 +1321,7 @@ function queueRowHead(pos, q, cls, editAt){
     '<span class="meta"><span class="name">' + esc(q.title || q.titleId) + '</span>' +
     '<span class="id">' + tag + mtag +
       (q.own || q.custom ? '<span class="tag own" title="Dumped with settings of its own">CUSTOM</span>' : "") +
+      (editAt === undefined ? "" : presenceTag(q.titleId)) +
       esc(q.titleId) + '</span>';
 }
 
@@ -1357,8 +1372,53 @@ function ownPanel(q, i){
     '</div></div>';
 }
 
+/* ---- what is on the drive already ----
+   Asked of the console whenever the queue or the destination changes, so the
+   choice between skipping and replacing is not made blind. */
+var PRESENCE_KEY = "ps5-app-dumper.queue-replace";
+var presenceFor = null, presenceTimer;
+
+function presenceTag(titleId){
+  var p = state.presence && state.presence[titleId];
+  return p === "present"    ? '<span class="tag there" title="A finished dump of this title is on the drive">DUMPED</span>'
+       : p === "incomplete" ? '<span class="tag cut" title="An unfinished dump of this title is on the drive - it is removed and done again">UNFINISHED</span>' : "";
+}
+
+function presentCount(){
+  return state.queue.filter(function(q){ return state.presence && state.presence[q.titleId] === "present"; }).length;
+}
+
+function refreshPresence(){
+  var ids = state.queue.map(function(q){ return q.titleId; }).join(",");
+  var key = ids + "@" + state.target + "@" + $("c-subdir").value;
+  if(!ids || !state.target || queueOnConsole()){ presenceFor = null; return; }
+  if(key === presenceFor) return;
+  presenceFor = key;
+
+  clearTimeout(presenceTimer);
+  presenceTimer = setTimeout(function(){
+    api("/api/dumps/presence?target=" + encodeURIComponent(state.target) + "&titles=" + encodeURIComponent(ids)).then(function(d){
+      state.presence = d.titles || {};
+      queueSig = null;
+      renderQueue(); updateAction();
+    }).catch(function(){ presenceFor = null; });
+  }, 250);
+}
+
+function showExistingChoice(){
+  Array.prototype.forEach.call($("q-existing").querySelectorAll("button"), function(b){
+    b.setAttribute("aria-pressed", String((b.getAttribute("data-v") === "1") === !!state.queueReplace));
+  });
+  var n = presentCount();
+  $("q-existing-hint").textContent = !n ? "None of the queued titles is on the drive yet."
+    : state.queueReplace ? n + " of them " + (n === 1 ? "is" : "are") + " on the drive already - deleted and dumped anew."
+                         : n + " of them " + (n === 1 ? "is" : "are") + " on the drive already - passed over.";
+}
+
 var queueSig = null;
 function renderQueue(){
+  refreshPresence();
+  showExistingChoice();
   var box = $("queue"), remote = queueOnConsole();
   var items = remote ? state.squeue.items : state.queue;
 
@@ -1368,6 +1428,7 @@ function renderQueue(){
 
   var sig = (remote ? "r" + state.squeue.active + state.squeue.current : "l") + "~" + items.map(function(q){
     return q.titleId + "|" + (q.state || "") + "|" + (q.message || "") + "|" + q.media + q.isDisc + q.discIn +
+           "|" + ((state.presence && state.presence[q.titleId]) || "") +
            "|" + (q.own ? ownSpec(q) : "") + !!q.custom;
   }).join("~") + "#" + state.queueOpen;
 
@@ -1487,11 +1548,15 @@ function startQueue(){
   if(!state.queue.length || state.busy) return;
   if(!state.target){ toast("Select a destination drive first.", "bad"); return; }
 
-  /* a game that is up and not first in line gets closed - ask once */
+  /* what cannot be taken back is asked for once: a game that is up and not
+     first in line gets closed, and replacing deletes finished dumps */
   var inTheWay = state.apps.some(function(a){ return a.titleId !== state.queue[0].titleId; });
-  if(inTheWay && !b.classList.contains("arm")){
+  var replaces = state.queueReplace ? presentCount() : 0;
+  if((inTheWay || replaces) && !b.classList.contains("arm")){
     b.classList.add("arm");
-    b.textContent = "Closes the running game - confirm";
+    b.textContent = "Confirm: " + [inTheWay ? "closes the running game" : "",
+                                   replaces ? "deletes " + replaces + " existing dump" + (replaces === 1 ? "" : "s") : ""]
+                                  .filter(Boolean).join(", ");
     clearTimeout(queueArm);
     queueArm = setTimeout(function(){ b.classList.remove("arm"); updateAction(); }, 5000);
     return;
@@ -1503,7 +1568,8 @@ function startQueue(){
   var ids = state.queue.map(function(q){ return q.titleId; });
   var discs = state.queue.filter(function(q){ return q.media === "disc"; })
                          .map(function(q){ return q.titleId; });
-  var request = {titles: ids.join(","), discs: discs.join(","), target: state.target};
+  var request = {titles: ids.join(","), discs: discs.join(","), target: state.target,
+                 replace: state.queueReplace ? 1 : 0};
   state.queue.forEach(function(q){ if(q.own) request["o_" + q.titleId] = ownSpec(q); });
   post("/api/queue/start", request).then(function(){
     state.queue = [];
@@ -1766,6 +1832,9 @@ function queueSummary(){
   if(discs > 1) notes.push(discs + " discs - it waits for each swap");
   var first = q[0], inTheWay = state.apps.some(function(a){ return a.titleId !== first.titleId; });
   if(inTheWay) notes.push("closes the running game");
+  var there = presentCount();
+  if(there) notes.push(state.queueReplace ? "replaces " + there + " existing dump" + (there === 1 ? "" : "s")
+                                          : "skips " + there + " already dumped");
   return text + (notes.length ? ' <span style="color:var(--ink-faint)">· ' + esc(notes.join(" · ")) + "</span>" : "");
 }
 
@@ -2063,6 +2132,7 @@ function pollStatus(){
     renderJob(d.job);
 
     if(wasBusy && !state.busy){
+      presenceFor = null;      /* what is on the drive has just changed */
       loadDevices();
       if(wasQueue){
         var ok = d.queue.items.filter(function(q){ return q.state === "done"; }).length;
@@ -2194,6 +2264,7 @@ function renderIncomplete(){
       el.textContent = "Deleting…";
       post("/api/dumps/delete", {mount: c.mount, folder: c.folder}).then(function(){
         toast("Removed " + c.folder, "ok");
+        presenceFor = null;
         loadDevices();
       }).catch(function(e){
         toast(e.message, "bad");
@@ -2368,6 +2439,14 @@ $("refresh").addEventListener("click", function(){
   var jobs = [loadDevices()];
   jobs.push(loadLibrary());
   Promise.all(jobs).then(function(){ toast("Rescanned"); });
+});
+
+Array.prototype.forEach.call($("q-existing").querySelectorAll("button"), function(b){
+  b.addEventListener("click", function(){
+    state.queueReplace = b.getAttribute("data-v") === "1";
+    try { localStorage.setItem(PRESENCE_KEY, state.queueReplace ? "1" : ""); } catch(e){}
+    showExistingChoice(); updateAction();
+  });
 });
 
 $("offline-start").addEventListener("click", startPayload);
@@ -2577,6 +2656,7 @@ $("c-store").addEventListener("click", function(){
 });
 
 try { state.showAllOptions = !!localStorage.getItem(SHOWALL_KEY); } catch(e){}
+try { state.queueReplace = !!localStorage.getItem(PRESENCE_KEY); } catch(e){}
 restoreQueue();
 renderQueue();
 loadDevices();

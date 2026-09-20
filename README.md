@@ -148,7 +148,7 @@ socat -t 99999999 - TCP:<ip>:9021 < ps5-app-dumper.elf
 Every dump leaves a small `<folder>.dump-info.json` next to its folder: the title, the settings it was made with, and whether it was finished. With that the payload never mixes two dumps in one folder:
 
 * a dump that was **cut short** is removed before its title is dumped again, and is listed under *Unfinished dumps* in the destination panel, where it can be deleted;
-* a **finished** dump is only replaced when you confirm it - the start button asks. A queue, which runs unattended, passes such a title over, and so does `auto_start`;
+* a **finished** dump is only replaced when you confirm it - the start button asks. A queue runs unattended, so it is told up front: *Existing dumps* in the queue card is **Skip** (the default) or **Replace**, the queued titles that are on the drive already carry a **DUMPED** badge, and starting a queue that replaces dumps asks for confirmation once. `auto_start` always leaves such a title alone;
 * a folder **without** an info file - an older dump, or something else - counts as finished and is never deleted unasked.
 
 | Key | Default | Meaning |

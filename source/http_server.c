@@ -393,7 +393,8 @@ static void json_job(sb_t *sb, const job_status_t *job)
 
 static void json_queue(sb_t *sb, const queue_status_t *q)
 {
-    sb_printf(sb, "{\"active\":%s,\"current\":%d,\"settle\":%d,\"wait\":%d,"
+    sb_printf(sb, "{\"replace\":%s,", q->replace_existing ? "true" : "false");
+    sb_printf(sb, "\"active\":%s,\"current\":%d,\"settle\":%d,\"wait\":%d,"
                   "\"started\":%lld,\"finished\":%lld,\"target\":",
               q->active ? "true" : "false", q->current, q->settle_seconds,
               q->wait_remaining, (long long)q->started, (long long)q->finished);
@@ -711,6 +712,46 @@ static void handle_dump(int fd, const params_t *p)
     send_sb(fd, 200, &sb);
 }
 
+/* Which of these titles are on the drive already - so the page can say so
+   before a queue is started, and the choice between skipping and replacing
+   them is not made blind. "titles" as for the queue; the general split mode
+   decides the folder names, as it does for a title without own settings. */
+static void handle_dump_presence(int fd, const params_t *p)
+{
+    const char *mount = param_get(p, "target", NULL);
+    if (!mount || target_is_known(mount) != 0) { send_error(fd, 400, "unknown drive"); return; }
+
+    pthread_mutex_lock(&g_cfg_mtx);
+    dumper_config_t cfg = g_cfg;
+    pthread_mutex_unlock(&g_cfg_mtx);
+
+    char dest[384];
+    job_dest_path(mount, &cfg, dest, sizeof(dest));
+
+    char list[sizeof(((param_t *)0)->val)];
+    snprintf(list, sizeof(list), "%s", param_get(p, "titles", ""));
+
+    sb_t sb;
+    sb_init(&sb);
+    sb_puts(&sb, "{\"dest\":");
+    sb_json_str(&sb, dest);
+    sb_puts(&sb, ",\"titles\":{");
+
+    int n = 0;
+    for (char *tok = strtok(list, ","); tok && n < QUEUE_MAX; tok = strtok(NULL, ",")) {
+        if (strlen(tok) != 9) continue;
+
+        dump_presence_t there = dump_presence(dest, tok, strncmp(tok, "CUSA", 4) == 0, cfg.split);
+        if (n++) sb_puts(&sb, ",");
+        sb_json_str(&sb, tok);
+        sb_printf(&sb, ":\"%s\"", there == DUMP_PRESENT ? "present"
+                                 : there == DUMP_INCOMPLETE ? "incomplete" : "absent");
+    }
+
+    sb_puts(&sb, "}}");
+    send_sb(fd, 200, &sb);
+}
+
 /* Clears away a dump that was cut short. dump_remove_incomplete() only ever
    deletes a folder whose info file says it is an unfinished dump of ours. */
 static void handle_dump_delete(int fd, const params_t *p)
@@ -831,7 +872,8 @@ static void handle_queue_start(int fd, const params_t *p)
 
     char err[160] = {0};
     int rc = queue_start(ids, discs ? is_disc : NULL, item_cfg, count, target,
-                         cfg.queue_delay, &cfg, err, sizeof(err));
+                         cfg.queue_delay, param_get_int(p, "replace", 0),
+                         &cfg, err, sizeof(err));
     free(own);
 
     if (rc != 0) {
@@ -1220,6 +1262,7 @@ static void route(int fd, const char *method, const char *path, const params_t *
     else if (is_post && !strcmp(path, "/api/dump"))    handle_dump(fd, p);
     else if (is_post && !strcmp(path, "/api/abort"))   handle_abort(fd);
     else if (is_post && !strcmp(path, "/api/dumps/delete")) handle_dump_delete(fd, p);
+    else if (is_get  && !strcmp(path, "/api/dumps/presence")) handle_dump_presence(fd, p);
     else if (is_post && !strcmp(path, "/api/queue/start")) handle_queue_start(fd, p);
     else if (is_post && !strcmp(path, "/api/queue/clear")) handle_queue_clear(fd);
     else if (is_post && !strcmp(path, "/api/queue/skip"))  handle_queue_skip(fd);

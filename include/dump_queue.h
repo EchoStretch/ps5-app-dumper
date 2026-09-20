@@ -51,6 +51,7 @@ typedef struct {
     int          count;
     int          current;         /* index being worked on, -1 when none   */
     int          settle_seconds;
+    int          replace_existing; /* dump again what is on the drive already */
     int          wait_remaining;  /* seconds left in the current wait      */
     char         mount[64];
     time_t       started;
@@ -67,11 +68,16 @@ typedef struct {
    decide.
 
    item_cfg gives, per title, the settings to dump it with; a NULL entry -
-   or a NULL array - falls back to cfg. Returns 0 on success, -1 with the
-   reason in err otherwise. */
+   or a NULL array - falls back to cfg.
+
+   A title that is on the drive already, finished, is passed over - unless
+   replace_existing is set, in which case the old dump is deleted and the
+   title dumped anew. The choice is made once, up front, because a queue
+   runs with nobody there to ask. Returns 0 on success, -1 with the reason
+   in err otherwise. */
 int  queue_start(const char *const *title_ids, const int *is_disc,
                  const dumper_config_t *const *item_cfg, int count,
-                 const char *mount, int settle_seconds,
+                 const char *mount, int settle_seconds, int replace_existing,
                  const dumper_config_t *cfg, char *err, size_t err_size);
 
 /* Passes over the title the queue is working on and moves to the next: a
