@@ -298,6 +298,36 @@ button.tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .q-state.disc{color:var(--violet);border-color:rgba(183,156,255,.55)}
 .q-row.waiting_disc{border-color:rgba(183,156,255,.6);background:linear-gradient(180deg,rgba(183,156,255,.13),rgba(183,156,255,.04))}
 
+/* ---------------- running title ---------------- */
+#apps{padding-bottom:0}
+.hero{
+  position:relative;display:flex;align-items:center;gap:14px;min-height:118px;padding:14px;
+  border:1px solid var(--line);border-radius:11px;overflow:hidden;cursor:pointer;
+  background:var(--panel-2) center/cover no-repeat;margin-bottom:10px;
+  transition:border-color .16s,box-shadow .16s
+}
+.hero:last-child{margin-bottom:0}
+/* keeps the text readable on any key art */
+.hero::before{
+  content:"";position:absolute;top:0;right:0;bottom:0;left:0;
+  background:linear-gradient(90deg,rgba(7,9,13,.94) 0%,rgba(7,9,13,.78) 46%,rgba(7,9,13,.3) 100%)
+}
+.hero > *{position:relative}
+.hero:hover{border-color:rgba(47,157,255,.55)}
+.hero:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.hero[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 1px rgba(47,157,255,.45),0 10px 30px -18px rgba(47,157,255,.9)}
+.hero .ico{width:84px;height:84px;border-radius:10px;box-shadow:0 8px 22px -10px #000}
+.hero .meta .name{font-size:19px;white-space:normal;line-height:1.2}
+.hero .meta .id{margin-top:6px}
+.hero-state{
+  display:inline-flex;align-items:center;font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--green);margin-bottom:5px
+}
+.hero-state .dot{margin-right:7px;animation:pulse 2s ease-in-out infinite}
+.hero-acts{display:flex;flex-direction:column;align-items:flex-end;flex:none}
+.hero-pick{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);margin-top:8px}
+.hero[aria-pressed="true"] .hero-pick{color:var(--accent)}
+
 /* ---------------- queue ---------------- */
 .mini.on{background:rgba(51,209,127,.14);border-color:rgba(51,209,127,.5);color:#9be8c2}
 .mini.on:hover{background:rgba(51,209,127,.24);color:#fff}
@@ -332,6 +362,16 @@ button.tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .q-btn.rm:hover{border-color:var(--red);color:var(--red)}
 .q-btn:disabled{opacity:.3;cursor:not-allowed}
 .q-btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.q-item{border:1px solid var(--line-soft);border-radius:9px;background:var(--panel-2)}
+.q-item > .q-row{border:0;background:none}
+.q-item.open{border-color:rgba(47,157,255,.45)}
+.q-set{border-top:1px solid var(--line-soft);padding:2px 12px 10px}
+.q-set .row{padding:8px 0}
+.q-set .label{font-size:13.5px}
+.q-set-foot{display:flex;align-items:center;padding-top:8px}
+.q-set-foot .hint{font-size:11.5px;color:var(--ink-faint);flex:1;line-height:1.35;padding-right:10px}
+.q-btn.on{border-color:var(--accent);color:var(--accent)}
+.tag.own{color:var(--accent)}
 .q-foot{border-top:1px solid var(--line-soft);padding:4px 16px 14px}
 .q-foot input{max-width:72px;text-align:right}
 .q-foot .unit{font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
@@ -566,6 +606,7 @@ footer{
 .no-flexgap .seg > * + *:not(.spacer):not(.link):not(.drive-free):not(.banner-btn){margin-left:4px}
 .no-flexgap .verdict > * + *:not(.spacer):not(.link):not(.drive-free):not(.banner-btn){margin-left:10px}
 .no-flexgap .actions .inner > * + *:not(.spacer):not(.link):not(.drive-free):not(.banner-btn){margin-left:11px}
+.no-flexgap .hero > * + *{margin-left:14px}
 /* a bare text node is no sibling element, so these get their margin directly */
 .no-flexgap .tabs .num,.no-flexgap .live #conntext{margin-left:6px}
 @media(max-width:900px){.no-flexgap section.card{margin-bottom:18px}.no-flexgap .col > * + *{margin-top:0}}
@@ -599,22 +640,13 @@ footer{
     <div class="col">
       <section class="card" id="sec-apps">
         <div class="head">
-          <div class="tabs" role="tablist">
-            <button type="button" id="tab-running" role="tab" aria-selected="true">
-              Running <span class="num" id="appcount">0</span>
-            </button>
-            <button type="button" id="tab-library" role="tab" aria-selected="false">
-              Installed <span class="num" id="libcount">–</span>
-            </button>
-          </div>
+          <h2>Titles</h2><span class="num" id="libcount">–</span>
           <span class="spacer"></span>
           <button class="ghost act" id="refresh" style="padding:5px 11px;font-size:11px;letter-spacing:.1em">Rescan</button>
         </div>
         <div id="launchslot"></div>
-        <div class="body tight" id="apps">
-          <div class="skel"></div>
-        </div>
-        <div class="body tight" id="library" hidden>
+        <div class="body tight" id="apps" hidden></div>
+        <div class="body tight" id="library">
           <div class="skel"></div>
         </div>
       </section>
@@ -816,8 +848,9 @@ var state = {
   apps: [], targets: [], config: null, configPath: null,
   app: null, target: null,
   logSeq: 0, job: null, busy: false, sizes: {},
-  tab: "running", library: null, launching: null, canLaunch: true,
+  library: null, launching: null, canLaunch: true,
   queue: [],             /* titles picked in this browser, not started yet */
+  queueOpen: null,       /* title id whose settings panel is open */
   squeue: null,          /* the queue the console is working on, or its result */
   online: true, failures: 0,
   samples: []            /* {t, bytes} for the speed estimate */
@@ -892,51 +925,71 @@ function markPressed(box, attr, value){
 
 function renderApps(){
   var box = $("apps");
-  $("appcount").textContent = state.apps.length;
 
-  var sig = (state.launching ? "launching~" : "") + state.apps.map(function(a){
-    return a.dir + "|" + a.title + "|" + a.version + "|" + a.hasIcon + "|" + a.media + a.discIn;
+  var sig = state.apps.map(function(a){
+    var known = libraryEntry(a.titleId);
+    return a.dir + "|" + a.title + "|" + a.version + "|" + a.hasIcon + "|" + a.media + a.discIn +
+           "|" + !!(known && known.hasPic) + "|" + !!known + "|" + state.canLaunch;
   }).join("~");
 
-  if(sig === appSig){ markPressed(box, "data-dir", state.app); return; }
+  if(sig === appSig){ markPressed(box, "data-dir", state.app); markQueued(); return; }
   appSig = sig;
 
-  if(!state.apps.length){
-    box.innerHTML = state.launching
-      ? '<div class="empty-state"><strong>Waiting for the title to mount</strong>' +
-        'The console is loading the game. Its files appear here as soon as it is running.</div>'
-      : '<div class="empty-state"><strong>No app mounted</strong>' +
-        'Start a title from the Installed tab, or launch it on the console and hit Rescan.</div>';
-    return;
-  }
+  box.hidden = !state.apps.length;
+  if(!state.apps.length){ box.innerHTML = ""; return; }
 
-  var html = '<div class="grid">';
+  var html = "";
   state.apps.forEach(function(a){
+    var known = libraryEntry(a.titleId);
     var sel = state.app === a.dir;
     var tag = a.isPs4 ? '<span class="tag ps4">PS4</span>' : '<span class="tag ps5">PS5</span>';
     var icon = a.hasIcon
-      ? '<img class="ico" alt="" src="/api/icon?app=' + encodeURIComponent(a.dir) + '" onerror="this.replaceWith(Object.assign(document.createElement(\'div\'),{className:\'ico\',textContent:\'' + esc(a.titleId.slice(0,4)) + '\'}))">'
+      ? '<img class="ico" alt="" src="/api/icon?app=' + encodeURIComponent(a.dir) + '">'
       : '<div class="ico">' + esc(a.titleId.slice(0,4)) + '</div>';
-    html += '<button class="tile" type="button" data-dir="' + esc(a.dir) + '" aria-pressed="' + sel + '"' +
-      ' aria-label="' + esc(a.title + " (" + a.titleId + ")") + '">' +
+    /* the console keeps wide key art for most titles - it makes the card */
+    var art = known && known.hasPic
+      ? ' style="background-image:url(/api/libpic?title=' + encodeURIComponent(a.titleId) + ')"' : "";
+    html += '<div class="hero" role="button" tabindex="0" data-dir="' + esc(a.dir) + '" aria-pressed="' + sel + '"' + art +
+      ' aria-label="' + esc(a.title + " (" + a.titleId + "), running") + '">' +
       icon +
       '<span class="meta">' +
+        '<span class="hero-state"><i class="dot"></i>Running now</span>' +
         '<span class="name">' + esc(a.title) + '</span>' +
         '<span class="id">' + tag + mediaTag(a.media, a.discIn) + esc(a.titleId) + (a.version ? " &middot; " + esc(a.version) : "") + '</span>' +
-      '</span></button>';
+      '</span>' +
+      '<span class="hero-acts">' +
+        (known && state.canLaunch ? '<button class="mini" type="button" data-queue="' + esc(a.titleId) + '"></button>' : "") +
+        '<span class="hero-pick">' + (state.apps.length > 1 ? "tap to select" : "ready to dump") + '</span>' +
+      '</span></div>';
   });
-  html += '</div>';
   box.innerHTML = html;
 
-  Array.prototype.forEach.call(box.querySelectorAll(".tile"), function(el){
-    el.addEventListener("click", function(){
+  Array.prototype.forEach.call(box.querySelectorAll(".hero"), function(el){
+    var pick = function(){
       if(state.busy) return;
       state.app = el.getAttribute("data-dir");
       markPressed(box, "data-dir", state.app);
       fetchSize(state.app);
       updateAction();
+    };
+    el.addEventListener("click", pick);
+    el.addEventListener("keydown", function(e){
+      if(e.target === el && (e.key === "Enter" || e.key === " ")){ e.preventDefault(); pick(); }
+    });
+    var img = el.querySelector("img.ico");
+    if(img) img.addEventListener("error", function(){
+      var d = document.createElement("div");
+      d.className = "ico"; d.textContent = el.getAttribute("data-dir").slice(0,4);
+      img.parentNode.replaceChild(d, img);
     });
   });
+  Array.prototype.forEach.call(box.querySelectorAll("[data-queue]"), function(el){
+    el.addEventListener("click", function(e){
+      e.stopPropagation();
+      toggleQueued(el.getAttribute("data-queue"));
+    });
+  });
+  markQueued();
 }
 
 /* ---------------- rendering: installed titles ---------------- */
@@ -948,28 +1001,36 @@ function renderLibrary(){
   if(state.library === null){ return; }
   $("libcount").textContent = state.library.length;
 
-  var sig = (state.canLaunch === false ? "nolaunch~" : "") + state.library.map(function(t){
+  /* a title that is up is shown as the card above, not a second time here */
+  var mounted = {};
+  state.apps.forEach(function(a){ mounted[a.titleId] = true; });
+  var list = state.library.filter(function(t){ return !mounted[t.titleId]; });
+
+  var sig = (state.canLaunch === false ? "nolaunch~" : "") + list.map(function(t){
     return t.titleId + "|" + t.title + "|" + t.isRunning + "|" + t.media + t.discIn;
-  }).join("~");
+  }).join("~") + "#" + state.library.length;
   if(sig === libSig) return;
   libSig = sig;
 
   if(!state.library.length){
     box.innerHTML = '<div class="empty-state"><strong>Nothing installed found</strong>' +
-      'No titles were found under /user/app. Games on an external drive only show up while that drive is connected.</div>';
+      'No titles were found under /user/app. Games on an external drive only show up while that drive is connected. ' +
+      'A game you start on the console still shows up here.</div>';
     return;
   }
+  if(!list.length){ box.innerHTML = ""; box.hidden = true; return; }
+  box.hidden = false;
 
   var html = state.canLaunch === false
     ? '<div class="banner" style="background:rgba(255,176,32,.1);border-color:rgba(255,176,32,.4);margin:0 0 10px">' +
-      '<span>This console build cannot start titles from here — launch the game yourself, then use the Running tab.</span></div>'
+      '<span>This console build cannot start titles from here — launch the game on the console, it then shows up at the top.</span></div>'
     : '';
-  html += state.library.length > 8
+  html += list.length > 8
     ? '<input type="text" class="libsearch" id="libfilter" placeholder="Filter by name or title id" spellcheck="false" autocapitalize="off" autocomplete="off">'
     : '';
   html += '<div class="lib-list">';
 
-  state.library.forEach(function(t){
+  list.forEach(function(t){
     var tag = t.isPs4 ? '<span class="tag ps4">PS4</span>' : '<span class="tag ps5">PS5</span>';
     var icon = t.hasIcon
       ? '<img class="ico" alt="" src="/api/libicon?title=' + encodeURIComponent(t.titleId) + '">'
@@ -1017,7 +1078,7 @@ function loadLibrary(){
   return api("/api/library").then(function(d){
     state.library = d.titles || [];
     state.canLaunch = d.canLaunch !== false;
-    renderLibrary();
+    renderLibrary(); renderApps();
   }).catch(function(e){
     state.library = [];
     $("library").innerHTML = '<div class="empty-state"><strong>Could not read the library</strong>' + esc(e.message) + '</div>';
@@ -1066,7 +1127,7 @@ function launch(button, titleId, force){
 var launchTimer;
 function beginLaunchWait(titleId){
   state.launching = {titleId: titleId, title: titleName(titleId), since: Date.now()};
-  showTab("running");
+  window.scrollTo(0, 0);
   renderLaunchBanner();
 
   clearInterval(launchTimer);
@@ -1115,16 +1176,6 @@ function renderLaunchBanner(){
   existing.appendChild(cancel);
 }
 
-function showTab(which){
-  state.tab = which;
-  $("tab-running").setAttribute("aria-selected", String(which === "running"));
-  $("tab-library").setAttribute("aria-selected", String(which === "library"));
-  $("apps").hidden = which !== "running";
-  $("library").hidden = which !== "library";
-
-  if(which === "library" && state.library === null) loadLibrary();
-}
-
 /* ---------------- queue ---------------- */
 /* The queue is put together in the browser and handed to the console in one
    go; from then on the console owns it and this page only mirrors it. */
@@ -1168,7 +1219,7 @@ function toggleQueued(titleId){
 
 /* Reflects queue membership on the Installed rows without rebuilding them. */
 function markQueued(){
-  Array.prototype.forEach.call($("library").querySelectorAll("[data-queue]"), function(el){
+  Array.prototype.forEach.call(document.querySelectorAll("#apps [data-queue], #library [data-queue]"), function(el){
     var at = queueIndex(el.getAttribute("data-queue"));
     el.classList.toggle("on", at >= 0);
     el.textContent = at >= 0 ? "Queued " + (at + 1) : "+ Queue";
@@ -1201,7 +1252,56 @@ function queueRowHead(pos, q, cls, editAt){
       (media === "disc" ? (discIn === false ? "DISC OUT" : "DISC") : "PKG") + '</button>';
   return '<div class="q-row' + (cls ? " " + cls : "") + '"><span class="q-pos">' + pos + '</span>' +
     '<span class="meta"><span class="name">' + esc(q.title || q.titleId) + '</span>' +
-    '<span class="id">' + tag + mtag + esc(q.titleId) + '</span>';
+    '<span class="id">' + tag + mtag +
+      (q.own || q.custom ? '<span class="tag own" title="Dumped with settings of its own">CUSTOM</span>' : "") +
+      esc(q.titleId) + '</span>';
+}
+
+/* ---- settings of a single queued title ----
+   own = {d, f, b, l, s}: decrypt, fself, backport, backport level of the
+   title's platform, PS4 split mode. Absent means "as in Options". */
+var SLIDERS_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>';
+
+function isPs4Id(id){ return id.indexOf("CUSA") === 0; }
+
+function generalFor(q){
+  var c = state.config || {};
+  return {
+    d: c.enableDecrypter ? 1 : 0, f: c.enableElf2fself ? 1 : 0, b: c.enableBackport ? 1 : 0,
+    l: (isPs4Id(q.titleId) ? c.ps4BackportLevel : c.ps5BackportLevel) || 1,
+    s: c.split === undefined ? 3 : c.split
+  };
+}
+
+function ownSpec(q){
+  var o = q.own;
+  return "d" + o.d + "f" + o.f + "b" + o.b + (isPs4Id(q.titleId) ? "p" + o.l + "s" + o.s : "q" + o.l);
+}
+
+function ownPanel(q, i){
+  var o = q.own || generalFor(q), ps4 = isPs4Id(q.titleId);
+  var levels = ps4 ? PS4_LEVELS : PS5_LEVELS;
+  var sw = function(key, label, hint){
+    return '<div class="row"><div class="txt"><div class="label">' + label + '</div><div class="hint">' + hint + '</div></div>' +
+      '<label class="sw"><input type="checkbox" data-own="' + key + '"' + (o[key] ? " checked" : "") + '><span></span></label></div>';
+  };
+  var html = '<div class="q-set" data-panel="' + i + '">' +
+    sw("d", "Decrypt executables", "Decrypt SELF/SPRX while dumping") +
+    sw("f", "Create FSELF files", "Re-sign decrypted executables") +
+    sw("b", "SDK backport", "Patch SDK versions down. May break the dump.") +
+    '<div class="row"' + (o.b ? "" : ' style="opacity:.45"') + '><div class="txt"><div class="label">' + (ps4 ? "PS4" : "PS5") + ' target</div></div>' +
+      '<select data-own="l"' + (o.b ? "" : " disabled") + '>' + levels.map(function(v, n){
+        return '<option value="' + (n + 1) + '"' + (o.l === n + 1 ? " selected" : "") + '>' + (ps4 ? "PS4 " : "PS5 ") + v + '</option>';
+      }).join("") + '</select></div>';
+  if(ps4)
+    html += '<div class="row"><div class="txt"><div class="label">Split mode</div></div><div class="seg" role="group" aria-label="Split mode">' +
+      ["None","App","Patch","Both"].map(function(name, v){
+        return '<button type="button" data-own-split="' + v + '" aria-pressed="' + (o.s === v) + '">' + name + '</button>';
+      }).join("") + '</div></div>';
+  return html + '<div class="q-set-foot"><span class="hint">' +
+    (q.own ? "This title is dumped with these settings." : "Same as Options until you change something.") + '</span>' +
+    (q.own ? '<button type="button" class="mini" data-own-reset="1">Use general settings</button>' : "") +
+    '</div></div>';
 }
 
 var queueSig = null;
@@ -1214,15 +1314,16 @@ function renderQueue(){
   $("queue-done").hidden = !remote || queueActive();
 
   var sig = (remote ? "r" + state.squeue.active + state.squeue.current : "l") + "~" + items.map(function(q){
-    return q.titleId + "|" + (q.state || "") + "|" + (q.message || "") + "|" + q.media + q.isDisc + q.discIn;
-  }).join("~");
+    return q.titleId + "|" + (q.state || "") + "|" + (q.message || "") + "|" + q.media + q.isDisc + q.discIn +
+           "|" + (q.own ? ownSpec(q) : "") + !!q.custom;
+  }).join("~") + "#" + state.queueOpen;
 
   if(sig !== queueSig){
     queueSig = sig;
 
     if(!items.length){
       box.innerHTML = '<div class="empty-state"><strong>Queue is empty</strong>' +
-        'Add titles with <b>+ Queue</b> in the Installed tab. They are started, dumped and closed one after the other.</div>';
+        'Add titles with <b>+ Queue</b>. They are started, dumped and closed one after the other, each with its own settings if you like.</div>';
     } else if(remote){
       box.innerHTML = '<div class="q-list">' + items.map(function(q, i){
         var live = state.squeue.current === i;
@@ -1245,11 +1346,41 @@ function renderQueue(){
       });
     } else {
       box.innerHTML = '<div class="q-list">' + items.map(function(q, i){
-        return queueRowHead(i + 1, q, "", i) + '</span>' +
+        var open = state.queueOpen === q.titleId;
+        return '<div class="q-item' + (open ? " open" : "") + '">' + queueRowHead(i + 1, q, "", i) + '</span>' +
+          '<button class="q-btn' + (open ? " on" : "") + '" type="button" data-set="' + i + '" aria-expanded="' + open +
+            '" aria-label="Settings for this title" title="Settings for this title">' + SLIDERS_SVG + '</button>' +
           '<button class="q-btn" type="button" data-mv="-1" data-i="' + i + '" aria-label="Move up"' + (i ? "" : " disabled") + '>&uarr;</button>' +
           '<button class="q-btn" type="button" data-mv="1" data-i="' + i + '" aria-label="Move down"' + (i < items.length - 1 ? "" : " disabled") + '>&darr;</button>' +
-          '<button class="q-btn rm" type="button" data-rm="' + i + '" aria-label="Remove from queue">&times;</button></div>';
+          '<button class="q-btn rm" type="button" data-rm="' + i + '" aria-label="Remove from queue">&times;</button></div>' +
+          (open ? ownPanel(q, i) : "") + '</div>';
       }).join("") + '</div>';
+
+      Array.prototype.forEach.call(box.querySelectorAll("[data-set]"), function(el){
+        el.addEventListener("click", function(){
+          var q = state.queue[Number(el.getAttribute("data-set"))];
+          state.queueOpen = q && state.queueOpen !== q.titleId ? q.titleId : null;
+          renderQueue();
+        });
+      });
+      var panel = box.querySelector("[data-panel]");
+      if(panel){
+        var pq = state.queue[Number(panel.getAttribute("data-panel"))];
+        var change = function(key, value){
+          if(!pq.own) pq.own = generalFor(pq);
+          pq.own[key] = value;
+          storeQueue(); renderQueue();
+        };
+        Array.prototype.forEach.call(panel.querySelectorAll("input[data-own]"), function(el){
+          el.addEventListener("change", function(){ change(el.getAttribute("data-own"), el.checked ? 1 : 0); });
+        });
+        panel.querySelector("select[data-own]").addEventListener("change", function(e){ change("l", Number(e.target.value)); });
+        Array.prototype.forEach.call(panel.querySelectorAll("[data-own-split]"), function(el){
+          el.addEventListener("click", function(){ change("s", Number(el.getAttribute("data-own-split"))); });
+        });
+        var reset = panel.querySelector("[data-own-reset]");
+        if(reset) reset.addEventListener("click", function(){ delete pq.own; storeQueue(); renderQueue(); });
+      }
 
       Array.prototype.forEach.call(box.querySelectorAll("[data-mv]"), function(el){
         el.addEventListener("click", function(){
@@ -1326,8 +1457,11 @@ function startQueue(){
   var ids = state.queue.map(function(q){ return q.titleId; });
   var discs = state.queue.filter(function(q){ return q.media === "disc"; })
                          .map(function(q){ return q.titleId; });
-  post("/api/queue/start", {titles: ids.join(","), discs: discs.join(","), target: state.target}).then(function(){
+  var request = {titles: ids.join(","), discs: discs.join(","), target: state.target};
+  state.queue.forEach(function(q){ if(q.own) request["o_" + q.titleId] = ownSpec(q); });
+  post("/api/queue/start", request).then(function(){
     state.queue = [];
+    state.queueOpen = null;
     storeQueue(); markQueued();
     state.busy = true;
     $("logbox").innerHTML = "";
@@ -1609,7 +1743,7 @@ function updateAction(){
   go.disabled = !ready;
 
   if(state.launching)           sum.textContent = "Waiting for " + state.launching.title + " to start…";
-  else if(!state.apps.length)   sum.textContent = "Start a title from the Installed tab.";
+  else if(!state.apps.length)   sum.textContent = "Start a title, or queue several.";
   else if(!app)                 sum.textContent = "Select an app.";
   else if(!state.targets.length)sum.textContent = "Plug in a USB drive.";
   else if(!state.target)        sum.textContent = "Select a destination drive.";
@@ -1794,7 +1928,7 @@ function loadDevices(){
 
     if(state.app && !state.busy) fetchSize(state.app);
     renderApps(); renderDrives(); updateAction();
-    if(state.library !== null) libSig = null;
+    renderLibrary();
   }).catch(function(e){ toast("Could not read the console state: " + e.message, "bad"); });
 }
 
@@ -1953,7 +2087,7 @@ $("btn-reload").addEventListener("click", function(){
 });
 $("refresh").addEventListener("click", function(){
   var jobs = [loadDevices()];
-  if(state.tab === "library" || state.library !== null) jobs.push(loadLibrary());
+  jobs.push(loadLibrary());
   Promise.all(jobs).then(function(){ toast("Rescanned"); });
 });
 
@@ -1964,8 +2098,6 @@ $("q-empty").addEventListener("click", function(){
   storeQueue(); markQueued(); renderQueue(); updateAction();
 });
 
-$("tab-running").addEventListener("click", function(){ showTab("running"); });
-$("tab-library").addEventListener("click", function(){ showTab("library"); });
 $("clearlog").addEventListener("click", function(){
   $("logbox").innerHTML = '<div class="empty">console cleared</div>';
 });
@@ -2033,13 +2165,14 @@ try { state.showAllOptions = !!localStorage.getItem(SHOWALL_KEY); } catch(e){}
 restoreQueue();
 renderQueue();
 loadDevices();
+loadLibrary();
 pollStatus();
 setInterval(pollStatus, 1000);
 setInterval(function(){
   /* a queue starts and closes games, so the listing keeps moving under it */
   if(state.busy && !queueActive()) return;
   loadDevices();
-  if(state.tab === "library") loadLibrary();
+  loadLibrary();
 }, 8000);
 })();
 </script>
