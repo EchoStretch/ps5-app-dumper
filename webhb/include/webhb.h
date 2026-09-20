@@ -50,10 +50,15 @@ typedef struct {
        takeover by the next copy and the tile install all ask this instead of
        knowing what the app does. NULL means never busy. */
     int (*busy)(void);
+    const char *busy_with;       /* "a dump" - what that work is, for messages      */
+
+    /* Called by whb_start() once the process has its name, before anything
+       else happens - for what has to be set up first. May be NULL. */
+    void (*on_start)(void);
 } whb_app_t;
 
-/* Tells the core who it is working for. Call first thing in main(); app
-   must outlive the server. */
+/* Tells the core who it is working for; app must outlive the server.
+   whb_start() calls it. */
 void whb_app_set(const whb_app_t *app);
 
 /* What whb_app_set() was given. Never NULL. */
@@ -63,6 +68,17 @@ int whb_busy(void);
 
 /* The file name a copy of this payload is stored under, version included. */
 const char *whb_elf_name(void);
+
+/* The start on the console: tells the core who it is working for, names the
+   process, says hello, reads the settings and replaces an idle older copy.
+   Register the app's settings first. Returns 0 when the way is free, and 1
+   when a busy copy stays as it is and this one should end. */
+int whb_start(const whb_app_t *app);
+
+/* Registers the built-in routes and serves until asked to shut down - on
+   the given port, or on the one from the settings when port is 0. Register
+   the app's own routes first. Returns what http_server_run() returns. */
+int whb_serve(int port);
 
 /* Registers the routes every app gets: the page and its cache manifest, the
    icons, the web manifest, /api/self*, /api/tile, /api/quit, the settings

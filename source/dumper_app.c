@@ -18,6 +18,7 @@ along with this program; see the file COPYING. If not, see
 
 #include "routes.h"
 #include "web_assets.h"
+#include "app_launch.h"
 #include "dump_job.h"
 #include "dump_queue.h"
 #include "dump_library.h"
@@ -44,6 +45,9 @@ const whb_app_t *dumper_app(void)
         .tile_title_id = "APDU00001",
         .default_port  = 8081,   /* 8080 usually belongs to websrv */
         .busy          = dumper_busy,
+        .busy_with     = "a dump",
+        /* before anything talks to the system services */
+        .on_start      = app_launch_init,
     };
 
     /* the generated lengths are variables, not constants */

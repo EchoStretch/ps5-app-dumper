@@ -292,3 +292,9 @@ void whb_routes_init(void)
     http_route("POST", "/api/mkdir",            handle_mkdir);
     http_route("POST", "/api/quit",             handle_quit);
 }
+
+int whb_serve(int port)
+{
+    whb_routes_init();
+    return http_server_run(port ? port : whb_config_int("web_port", whb_app()->default_port));
+}

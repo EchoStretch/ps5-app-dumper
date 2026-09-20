@@ -26,12 +26,11 @@ const whb_app_t *dumper_app(void);
 /* 1 while a dump, a queue or the move of a dump is running. */
 int dumper_busy(void);
 
-/* Registers the dumper's routes. Call it and whb_routes_init() before
-   http_server_run(). */
+/* Registers the dumper's routes. Call before whb_serve(). */
 void routes_dumper_init(void);
 
 /* Registers the dumper's settings with the core's config store. Call before
-   whb_config_init(). */
+   whb_start(). */
 void dumper_config_init(void);
 
 /* The settings live in the core's store; everyone here gets a copy. */

@@ -19,9 +19,6 @@ along with this program; see the file COPYING. If not, see
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
-#include <sys/param.h>
-#include <sys/sysctl.h>
-#include <sys/user.h>
 
 #include "app_launch.h"
 #include "app_scan.h"
@@ -165,51 +162,13 @@ static void schedule_auto_dump(const dumper_config_t *cfg)
 
 /* ------------------------------------------------------------------ */
 
-/* Names the process the payload was loaded into. A payload lives only as
-   long as its host, so when the web UI vanishes the moment a game starts,
-   this line says which process took it down. */
-static void log_host_process(void)
-{
-    struct kinfo_proc kp;
-    size_t len = sizeof(kp);
-    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, (int)getpid() };
-
-    if (sysctl(mib, 4, &kp, &len, NULL, 0) == 0 && kp.ki_comm[0])
-        write_log(g_log_path, "Running as pid %d inside \"%s\"", (int)getpid(), kp.ki_comm);
-    else
-        write_log(g_log_path, "Running as pid %d (host unknown)", (int)getpid());
-}
-
 int main(void)
 {
-    whb_app_set(dumper_app());
     dumper_config_init();
-
-    /* first of all, so that whatever happens next can be attributed */
-    instance_claim_name();
-
-    /* before anything talks to the system services */
-    app_launch_init();
-
-    printf_notification("PS5 App Dumper v%s", VERSION);
-    log_host_process();
+    if (whb_start(dumper_app()) != 0) return 0;
 
     dumper_config_t cfg;
-
-    /* One pass over the mount points so config.ini can be read; the web UI
-       rescans on its own once a drive shows up later. */
-    whb_config_init();
     cfg_snapshot(&cfg);
-
-    /* Sending the payload again replaces the copy that is running, rather
-       than putting a second one next to it on the next free port - unless
-       that copy is dumping, which a careless resend must not destroy. */
-    int busy_port = 0;
-    if (instance_take_over(cfg.web_port, &busy_port) != 0) {
-        printf_notification("PS5 App Dumper is already running and busy with a dump\n"
-                            "It stays as it is: port %d", busy_port);
-        return 0;
-    }
 
     /* headless is what enable_webui = 0 asks for - auto_start alone is not */
     if (!cfg.enable_webui)
@@ -218,10 +177,9 @@ int main(void)
     if (cfg.auto_start)
         schedule_auto_dump(&cfg);
 
-    whb_routes_init();
     routes_dumper_init();
 
-    if (http_server_run(cfg.web_port) != 0) {
+    if (whb_serve(0) != 0) {
         printf_notification("Web UI failed to start, dumping directly instead");
         return run_headless(&cfg);
     }

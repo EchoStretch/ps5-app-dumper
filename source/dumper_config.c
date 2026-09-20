@@ -103,7 +103,7 @@ static void settings_changed(void)
 
 void dumper_config_init(void)
 {
-    snprintf(g_default_subdir, sizeof(g_default_subdir), "homebrew/%s/dumps", whb_app()->data_dirname);
+    snprintf(g_default_subdir, sizeof(g_default_subdir), "homebrew/%s/dumps", dumper_app()->data_dirname);
 
     whb_config_register(g_keys, (int)(sizeof(g_keys) / sizeof(g_keys[0])));
     whb_config_on_change(settings_changed);

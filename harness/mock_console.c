@@ -322,10 +322,11 @@ int main(int argc, char **argv)
     g_boot = time(NULL);
     setvbuf(stdout, NULL, _IOLBF, 0);
 
-    whb_app_set(dumper_app());
+    /* whb_start() without what only a console has: the process name, the
+       older copy to replace */
     dumper_config_init();
+    whb_app_set(dumper_app());
     whb_config_init();      /* no /mnt/usbX here: settings go to the pretend console */
-    whb_routes_init();
     routes_dumper_init();
-    return http_server_run(argc > 2 ? atoi(argv[2]) : 8099);
+    return whb_serve(argc > 2 ? atoi(argv[2]) : 8099);
 }
