@@ -1068,6 +1068,29 @@ static void handle_quit(int fd)
     http_server_stop();
 }
 
+/* The logo as PNG, the one picture the payload carries anyway (the tile
+   uses it). iOS wants a PNG for "Add to Home Screen" - it ignores an SVG
+   favicon - and Android takes it from the web manifest. */
+extern const unsigned char tile_icon0_png[];
+extern const size_t        tile_icon0_png_len;
+
+static void handle_app_icon(int fd)
+{
+    send_response_cc(fd, 200, "image/png", tile_icon0_png, tile_icon0_png_len,
+                     "max-age=86400", NULL);
+}
+
+static void handle_web_manifest(int fd)
+{
+    static const char manifest[] =
+        "{\"name\":\"PS5 App Dumper\",\"short_name\":\"App Dumper\","
+        "\"start_url\":\"/\",\"display\":\"standalone\","
+        "\"background_color\":\"#07090d\",\"theme_color\":\"#07090d\","
+        "\"icons\":[{\"src\":\"/icon.png\",\"sizes\":\"512x512\",\"type\":\"image/png\","
+        "\"purpose\":\"any maskable\"}]}";
+    send_response(fd, 200, "application/manifest+json", manifest, sizeof(manifest) - 1, NULL);
+}
+
 static void handle_index(int fd)
 {
     /* "no-store" would keep the page out of the browser's application cache,
@@ -1113,6 +1136,9 @@ static void route(int fd, const char *method, const char *path, const params_t *
 
     if (is_get && (!strcmp(path, "/") || !strcmp(path, "/index.html"))) handle_index(fd);
     else if (is_get  && !strcmp(path, "/cache.appcache")) handle_manifest(fd);
+    else if (is_get  && (!strcmp(path, "/icon.png") || !strcmp(path, "/apple-touch-icon.png") ||
+                         !strcmp(path, "/apple-touch-icon-precomposed.png"))) handle_app_icon(fd);
+    else if (is_get  && !strcmp(path, "/app.webmanifest")) handle_web_manifest(fd);
     else if (is_get  && !strcmp(path, "/api/status"))  handle_status(fd, p);
     else if (is_get  && !strcmp(path, "/api/devices")) handle_devices(fd);
     else if (is_get  && !strcmp(path, "/api/config"))  handle_config_get(fd);
