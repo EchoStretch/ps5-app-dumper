@@ -274,6 +274,12 @@ section.card{position:relative}
 .tag.ps4{color:var(--amber)}
 .tag.disc{color:var(--violet)}
 .tag.pkg{color:var(--ink-faint)}
+.tag.disc.out{opacity:.6;border-style:dashed}
+button.tag{font:inherit;font-family:var(--mono);font-size:9px;letter-spacing:.1em;background:none;cursor:pointer;line-height:inherit}
+button.tag:hover{background:rgba(255,255,255,.07)}
+button.tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.q-state.disc{color:var(--violet);border-color:rgba(183,156,255,.55)}
+.q-row.waiting_disc{border-color:rgba(183,156,255,.6);background:linear-gradient(180deg,rgba(183,156,255,.13),rgba(183,156,255,.04))}
 
 /* ---------------- queue ---------------- */
 .mini.on{background:rgba(51,209,127,.14);border-color:rgba(51,209,127,.5);color:#9be8c2}
@@ -788,9 +794,13 @@ function esc(s){
     return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];
   });
 }
-function mediaTag(media){
-  return media === "disc" ? '<span class="tag disc">DISC</span>'
-       : media === "pkg"  ? '<span class="tag pkg">PKG</span>' : "";
+/* discIn === false marks a disc game whose disc is not in the drive. */
+function mediaTag(media, discIn){
+  if(media === "disc")
+    return discIn === false
+      ? '<span class="tag disc out" title="Disc game - its disc is not in the drive">DISC OUT</span>'
+      : '<span class="tag disc">DISC</span>';
+  return media === "pkg" ? '<span class="tag pkg">PKG</span>' : "";
 }
 var toastTimer;
 function toast(msg, kind){
@@ -835,7 +845,7 @@ function renderApps(){
   $("appcount").textContent = state.apps.length;
 
   var sig = (state.launching ? "launching~" : "") + state.apps.map(function(a){
-    return a.dir + "|" + a.title + "|" + a.version + "|" + a.hasIcon + "|" + a.media;
+    return a.dir + "|" + a.title + "|" + a.version + "|" + a.hasIcon + "|" + a.media + a.discIn;
   }).join("~");
 
   if(sig === appSig){ markPressed(box, "data-dir", state.app); return; }
@@ -862,7 +872,7 @@ function renderApps(){
       icon +
       '<span class="meta">' +
         '<span class="name">' + esc(a.title) + '</span>' +
-        '<span class="id">' + tag + mediaTag(a.media) + esc(a.titleId) + (a.version ? " &middot; " + esc(a.version) : "") + '</span>' +
+        '<span class="id">' + tag + mediaTag(a.media, a.discIn) + esc(a.titleId) + (a.version ? " &middot; " + esc(a.version) : "") + '</span>' +
       '</span></button>';
   });
   html += '</div>';
@@ -889,7 +899,7 @@ function renderLibrary(){
   $("libcount").textContent = state.library.length;
 
   var sig = (state.canLaunch === false ? "nolaunch~" : "") + state.library.map(function(t){
-    return t.titleId + "|" + t.title + "|" + t.isRunning + "|" + t.media;
+    return t.titleId + "|" + t.title + "|" + t.isRunning + "|" + t.media + t.discIn;
   }).join("~");
   if(sig === libSig) return;
   libSig = sig;
@@ -917,7 +927,7 @@ function renderLibrary(){
     html += '<div class="tile lib" data-search="' + esc((t.title + " " + t.titleId).toLowerCase()) + '">' + icon +
       '<span class="meta">' +
         '<span class="name">' + esc(t.title) + '</span>' +
-        '<span class="id">' + tag + mediaTag(t.media) + esc(t.titleId) +
+        '<span class="id">' + tag + mediaTag(t.media, t.discIn) + esc(t.titleId) +
           (t.source && t.source !== "internal" ? " &middot; " + esc(t.source) : "") + '</span>' +
       '</span>' +
       '<span class="lib-acts">' +
@@ -1117,19 +1127,31 @@ function markQueued(){
 }
 
 var STATE_LABEL = {
-  pending: "waiting", launching: "starting", settling: "loading",
+  pending: "waiting", waiting_disc: "insert disc", launching: "starting", settling: "loading",
   dumping: "dumping", done: "done", failed: "failed", skipped: "skipped"
 };
 
-function queueRowHead(pos, q, cls){
-  /* the console reports only ids and names; the rest is known from here */
+function libraryEntry(titleId){
   var known = null;
-  (state.library || []).forEach(function(l){ if(l.titleId === q.titleId) known = l; });
-  var media = q.media || (known && known.media);
+  (state.library || []).forEach(function(l){ if(l.titleId === titleId) known = l; });
+  return known;
+}
+
+/* editAt: index in the local queue, which makes the media tag a switch - the
+   console can only guess whether a title is a disc game while its disc is
+   out, and a queue that waits for the wrong thing helps nobody. */
+function queueRowHead(pos, q, cls, editAt){
+  var known = libraryEntry(q.titleId);
+  var media = q.isDisc !== undefined ? (q.isDisc ? "disc" : "pkg") : (q.media || (known && known.media));
+  var discIn = q.discIn !== undefined ? q.discIn : (known ? known.discIn : undefined);
   var tag = q.titleId.indexOf("CUSA") === 0 ? '<span class="tag ps4">PS4</span>' : '<span class="tag ps5">PS5</span>';
+  var mtag = editAt === undefined ? mediaTag(media, discIn)
+    : '<button type="button" class="tag ' + (media === "disc" ? "disc" + (discIn === false ? " out" : "") : "pkg") +
+      '" data-media="' + editAt + '" title="Disc game? The queue waits for its disc. Click to change.">' +
+      (media === "disc" ? (discIn === false ? "DISC OUT" : "DISC") : "PKG") + '</button>';
   return '<div class="q-row' + (cls ? " " + cls : "") + '"><span class="q-pos">' + pos + '</span>' +
     '<span class="meta"><span class="name">' + esc(q.title || q.titleId) + '</span>' +
-    '<span class="id">' + tag + mediaTag(media) + esc(q.titleId) + '</span>';
+    '<span class="id">' + tag + mtag + esc(q.titleId) + '</span>';
 }
 
 var queueSig = null;
@@ -1142,7 +1164,7 @@ function renderQueue(){
   $("queue-done").hidden = !remote || queueActive();
 
   var sig = (remote ? "r" + state.squeue.active + state.squeue.current : "l") + "~" + items.map(function(q){
-    return q.titleId + "|" + (q.state || "") + "|" + (q.message || "");
+    return q.titleId + "|" + (q.state || "") + "|" + (q.message || "") + "|" + q.media + q.isDisc + q.discIn;
   }).join("~");
 
   if(sig !== queueSig){
@@ -1154,16 +1176,26 @@ function renderQueue(){
     } else if(remote){
       box.innerHTML = '<div class="q-list">' + items.map(function(q, i){
         var live = state.squeue.current === i;
-        var kind = q.state === "done" ? "done" : q.state === "failed" ? "failed" : live ? "live" : "";
+        var kind = q.state === "done" ? "done" : q.state === "failed" ? "failed"
+                 : q.state === "waiting_disc" ? "disc" : live ? "live" : "";
+        var canSkip = live && (q.state === "waiting_disc" || q.state === "launching" || q.state === "settling");
         return queueRowHead(i + 1, q, (live ? "cur " : "") + q.state) +
           (q.message && (q.state === "failed" || q.state === "skipped" || live)
             ? '<span class="q-msg">' + esc(q.message) + '</span>' : "") + '</span>' +
+          (canSkip ? '<button class="mini" type="button" data-skip="1">Skip</button>' : "") +
           '<span class="q-state ' + kind + '"' + (live ? ' id="q-live"' : "") + '>' +
           esc(STATE_LABEL[q.state] || q.state) + '</span></div>';
       }).join("") + '</div>';
+
+      var skip = box.querySelector("[data-skip]");
+      if(skip) skip.addEventListener("click", function(){
+        skip.disabled = true;
+        post("/api/queue/skip").then(function(){ toast("Skipping this title…"); })
+          .catch(function(e){ toast(e.message, "bad"); skip.disabled = false; });
+      });
     } else {
       box.innerHTML = '<div class="q-list">' + items.map(function(q, i){
-        return queueRowHead(i + 1, q) + '</span>' +
+        return queueRowHead(i + 1, q, "", i) + '</span>' +
           '<button class="q-btn" type="button" data-mv="-1" data-i="' + i + '" aria-label="Move up"' + (i ? "" : " disabled") + '>&uarr;</button>' +
           '<button class="q-btn" type="button" data-mv="1" data-i="' + i + '" aria-label="Move down"' + (i < items.length - 1 ? "" : " disabled") + '>&darr;</button>' +
           '<button class="q-btn rm" type="button" data-rm="' + i + '" aria-label="Remove from queue">&times;</button></div>';
@@ -1176,6 +1208,14 @@ function renderQueue(){
           var moved = state.queue.splice(i, 1)[0];
           state.queue.splice(j, 0, moved);
           storeQueue(); markQueued(); renderQueue();
+        });
+      });
+      Array.prototype.forEach.call(box.querySelectorAll("[data-media]"), function(el){
+        el.addEventListener("click", function(){
+          var q = state.queue[Number(el.getAttribute("data-media"))];
+          if(!q) return;
+          q.media = q.media === "disc" ? "pkg" : "disc";
+          storeQueue(); renderQueue();
         });
       });
       Array.prototype.forEach.call(box.querySelectorAll("[data-rm]"), function(el){
@@ -1234,13 +1274,16 @@ function startQueue(){
   b.disabled = true;
 
   var ids = state.queue.map(function(q){ return q.titleId; });
-  post("/api/queue/start", {titles: ids.join(","), target: state.target}).then(function(){
+  var discs = state.queue.filter(function(q){ return q.media === "disc"; })
+                         .map(function(q){ return q.titleId; });
+  post("/api/queue/start", {titles: ids.join(","), discs: discs.join(","), target: state.target}).then(function(){
     state.queue = [];
     storeQueue(); markQueued();
     state.busy = true;
     $("logbox").innerHTML = "";
     state.samples = [];
-    toast("Queue started: " + ids.length + " titles", "ok");
+    toast("Queue started: " + ids.length + " titles" +
+          (discs.length > 1 ? " - it waits whenever a disc has to be swapped" : ""), "ok");
     pollStatus();
   }).catch(function(e){
     toast(e.message, "bad");
@@ -1465,7 +1508,9 @@ function updateAction(){
     reload.style.display = "none";
     if(!stop.classList.contains("arm")) stop.textContent = "Stop queue";
     sum.innerHTML = "Queue <b>" + (sq.current + 1) + "/" + sq.items.length + "</b>" +
-                    (cur ? " · <b>" + esc(cur.title) + "</b> — " + esc(queuePhase(cur)) : "") +
+                    (cur ? " · <b>" + esc(cur.title) + "</b> — " +
+                      (cur.state === "waiting_disc" ? '<span style="color:var(--violet)">insert its disc</span>'
+                                                    : esc(queuePhase(cur))) : "") +
                     " → <b>" + esc(sq.target) + "</b>";
     return;
   }
