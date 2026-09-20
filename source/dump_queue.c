@@ -259,6 +259,15 @@ static int process_item(int index)
         return 0;
     }
 
+    /* Stopped on its own, by a skip: this dump is given up, the queue is
+       not. A stop of the whole queue also sets g_stop and wins. */
+    if (job.state == JOB_ABORTED && g_skip && !g_stop) {
+        write_log(g_log_path, "Queue: dump of %s stopped by user, moving on", title_id);
+        set_item(index, QITEM_SKIPPED, "dump stopped by user - the files of %s in %s are incomplete",
+                 title_id, job.dest);
+        return 0;
+    }
+
     set_item(index, QITEM_FAILED, "%s", job.message);
     return job.state == JOB_ABORTED ? -1 : 0;
 }
@@ -421,16 +430,21 @@ void queue_stop(void)
 int queue_skip(void)
 {
     pthread_mutex_lock(&g_mtx);
-    int waiting = 0;
+    int waiting = 0, dumping = 0;
     if (g_queue.active && g_queue.current >= 0) {
         queue_item_state_t st = g_queue.items[g_queue.current].state;
         waiting = (st == QITEM_WAITING_DISC || st == QITEM_LAUNCHING ||
                    st == QITEM_SETTLING);
+        dumping = (st == QITEM_DUMPING);
     }
     pthread_mutex_unlock(&g_mtx);
 
-    if (!waiting) return -1;
+    if (!waiting && !dumping) return -1;
+
     g_skip = 1;
+    /* a dump does not look at g_skip; it is ended like any other, and the
+       flag tells process_item() that the queue goes on afterwards */
+    if (dumping) job_abort();
     return 0;
 }
 

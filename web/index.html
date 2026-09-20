@@ -561,6 +561,7 @@ button.act:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .stop.arm{background:var(--red);color:#fff;border-color:var(--red)}
 .ghost{background:transparent;border-color:var(--line);color:var(--ink-dim);font-size:13px;padding:11px 16px}
 .ghost:hover{border-color:var(--accent);color:var(--ink)}
+.ghost.arm{background:var(--amber);border-color:var(--amber);color:#20160a}
 
 .toast{
   position:fixed;left:50%;bottom:96px;transform:translate(-50%,14px);z-index:9;
@@ -833,6 +834,7 @@ footer{
   <div class="inner">
     <div class="summary" id="summary">Select an app and a drive.</div>
     <button class="act ghost" id="btn-reload" style="display:none">Reload</button>
+    <button class="act ghost" id="btn-skip" style="display:none">Stop this dump</button>
     <button class="act stop" id="btn-stop" style="display:none">Stop</button>
     <button class="act go" id="btn-go" disabled>Start dump</button>
   </div>
@@ -1759,6 +1761,10 @@ function updateAction(){
     stop.style.display = "";
     reload.style.display = "none";
     if(!stop.classList.contains("arm")) stop.textContent = "Stop queue";
+    /* with more to come, giving up one dump must not cost the rest */
+    var skip = $("btn-skip"), dumping = !!cur && cur.state === "dumping";
+    skip.style.display = dumping ? "" : "none";
+    if(!dumping){ skip.classList.remove("arm"); skip.textContent = "Stop this dump"; }
     sum.innerHTML = "Queue <b>" + (sq.current + 1) + "/" + sq.items.length + "</b>" +
                     (cur ? " · <b>" + esc(cur.title) + "</b> — " +
                       (cur.state === "waiting_disc" ? '<span style="color:var(--violet)">insert its disc</span>'
@@ -1766,6 +1772,8 @@ function updateAction(){
                     " → <b>" + esc(sq.target) + "</b>";
     return;
   }
+
+  $("btn-skip").style.display = "none";
 
   if(state.busy){
     go.style.display = "none";
@@ -2105,6 +2113,32 @@ function stop(){
   }).then(function(){ b.disabled = false; });
 }
 
+/* Ends the dump the queue is on and lets it carry on with the next title.
+   What was written so far stays on the drive, incomplete - hence the ask. */
+var skipArm;
+function stopThisDump(){
+  var b = $("btn-skip");
+  if(!b.classList.contains("arm")){
+    b.classList.add("arm");
+    b.textContent = "Confirm - queue goes on";
+    clearTimeout(skipArm);
+    skipArm = setTimeout(function(){
+      b.classList.remove("arm");
+      b.textContent = "Stop this dump";
+    }, 4000);
+    return;
+  }
+  clearTimeout(skipArm);
+  b.classList.remove("arm");
+  b.textContent = "Stop this dump";
+  b.disabled = true;
+  post("/api/queue/skip").then(function(){
+    toast("Stopping this dump after the current file - the queue goes on…");
+  }).catch(function(e){
+    toast(e.message, "bad");
+  }).then(function(){ b.disabled = false; });
+}
+
 /* ---------------- boot ---------------- */
 /* ---------------- destination folder picker ---------------- */
 var pk = { mount: null, path: "" };
@@ -2211,6 +2245,7 @@ wireSettings();
 /* one button for both: with titles queued it starts the queue */
 $("btn-go").addEventListener("click", function(){ if(queueMode()) startQueue(); else start(); });
 $("btn-stop").addEventListener("click", stop);
+$("btn-skip").addEventListener("click", stopThisDump);
 $("btn-reload").addEventListener("click", function(){
   $("progress").classList.remove("show");
   $("btn-reload").style.display = "none";

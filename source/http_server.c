@@ -769,7 +769,7 @@ static void handle_queue_start(int fd, const params_t *p)
 static void handle_queue_skip(int fd)
 {
     if (queue_skip() != 0) {
-        send_error(fd, 409, "nothing to skip - a running dump is stopped, not skipped");
+        send_error(fd, 409, "the queue is not working on a title right now");
         return;
     }
 

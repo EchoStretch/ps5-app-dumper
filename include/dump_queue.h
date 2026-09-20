@@ -74,9 +74,10 @@ int  queue_start(const char *const *title_ids, const int *is_disc,
                  const char *mount, int settle_seconds,
                  const dumper_config_t *cfg, char *err, size_t err_size);
 
-/* Passes over the title the queue is waiting on - for a disc, a launch or
-   the load time. Returns -1 when there is nothing to skip, which includes a
-   dump in progress: that one is stopped, not skipped. */
+/* Passes over the title the queue is working on and moves to the next: a
+   wait - for a disc, a launch, the load time - simply ends, a dump in
+   progress is stopped at the next file boundary and left incomplete.
+   Returns -1 when the queue is not at a title. */
 int  queue_skip(void);
 
 /* Stops after aborting whatever the queue is doing right now. */
