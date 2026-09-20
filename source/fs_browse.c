@@ -20,7 +20,7 @@ along with this program; see the file COPYING. If not, see
 #include <dirent.h>
 #include <sys/stat.h>
 
-#include "fs_browse.h"
+#include "webhb.h"
 
 /* The dump folder is stored in a 64-byte config field, so a browsed path
    must leave room for it plus a NUL. */

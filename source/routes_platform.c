@@ -25,14 +25,8 @@ along with this program; see the file COPYING. If not, see
 #include <pthread.h>
 
 #include "routes.h"
-#include "web_assets.h"
 #include "app_scan.h"
-#include "fs_browse.h"
-#include "app_installer.h"
-#include "dump_job.h"
 #include "dump_queue.h"
-#include "self_store.h"
-#include "version.h"
 #include "utils.h"
 
 static dumper_config_t  g_cfg;
@@ -148,11 +142,14 @@ static void handle_config_post(int fd, const params_t *p)
 static void handle_self(int fd, const params_t *p)
 {
     (void)p;
-    char json[192];
-    snprintf(json, sizeof(json),
-             "{\"version\":\"" DUMPER_VERSION "\",\"file\":\"" DUMPER_ELF_NAME "\",\"canStore\":%s}",
-             self_store_available() ? "true" : "false");
-    send_json(fd, 200, json);
+    sb_t sb;
+    sb_init(&sb);
+    sb_puts(&sb, "{\"version\":");
+    sb_json_str(&sb, whb_app()->version);
+    sb_puts(&sb, ",\"file\":");
+    sb_json_str(&sb, whb_elf_name());
+    sb_printf(&sb, ",\"canStore\":%s}", self_store_available() ? "true" : "false");
+    send_sb(fd, 200, &sb);
 }
 
 /* Is the file pldmgr holds this very build? The page passes the path it
@@ -177,7 +174,12 @@ static void handle_self_store(int fd, const params_t *p)
         return;
     }
 
-    send_json(fd, 200, "{\"stored\":true,\"file\":\"" DUMPER_ELF_NAME "\"}");
+    sb_t sb;
+    sb_init(&sb);
+    sb_puts(&sb, "{\"stored\":true,\"file\":");
+    sb_json_str(&sb, whb_elf_name());
+    sb_puts(&sb, "}");
+    send_sb(fd, 200, &sb);
 }
 
 /* Resolves the drive to browse: the caller-named mount if it is one of ours,
@@ -266,8 +268,8 @@ static void handle_install_tile(int fd, const params_t *p)
 {
     (void)p;
     /* Registering a title makes the shell rework its app database. Keep that
-       away from a dump that is reading the very same titles. */
-    if (job_is_active() || queue_is_active()) {
+       away from work that may be reading the very same titles. */
+    if (whb_busy()) {
         send_error(fd, 409, "wait for the dump to finish first");
         return;
     }
@@ -283,39 +285,44 @@ static void handle_install_tile(int fd, const params_t *p)
 static void handle_quit(int fd, const params_t *p)
 {
     (void)p;
-    if (job_is_active() || queue_is_active()) {
+    if (whb_busy()) {
         send_error(fd, 409, "a dump is running");
         return;
     }
 
     send_json(fd, 200, "{\"stopping\":true}");
-    printf_notification("PS5 App Dumper: web UI closed");
+    printf_notification("%s: web UI closed", whb_app()->name);
     http_server_stop();
 }
 
 /* The logo as PNG, the one picture the payload carries anyway (the tile
    uses it). iOS wants a PNG for "Add to Home Screen" - it ignores an SVG
    favicon - and Android takes it from the web manifest. */
-extern const unsigned char tile_icon0_png[];
-extern const size_t        tile_icon0_png_len;
-
 static void handle_app_icon(int fd, const params_t *p)
 {
     (void)p;
-    send_response_cc(fd, 200, "image/png", tile_icon0_png, tile_icon0_png_len,
+    send_response_cc(fd, 200, "image/png", whb_app()->icon_png, whb_app()->icon_len,
                      "max-age=86400", NULL);
 }
 
 static void handle_web_manifest(int fd, const params_t *p)
 {
     (void)p;
-    static const char manifest[] =
-        "{\"name\":\"PS5 App Dumper\",\"short_name\":\"App Dumper\","
-        "\"start_url\":\"/\",\"display\":\"standalone\","
+    sb_t sb;
+    sb_init(&sb);
+    sb_puts(&sb, "{\"name\":");
+    sb_json_str(&sb, whb_app()->name);
+    sb_puts(&sb, ",\"short_name\":");
+    sb_json_str(&sb, whb_app()->short_name);
+    sb_puts(&sb,
+        ",\"start_url\":\"/\",\"display\":\"standalone\","
         "\"background_color\":\"#07090d\",\"theme_color\":\"#07090d\","
         "\"icons\":[{\"src\":\"/icon.png\",\"sizes\":\"512x512\",\"type\":\"image/png\","
-        "\"purpose\":\"any maskable\"}]}";
-    send_response(fd, 200, "application/manifest+json", manifest, sizeof(manifest) - 1, NULL);
+        "\"purpose\":\"any maskable\"}]}");
+
+    if (sb.oom) { send_sb(fd, 500, &sb); return; }
+    send_response(fd, 200, "application/manifest+json", sb.buf, sb.len, NULL);
+    sb_free(&sb);
 }
 
 static void handle_index(int fd, const params_t *p)
@@ -325,7 +332,7 @@ static void handle_index(int fd, const params_t *p)
        which is what lets the home-screen tile open it while the payload is
        not running. The manifest below takes care of freshness. */
     send_response_cc(fd, 200, "text/html; charset=utf-8",
-                     web_index_html, web_index_html_len, "no-cache", NULL);
+                     whb_app()->page, whb_app()->page_len, "no-cache", NULL);
 }
 
 /* The application cache manifest. A browser that knows the mechanism - the
@@ -337,8 +344,8 @@ static void handle_manifest(int fd, const params_t *p)
 {
     (void)p;
     uint32_t sum = 2166136261u;   /* FNV-1a */
-    for (size_t i = 0; i < web_index_html_len; i++)
-        sum = (sum ^ web_index_html[i]) * 16777619u;
+    for (size_t i = 0; i < whb_app()->page_len; i++)
+        sum = (sum ^ whb_app()->page[i]) * 16777619u;
 
     /* tells, in the live console, whether a browser uses the cache at all */
     write_log(g_log_path, "Web UI: cache manifest requested (page %08x)", (unsigned)sum);
@@ -353,7 +360,7 @@ static void handle_manifest(int fd, const params_t *p)
                      "\n"
                      "NETWORK:\n"
                      "*\n",
-                     (unsigned)sum, web_index_html_len);
+                     (unsigned)sum, whb_app()->page_len);
 
     send_response(fd, 200, "text/cache-manifest", body, (size_t)n, NULL);
 }

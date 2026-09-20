@@ -25,7 +25,6 @@
 
 #include "app_scan.h"
 #include "app_launch.h"
-#include "app_installer.h"
 #include "routes.h"
 #include "ps4_dumper.h"
 #include "ps5_dumper.h"
@@ -277,6 +276,7 @@ int main(int argc, char **argv)
     g_boot = time(NULL);
     setvbuf(stdout, NULL, _IOLBF, 0);
 
+    whb_app_set(dumper_app());
     routes_platform_init();
     routes_dumper_init();
     return http_server_run(argc > 2 ? atoi(argv[2]) : 8099);

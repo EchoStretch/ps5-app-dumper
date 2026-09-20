@@ -25,8 +25,7 @@ along with this program; see the file COPYING. If not, see
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#include "self_store.h"
-#include "version.h"
+#include "webhb.h"
 #include "utils.h"
 
 /* pldmgr's web server; the upload is a plain POST with the file as body,
@@ -51,7 +50,7 @@ static int path_is_ours(const char *path)
     if (strncmp(path, STORE_ROOT, strlen(STORE_ROOT)) != 0 && strncmp(path, "/mnt/usb", 8) != 0) return 0;
 
     const char *name = strrchr(path, '/');
-    return name && strcmp(name + 1, DUMPER_ELF_NAME) == 0;
+    return name && strcmp(name + 1, whb_elf_name()) == 0;
 }
 
 int self_store_matches(const char *path)
@@ -129,12 +128,12 @@ int self_store_to_pldmgr(char *err, size_t err_size)
 
     char head[320];
     int n = snprintf(head, sizeof(head),
-                     "POST /manage:upload?filename=" DUMPER_ELF_NAME " HTTP/1.1\r\n"
+                     "POST /manage:upload?filename=%s HTTP/1.1\r\n"
                      "Host: 127.0.0.1:%d\r\n"
                      "Content-Type: application/octet-stream\r\n"
                      "Content-Length: %zu\r\n"
                      "Connection: close\r\n"
-                     "\r\n", PLDMGR_PORT, self_elf_len);
+                     "\r\n", whb_elf_name(), PLDMGR_PORT, self_elf_len);
 
     if (send_all(fd, head, (size_t)n) != 0 || send_all(fd, self_elf, self_elf_len) != 0)
         FAIL("the upload to Payload Manager broke off (%s)", strerror(errno));
@@ -153,7 +152,7 @@ int self_store_to_pldmgr(char *err, size_t err_size)
         FAIL("Payload Manager refused the upload (HTTP %d)", status);
 
     close(fd);
-    write_log(g_log_path, "Stored " DUMPER_ELF_NAME " in Payload Manager (%zu bytes)", self_elf_len);
+    write_log(g_log_path, "Stored %s in Payload Manager (%zu bytes)", whb_elf_name(), self_elf_len);
     return 0;
 
     #undef FAIL

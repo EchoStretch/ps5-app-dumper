@@ -17,8 +17,14 @@ along with this program; see the file COPYING. If not, see
 #ifndef ROUTES_H
 #define ROUTES_H
 
-#include "webhb_http.h"
+#include "webhb.h"
 #include "utils.h"
+
+/* What the web-homebrew core is told about this payload. */
+const whb_app_t *dumper_app(void);
+
+/* 1 while a dump or a queue is running. */
+int dumper_busy(void);
 
 /* Registers the routes. Call both before http_server_run(). */
 void routes_platform_init(void);

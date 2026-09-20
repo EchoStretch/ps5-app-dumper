@@ -29,7 +29,6 @@ along with this program; see the file COPYING. If not, see
 #include "routes.h"
 #include "ps4_dumper.h"
 #include "ps5_dumper.h"
-#include "single_instance.h"
 #include "version.h"
 #include "utils.h"
 
@@ -176,6 +175,8 @@ static void log_host_process(void)
 
 int main(void)
 {
+    whb_app_set(dumper_app());
+
     /* first of all, so that whatever happens next can be attributed */
     instance_claim_name();
 

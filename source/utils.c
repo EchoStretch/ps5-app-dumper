@@ -29,6 +29,7 @@ along with this program; see the file COPYING. If not, see
 #include <errno.h>
 
 #include "utils.h"
+#include "webhb.h"
 
 size_t folder_size_current = 0;
 size_t total_bytes_copied = 0;
@@ -136,7 +137,7 @@ int find_usb_and_setup(void) {
         char homebrew[128], appdir[128], testfile[256], config[256], legacy[256];
 
         snprintf(homebrew, sizeof(homebrew), "%s/homebrew", root);
-        snprintf(appdir,   sizeof(appdir),   "%s/" APP_DATA_DIRNAME, root);
+        snprintf(appdir,   sizeof(appdir),   "%s/%s", root, whb_app()->data_dirname);
         snprintf(testfile, sizeof(testfile), "%s/.probe_usb", appdir);
         snprintf(config,   sizeof(config),   "%s/config.ini", appdir);
         snprintf(legacy,   sizeof(legacy),   "%s/config.ini", homebrew);
@@ -400,7 +401,7 @@ void config_defaults(dumper_config_t *cfg)
     cfg->enable_logging     = 1;
     cfg->split              = 3;
     cfg->enable_webui       = 1;
-    cfg->web_port           = 8081;   /* 8080 usually belongs to websrv */
+    cfg->web_port           = whb_app()->default_port;
     cfg->auto_start         = 0;
     strncpy(cfg->dump_subdir, "homebrew", sizeof(cfg->dump_subdir) - 1);
     cfg->queue_delay        = 30;

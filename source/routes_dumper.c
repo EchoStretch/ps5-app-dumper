@@ -311,7 +311,7 @@ static void handle_dump_delete(int fd, const params_t *p)
     const char *folder = param_get(p, "folder", NULL);
 
     if (!mount || !folder || target_is_known(mount) != 0) { send_error(fd, 400, "unknown drive"); return; }
-    if (job_is_active() || queue_is_active())              { send_error(fd, 409, "a dump is running"); return; }
+    if (dumper_busy())                                     { send_error(fd, 409, "a dump is running"); return; }
 
     dumper_config_t cfg;
     cfg_snapshot(&cfg);
@@ -540,7 +540,7 @@ static void handle_launch(int fd, const params_t *p)
     const char *title = param_get(p, "title", NULL);
     if (!title || !*title) { send_error(fd, 400, "no title given"); return; }
 
-    if (job_is_active() || queue_is_active()) {
+    if (dumper_busy()) {
         send_error(fd, 409, "a dump is running");
         return;
     }

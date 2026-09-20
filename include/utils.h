@@ -73,10 +73,9 @@ int  read_backport_config(void);
 int  read_split_config(void);          // NEW: 0-3 split mode
 const char* get_usb_homebrew_path(void);   /* <drive>/homebrew - where a headless dump goes */
 
-/* <drive>/ps5-app-dumper: config.ini, the disc list and logs/. Empty until a
-   drive turned up. Files older versions kept in <drive>/homebrew are moved
-   over the first time. */
-#define APP_DATA_DIRNAME "ps5-app-dumper"
+/* <drive>/<the app's data_dirname>: config.ini, the disc list and logs/.
+   Empty until a drive turned up. Files older versions kept in
+   <drive>/homebrew are moved over the first time. */
 const char* get_app_data_path(void);
 
 /* Which file write_log() goes to: the general one, or one per dump. */

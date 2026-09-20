@@ -40,19 +40,31 @@ along with this program; see the file COPYING. If not, see
 
 #include <ps5/kernel.h>
 
-#include "app_installer.h"
+#include "webhb.h"
 #include "utils.h"
 
-/* embedded at build time by tools/bin2c.sh (see the Makefile) */
-extern const unsigned char tile_icon0_png[];
-extern const size_t        tile_icon0_png_len;
-
-#define TILE_DIR       "/user/app/" TILE_TITLE_ID
-#define TILE_SCE_SYS   TILE_DIR "/sce_sys"
-#define TILE_PARAM     TILE_SCE_SYS "/param.json"
-#define TILE_ICON      TILE_SCE_SYS "/icon0.png"
-
 #define SYSTEM_LIB_DIR "/system/common/lib/"
+
+/* /user/app/<title id> and what goes into it */
+typedef struct {
+    char dir[64];
+    char sce_sys[80];
+    char param[96];
+    char icon[96];
+} tile_paths_t;
+
+/* -1 for an app that has no tile. */
+static int tile_paths(tile_paths_t *tp)
+{
+    const char *id = whb_app()->tile_title_id;
+    if (!id || !*id) return -1;
+
+    snprintf(tp->dir,     sizeof(tp->dir),     "/user/app/%s", id);
+    snprintf(tp->sce_sys, sizeof(tp->sce_sys), "%s/sce_sys", tp->dir);
+    snprintf(tp->param,   sizeof(tp->param),   "%s/param.json", tp->sce_sys);
+    snprintf(tp->icon,    sizeof(tp->icon),    "%s/icon0.png", tp->sce_sys);
+    return 0;
+}
 
 /* The app-install service does its work on the caller's stack and goes
    through the HTTP/SSL stack; a connection thread is far too small. */
@@ -82,21 +94,22 @@ static void set_err(install_req_t *req, const char *fmt, ...)
 /* applicationCategoryType 65536 is what makes the shell treat the title as a
    deeplink shortcut rather than something with an eboot to start. The port
    is written at install time because the server may have had to move off
-   its preferred one. */
+   its preferred one. tile_is_current() compares this byte for byte, so a
+   change here makes every installed tile count as out of date. */
 static int build_param_json(int port, char *out, size_t out_size)
 {
     int n = snprintf(out, out_size,
         "{\n"
-        "    \"titleId\": \"" TILE_TITLE_ID "\",\n"
+        "    \"titleId\": \"%s\",\n"
         "    \"applicationCategoryType\": 65536,\n"
         "    \"deeplinkUri\": \"http://127.0.0.1:%d/\",\n"
         "    \"localizedParameters\": {\n"
         "        \"defaultLanguage\": \"en-US\",\n"
         "        \"en-US\": {\n"
-        "            \"titleName\": \"App Dumper\"\n"
+        "            \"titleName\": \"%s\"\n"
         "        }\n"
         "    }\n"
-        "}\n", port);
+        "}\n", whb_app()->tile_title_id, port, whb_app()->short_name);
     return (n > 0 && (size_t)n < out_size) ? n : -1;
 }
 
@@ -133,17 +146,21 @@ static int file_equals(const char *path, const void *data, size_t size)
 
 int tile_exists(void)
 {
+    tile_paths_t tp;
     struct stat st;
-    return stat(TILE_PARAM, &st) == 0;
+    return tile_paths(&tp) == 0 && stat(tp.param, &st) == 0;
 }
 
 int tile_is_current(int port)
 {
+    tile_paths_t tp;
+    if (tile_paths(&tp) != 0) return 0;
+
     char json[512];
     int len = build_param_json(port, json, sizeof(json));
     if (len < 0) return 0;
-    return file_equals(TILE_PARAM, json, (size_t)len) &&
-           file_equals(TILE_ICON, tile_icon0_png, tile_icon0_png_len);
+    return file_equals(tp.param, json, (size_t)len) &&
+           file_equals(tp.icon, whb_app()->icon_png, whb_app()->icon_len);
 }
 
 /* Most hosts resolve a bare library name, some only the full path. */
@@ -222,7 +239,7 @@ static int register_tile(install_req_t *req)
     }
 
     const char *how = inst_title_dir ? "AppInstallTitleDir" : "AppInstallAll";
-    rc = inst_title_dir ? inst_title_dir(TILE_TITLE_ID, "/user/app/", NULL)
+    rc = inst_title_dir ? inst_title_dir(whb_app()->tile_title_id, "/user/app/", NULL)
                         : inst_all(NULL);
 
     if (inst_terminate) inst_terminate();
@@ -242,6 +259,12 @@ static void *install_thread(void *arg)
     install_req_t *req = arg;
     req->rc = -1;
 
+    tile_paths_t tp;
+    if (tile_paths(&tp) != 0) {
+        set_err(req, "this payload has no home-screen shortcut");
+        return NULL;
+    }
+
     char json[512];
     int len = build_param_json(req->port, json, sizeof(json));
     if (len < 0) {
@@ -249,15 +272,15 @@ static void *install_thread(void *arg)
         return NULL;
     }
 
-    if ((mkdir(TILE_DIR, 0755) && errno != EEXIST) ||
-        (mkdir(TILE_SCE_SYS, 0755) && errno != EEXIST)) {
+    if ((mkdir(tp.dir, 0755) && errno != EEXIST) ||
+        (mkdir(tp.sce_sys, 0755) && errno != EEXIST)) {
         write_log(g_log_path, "Tile: mkdir under /user/app failed (errno %d)", errno);
-        set_err(req, "could not create %s", TILE_DIR);
+        set_err(req, "could not create %s", tp.dir);
         return NULL;
     }
 
-    if (write_file(TILE_PARAM, json, (size_t)len) ||
-        write_file(TILE_ICON, tile_icon0_png, tile_icon0_png_len)) {
+    if (write_file(tp.param, json, (size_t)len) ||
+        write_file(tp.icon, whb_app()->icon_png, whb_app()->icon_len)) {
         write_log(g_log_path, "Tile: could not write the tile files (errno %d)", errno);
         set_err(req, "could not write the shortcut files");
         return NULL;
@@ -266,8 +289,8 @@ static void *install_thread(void *arg)
     req->rc = register_tile(req);
     if (req->rc == 0) {
         write_log(g_log_path, "Tile: home-screen shortcut installed (%s, port %d)",
-                  TILE_TITLE_ID, req->port);
-        printf_notification("App Dumper: home-screen shortcut ready");
+                  whb_app()->tile_title_id, req->port);
+        printf_notification("%s: home-screen shortcut ready", whb_app()->short_name);
     }
     return NULL;
 }

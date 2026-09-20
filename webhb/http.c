@@ -35,7 +35,7 @@ along with this program; see the file COPYING. If not, see
 #include <ifaddrs.h>
 #include <net/if.h>
 
-#include "webhb_http.h"
+#include "webhb.h"
 #include "utils.h"
 
 #define MAX_CONNECTIONS   8
@@ -559,7 +559,7 @@ int http_server_run(int port)
 
     char ip[64];
     local_ipv4(ip, sizeof(ip));
-    printf_notification("PS5 App Dumper: open http://%s:%d", ip, port);
+    printf_notification("%s: open http://%s:%d", whb_app()->name, ip, port);
     write_log(g_log_path, "Web UI listening on http://%s:%d", ip, port);
 
     if (g_on_listening) g_on_listening(port);
@@ -630,7 +630,7 @@ int http_server_run(int port)
 
     /* If this shows up without the user asking for a shutdown, something
        outside the payload took the socket away. */
-    printf_notification("PS5 App Dumper: web UI stopped");
+    printf_notification("%s: web UI stopped", whb_app()->name);
     write_log(g_log_path, "Web UI: server loop ended");
     return 0;
 }

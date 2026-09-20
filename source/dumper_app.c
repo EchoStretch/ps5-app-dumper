@@ -1,0 +1,54 @@
+/* Copyright (C) 2025 EchoStretch
+
+This program is free software; you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the
+Free Software Foundation; either version 3, or (at your option) any
+later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; see the file COPYING. If not, see
+<http://www.gnu.org/licenses/>.  */
+
+/* The dumper, as the web-homebrew core gets to know it. */
+
+#include "routes.h"
+#include "web_assets.h"
+#include "dump_job.h"
+#include "dump_queue.h"
+#include "version.h"
+
+/* embedded at build time by tools/bin2c.sh (see the Makefile) */
+extern const unsigned char tile_icon0_png[];
+extern const size_t        tile_icon0_png_len;
+
+int dumper_busy(void)
+{
+    return job_is_active() || queue_is_active();
+}
+
+const whb_app_t *dumper_app(void)
+{
+    static whb_app_t app = {
+        .name          = "PS5 App Dumper",
+        .short_name    = "App Dumper",
+        .version       = DUMPER_VERSION,
+        .process_name  = "ps5-app-dumper.elf",
+        .data_dirname  = "ps5-app-dumper",
+        .elf_basename  = "ps5-app-dumper",
+        .tile_title_id = "APDU00001",
+        .default_port  = 8081,   /* 8080 usually belongs to websrv */
+        .busy          = dumper_busy,
+    };
+
+    /* the generated lengths are variables, not constants */
+    app.page     = web_index_html;
+    app.page_len = web_index_html_len;
+    app.icon_png = tile_icon0_png;
+    app.icon_len = tile_icon0_png_len;
+    return &app;
+}

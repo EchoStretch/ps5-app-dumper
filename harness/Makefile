@@ -10,7 +10,7 @@ CC   ?= cc
 
 # the payload's own sources that run unchanged on the host
 REAL := $(wildcard $(ROOT)/webhb/*.c) \
-        $(ROOT)/source/routes_platform.c $(ROOT)/source/routes_dumper.c \
+        $(ROOT)/source/routes_platform.c $(ROOT)/source/routes_dumper.c $(ROOT)/source/dumper_app.c \
         $(ROOT)/source/dump_job.c $(ROOT)/source/dump_queue.c $(ROOT)/source/dump_store.c \
         $(ROOT)/source/utils.c $(ROOT)/source/fs_browse.c $(ROOT)/source/self_store.c
 

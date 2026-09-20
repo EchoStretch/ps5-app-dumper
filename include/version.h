@@ -17,11 +17,8 @@ along with this program; see the file COPYING. If not, see
 #ifndef VERSION_H
 #define VERSION_H
 
+/* Also ends up in the name a copy of this payload is stored under, see
+   whb_elf_name(). */
 #define DUMPER_VERSION "1.12"
-
-/* The name a copy of this payload is stored under. Payload managers show no
-   version of their own for an uploaded file - pldmgr reads it out of the
-   file name ("_v1.12"), so the name has to carry it. */
-#define DUMPER_ELF_NAME "ps5-app-dumper_v" DUMPER_VERSION ".elf"
 
 #endif /* VERSION_H */

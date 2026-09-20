@@ -28,7 +28,7 @@ along with this program; see the file COPYING. If not, see
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#include "single_instance.h"
+#include "webhb.h"
 #include "utils.h"
 
 /* http_server_run() walks this many ports up from the configured one. */
@@ -40,7 +40,7 @@ void instance_claim_name(void)
 {
     /* Sent over elfldr the process is called after the loader's generic
        "payload.elf". Best-effort: harmless if the syscall fails. */
-    syscall(SYS_thr_set_name, -1, PAYLOAD_PROCESS_NAME);
+    syscall(SYS_thr_set_name, -1, whb_app()->process_name);
 }
 
 /* ------------------------------------------------------------------ */
@@ -80,7 +80,9 @@ static int local_request(int port, const char *request, char *out, size_t out_si
 }
 
 /* 1 busy, 0 idle, -1 when the port does not belong to a copy of this
-   payload. */
+   payload. A copy is still told by the shape of the dumper's status answer
+   ("job"): copies built before there was a core answer nothing else. That
+   goes once /api/whb/status names the app. */
 static int instance_state(int port)
 {
     /* the status answer carries the log, which can be long */
@@ -124,7 +126,7 @@ static int kill_namesakes(void)
             p += ki->ki_structsize;
 
             if (ki->ki_pid == self) continue;
-            if (strncmp(ki->ki_comm, PAYLOAD_PROCESS_NAME, sizeof(ki->ki_comm)) != 0) continue;
+            if (strncmp(ki->ki_comm, whb_app()->process_name, sizeof(ki->ki_comm)) != 0) continue;
 
             write_log(g_log_path, "Ending the previous instance, pid %d", (int)ki->ki_pid);
             if (kill(ki->ki_pid, SIGKILL) == 0) found++;
