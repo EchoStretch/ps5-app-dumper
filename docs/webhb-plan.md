@@ -1,5 +1,11 @@
 # webhb - carving the web-homebrew core out of the dumper
 
+> **Where this ended (2026-09-20):** webhb is a repository of its own (release 0.1.0), with the klog
+> viewer as its example, a project template and `docs/NOTES.md`. This repository no longer carries a
+> copy: `webhb.lock` pins the release and `tools/get-webhb.sh` installs it into `ext/webhb/`. What
+> follows is the record of how it was carved out, step by step; paths like `webhb/http.c` now mean
+> `ext/webhb/webhb/http.c`.
+
 Status: steps 1 to 6 are done (server split, `whb_app_t` and the four modules moved, harness in the repo, log / notifications / storage out of `utils.c`, the client kit, the config store, `whb_start()` / `whb_serve()`); `webhb/` no longer includes a single header of the dumper, and no route that is not about dumping is left outside it. The second payload (step 7) exists as well: `examples/klogview/`, a kernel log viewer, running on the console next to the dumper. What is left are the loose ends listed with the steps and the decisions at the end. Working name `webhb`; everything stays in
 this repository until a second payload has proven the interface.
 

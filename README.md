@@ -89,6 +89,8 @@ make
 
 You should get an ELF binary such as `ps5-app-dumper.elf`.
 
+The web console stands on **webhb**, the web-homebrew core that grew in this repository and is a project of its own now. It is not copied in here: `webhb.lock` pins a release (version, download URL, sha256), and the first `make` installs exactly that archive into `ext/webhb/` (`tools/get-webhb.sh`). With a webhb checkout next to this repository (`../webhb`) and nothing installed, the checkout is used instead; `make WEBHB_DIR=<path>` points anywhere else, `WEBHB_TARBALL=<file> tools/get-webhb.sh` installs from a local archive.
+
 ---
 
 ### Working on it without a console

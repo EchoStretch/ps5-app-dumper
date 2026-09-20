@@ -1,11 +1,13 @@
 PS5_HOST ?= ps5
 PS5_PORT ?= 9021
 
-# The dumper is a web homebrew like any other: the page with the client kit
-# inlined, the build stamp, the icon and the two-stage build that lets the web
-# UI store the payload in pldmgr are webhb's (see webhb/webhb.mk and
-# docs/webhb-plan.md). What is written here is what the dumper is made of.
-WHB_ROOT    := .
+# The dumper is a web homebrew like any other: the web server, the page kit,
+# the build stamp, the icon and the two-stage build that lets the web UI store
+# the payload in pldmgr are webhb's - a project of its own, installed as the
+# release webhb.lock pins (tools/webhb-dir.mk says where it is looked for).
+# What is written here is what the dumper is made of.
+include tools/webhb-dir.mk
+WHB_ROOT    := $(WEBHB_DIR)
 WHB_APP     := ps5-app-dumper
 WHB_PAGE    := web/index.html
 WHB_ICON    := assets/tile/icon0.png
@@ -16,7 +18,7 @@ WHB_SOURCES := $(filter-out source/web_assets.c source/tile_assets.c source/self
 # the dumper's pretend console is harness/, which fakes titles and drives too
 WHB_NO_SIM  := 1
 
-include webhb/webhb.mk
+include $(WHB_ROOT)/webhb/webhb.mk
 
 clean: clean-legacy
 clean-legacy:

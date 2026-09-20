@@ -3,6 +3,9 @@
 # no PS5 SDK. See README.md.
 
 ROOT := ..
+REPO := ..
+include $(ROOT)/tools/webhb-dir.mk
+WEBHB := $(WEBHB_DIR)
 OUT  := out
 RUN  := $(OUT)/run
 PORT ?= 8099
@@ -10,7 +13,7 @@ CC   ?= cc
 
 # the payload's own sources that run unchanged on the host; the tile, the
 # process list, the start-up and the drives are PS5 business and faked in mock_console.c
-REAL := $(filter-out %/tile.c %/instance.c %/drives.c %/start.c,$(wildcard $(ROOT)/webhb/*.c)) \
+REAL := $(filter-out %/tile.c %/instance.c %/drives.c %/start.c,$(shell ls $(WEBHB)/webhb/*.c)) \
         $(ROOT)/source/routes_dumper.c $(ROOT)/source/dumper_app.c $(ROOT)/source/dumper_config.c \
         $(ROOT)/source/dump_job.c $(ROOT)/source/dump_queue.c $(ROOT)/source/dump_store.c $(ROOT)/source/dump_library.c \
         $(ROOT)/source/utils.c
@@ -19,21 +22,21 @@ GEN  := $(OUT)/web_assets.c $(OUT)/icon_assets.c
 
 # short timeouts keep a queue run watchable; the stored-file check is pointed
 # at a folder the fake Payload Manager really writes to
-CFLAGS := -O1 -Wall -pthread -I$(ROOT)/include -I$(ROOT)/webhb/include \
+CFLAGS := -O1 -Wall -pthread -I$(ROOT)/include -I$(WEBHB)/webhb/include \
           -DMOUNT_TIMEOUT=15 -DINTERNAL_ROOT='"data"' -DSTORE_ROOT='"$(abspath $(RUN))/pstore/"'
 
 .PHONY: sim run pldmgr snapshot render styles clean
 
 sim: $(OUT)/sim
 
-$(OUT)/web_assets.c: $(ROOT)/web/index.html $(wildcard $(ROOT)/webhb/web/*) $(ROOT)/tools/inline.sh $(ROOT)/tools/bin2c.sh
+$(OUT)/web_assets.c: $(ROOT)/web/index.html $(shell ls $(WEBHB)/webhb/web/*) $(WEBHB)/tools/inline.sh $(WEBHB)/tools/bin2c.sh
 	@mkdir -p $(OUT)
-	$(ROOT)/tools/inline.sh $< $(ROOT)/webhb/web > $(OUT)/index.html
-	$(ROOT)/tools/bin2c.sh $(OUT)/index.html web_index_html > $@
+	$(WEBHB)/tools/inline.sh $< $(WEBHB)/webhb/web > $(OUT)/index.html
+	$(WEBHB)/tools/bin2c.sh $(OUT)/index.html web_index_html > $@
 
-$(OUT)/icon_assets.c: $(ROOT)/assets/tile/icon0.png $(ROOT)/tools/bin2c.sh
+$(OUT)/icon_assets.c: $(ROOT)/assets/tile/icon0.png $(WEBHB)/tools/bin2c.sh
 	@mkdir -p $(OUT)
-	$(ROOT)/tools/bin2c.sh $< app_icon_png > $@
+	$(WEBHB)/tools/bin2c.sh $< app_icon_png > $@
 
 $(OUT)/sim: mock_console.c self_blob.c $(REAL) $(GEN)
 	$(CC) $(CFLAGS) -o $@ $^

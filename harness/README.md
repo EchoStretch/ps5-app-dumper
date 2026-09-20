@@ -15,7 +15,7 @@ make -C harness styles      # every element's computed style, view by view -> ou
 
 What is real and what is not: `mock_console.c` fakes the mounted games, the
 library, the launch services, the two dumpers, notifications and the tile.
-Everything else - `webhb/` (bar `tile.c` and `instance.c`), the routes,
+Everything else - webhb's core (bar what only makes sense on the console), the routes,
 `dump_job`, `dump_queue`, `dump_store`, `utils` - is the payload's own code. The pretend
 console is awkward on purpose; its header comment lists the five titles and
 what each one is there to provoke.

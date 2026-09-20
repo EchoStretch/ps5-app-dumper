@@ -1,0 +1,7 @@
+# The webhb release the web console is built on. tools/get-webhb.sh installs
+# it into ext/webhb on the first make and checks it against the sha256.
+# Set url to where the release's archive can be downloaded - until then a
+# checkout next to this repository (../webhb) is used, or WEBHB_TARBALL=<file>.
+version=0.1.0
+url=
+sha256=cb87abadd88d67a213fccfc1ac58f81c3aed49d44a06483aa7a5a86cdc20fef5
