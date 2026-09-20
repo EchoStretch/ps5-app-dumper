@@ -155,7 +155,7 @@ socat -t 99999999 - TCP:<ip>:9021 < ps5-app-dumper.elf
 
 *Menu > Dumps* lists every dump the payload can find - on each drive and on the console, in the configured folders or anywhere else within a few levels of the root - with its size and state. **Move** takes one to another folder: within a drive at once, between a drive and the console by copying it, comparing the size, and only then removing the original; a stop or an incomplete copy removes the copy instead and leaves the dump where it was. Nothing else runs meanwhile. Dumps on the console are only listed for devices that have entered the access code.
 
-The list can be shown as cards with each dump's own picture, or as a plain list.
+The list can be shown as cards with each dump's own picture, or as a plain list. **Delete** removes a dump for good after a dialog that names it, its folder and its size; like Move it only ever touches a folder that is a dump (our info file next to it, or `sce_sys` / `eboot.bin` inside), never while something is running, and never a folder a game is being played from.
 
 > ShadowMount looks for games on its scan paths (`homebrew` among them, searched in depth) and redirects an installed title to a dump it finds there - the title then shows **MOUNT**, runs from the dump instead of its package, and cannot be dumped again. Moving the dump out of its reach is the way out; the payload then removes the link that points at the old place. While ShadowMount is running it links whatever it still finds anew, so the Dumps page says when it is and offers **Stop ShadowMount** (two presses). That only ends the process - start it again the way you usually do.
 

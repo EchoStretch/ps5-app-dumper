@@ -109,8 +109,8 @@ static void handle_status(int fd, const params_t *q)
     move_status_t mv;
     dumplib_move_status(&mv);
     static const char *const move_names[] = { "idle", "running", "done", "failed", "aborted" };
-    sb_printf(&sb, ",\"move\":{\"state\":\"%s\",\"totalBytes\":%llu,\"copiedBytes\":%llu,\"folder\":",
-              move_names[mv.state], (unsigned long long)mv.total_bytes, (unsigned long long)mv.copied_bytes);
+    sb_printf(&sb, ",\"move\":{\"state\":\"%s\",\"deleting\":%s,\"totalBytes\":%llu,\"copiedBytes\":%llu,\"folder\":",
+              move_names[mv.state], mv.deleting ? "true" : "false", (unsigned long long)mv.total_bytes, (unsigned long long)mv.copied_bytes);
     sb_json_str(&sb, mv.folder);
     sb_puts(&sb, ",\"from\":");    sb_json_str(&sb, mv.from);
     sb_puts(&sb, ",\"to\":");      sb_json_str(&sb, mv.to);
@@ -668,6 +668,17 @@ static void handle_dump_move(int fd, const params_t *p)
                                                 : "{\"started\":true,\"copying\":false}");
 }
 
+static void handle_dump_remove(int fd, const params_t *p)
+{
+    char err[256] = {0};
+    if (dumplib_delete(param_get(p, "mount", NULL), param_get(p, "dir", ""), param_get(p, "folder", NULL),
+                       param_get(p, "confirm", NULL), err, sizeof(err)) != 0) {
+        send_error(fd, 409, err[0] ? err : "could not delete the dump");
+        return;
+    }
+    send_json(fd, 200, "{\"started\":true}");
+}
+
 static void handle_dump_move_cancel(int fd, const params_t *p)
 {
     (void)p;
@@ -766,6 +777,7 @@ void routes_dumper_init(void)
     http_route("POST", "/api/shadowmount/stop", handle_shadowmount_stop);
     http_route("POST", "/api/dumps/unlink",   handle_dump_unlink);
     http_route("POST", "/api/dumps/move",     handle_dump_move);
+    http_route("POST", "/api/dumps/remove",   handle_dump_remove);
     http_route("POST", "/api/dumps/move/cancel", handle_dump_move_cancel);
     http_route("POST", "/api/dumps/move/clear",  handle_dump_move_clear);
     http_route("POST", "/api/queue/start",    handle_queue_start);

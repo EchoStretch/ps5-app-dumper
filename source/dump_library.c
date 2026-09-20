@@ -390,6 +390,90 @@ int dumplib_move(const char *mount, const char *dir, const char *folder,
     #undef FAIL
 }
 
+/* ------------------------------------------------------------------ */
+/*  Deleting one                                                       */
+/* ------------------------------------------------------------------ */
+
+static void *delete_thread(void *arg)
+{
+    move_req_t *req = arg;
+
+    int left = dump_remove_tree(req->src);
+    if (left == 0) {
+        unlink(req->src_info);
+        drop_stale_link(req->src);
+        move_finish(MOVE_DONE, "%s was deleted", g_move.folder);
+    } else {
+        move_finish(MOVE_FAILED, "%s could not be deleted completely - look at what is left in %s",
+                    g_move.folder, g_move.from);
+    }
+
+    free(req);
+    return NULL;
+}
+
+int dumplib_delete(const char *mount, const char *dir, const char *folder,
+                   const char *confirm, char *err, size_t err_size)
+{
+    #define FAIL(...) do { if (err && err_size) snprintf(err, err_size, __VA_ARGS__); return -1; } while (0)
+
+    if (!mount || !dir || !folder)                FAIL("missing parameters");
+    if (!dump_folder_name_ok(folder))             FAIL("not a dump folder");
+    if (!confirm || strcmp(confirm, folder) != 0) FAIL("not confirmed");
+    if (!fs_path_is_safe(dir))                    FAIL("invalid folder");
+    if (target_is_known(mount) != 0)              FAIL("unknown drive");
+    if (dumper_busy())                            FAIL("a dump or a move is running");
+
+    char from_dir[256];
+    snprintf(from_dir, sizeof(from_dir), "%s%s%s", mount, dir[0] ? "/" : "", dir);
+
+    move_req_t *req = calloc(1, sizeof(*req));
+    if (!req) FAIL("out of memory");
+    snprintf(req->src, sizeof(req->src), "%s/%s", from_dir, folder);
+    snprintf(req->src_info, sizeof(req->src_info), "%s" DUMP_INFO_SUFFIX, req->src);
+
+    #undef FAIL
+    #define FAIL(...) do { if (err && err_size) snprintf(err, err_size, __VA_ARGS__); free(req); return -1; } while (0)
+
+    if (!dir_exists(req->src))              FAIL("the dump is not there any more");
+    if (!looks_like_dump(from_dir, folder)) FAIL("that folder is not a dump - it is left alone");
+
+    char id[16];
+    snprintf(id, sizeof(id), "%.9s", folder);
+    library_entry_t title;
+    if (library_find(id, &title) == 0 && !strcmp(title.mounted_from, req->src) && title_runs_from_folder(id))
+        FAIL("%s is running from this folder right now - close the game first", title.title[0] ? title.title : id);
+
+    pthread_mutex_lock(&g_mtx);
+    memset(&g_move, 0, sizeof(g_move));
+    g_move.state = MOVE_RUNNING;
+    g_move.deleting = 1;
+    snprintf(g_move.folder, sizeof(g_move.folder), "%s", folder);
+    snprintf(g_move.from, sizeof(g_move.from), "%s", from_dir);
+    snprintf(g_move.message, sizeof(g_move.message), "deleting");
+    pthread_mutex_unlock(&g_mtx);
+
+    write_log(g_log_path, "Delete: removing %s - asked for and confirmed in the web UI", req->src);
+
+    pthread_t tid;
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    pthread_attr_setstacksize(&attr, 1024 * 1024);
+    int started = pthread_create(&tid, &attr, delete_thread, req);
+    pthread_attr_destroy(&attr);
+
+    if (started != 0) {
+        pthread_mutex_lock(&g_mtx);
+        g_move.state = MOVE_FAILED;
+        pthread_mutex_unlock(&g_mtx);
+        FAIL("could not start deleting");
+    }
+    return 0;
+
+    #undef FAIL
+}
+
 int dumplib_move_active(void)
 {
     pthread_mutex_lock(&g_mtx);
@@ -400,7 +484,12 @@ int dumplib_move_active(void)
 
 void dumplib_move_cancel(void)
 {
-    if (dumplib_move_active()) request_abort();
+    /* a delete is not stopped half way: what it leaves would be neither a
+       dump nor gone */
+    pthread_mutex_lock(&g_mtx);
+    int stoppable = g_move.state == MOVE_RUNNING && !g_move.deleting;
+    pthread_mutex_unlock(&g_mtx);
+    if (stoppable) request_abort();
 }
 
 void dumplib_move_status(move_status_t *out)

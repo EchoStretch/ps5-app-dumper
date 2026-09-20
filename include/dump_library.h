@@ -54,6 +54,7 @@ typedef enum { MOVE_IDLE = 0, MOVE_RUNNING, MOVE_DONE, MOVE_FAILED, MOVE_ABORTED
 
 typedef struct {
     move_state_t state;
+    int      deleting;      /* this "move" takes the dump nowhere: it is being deleted */
     char     folder[64];
     char     from[256];     /* the folder that held it  */
     char     to[256];       /* the folder that gets it  */
@@ -68,6 +69,12 @@ typedef struct {
    Returns 0 when done or started, -1 with a reason in err. */
 int  dumplib_move(const char *mount, const char *dir, const char *folder,
                   const char *to_mount, const char *to_dir, char *err, size_t err_size);
+/* Deletes <mount>/<dir>/<folder> and its info file, in the background - a
+   dump is tens of thousands of files. Same checks as a move's source; confirm
+   has to repeat the folder's name, so that no stray request deletes anything.
+   Reported through the move status, with deleting set. */
+int  dumplib_delete(const char *mount, const char *dir, const char *folder,
+                    const char *confirm, char *err, size_t err_size);
 int  dumplib_move_active(void);
 void dumplib_move_cancel(void);
 void dumplib_move_status(move_status_t *out);

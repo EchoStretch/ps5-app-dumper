@@ -165,6 +165,9 @@ h1 span{color:var(--accent)}
 .smbanner .sm-txt{display:block;font-size:12.5px;line-height:1.5;color:var(--ink-dim)}
 .smbanner .mini{margin-top:10px}
 .smbanner .mini.arm{border-color:var(--red);color:var(--red)}
+.act.danger{background:rgba(255,77,94,.16);border:1px solid rgba(255,77,94,.6);color:#ff8d98}
+.act.danger:hover{background:rgba(255,77,94,.28)}
+.mini.del{color:#ff8d98;border-color:rgba(255,77,94,.4)}
 .picker-note{flex:none;padding:10px 16px;border-bottom:1px solid var(--line-soft);font-size:12.5px;line-height:1.45;
   color:var(--ink-dim);background:rgba(52,211,153,.07)}
 .picker-drives{padding:9px 16px 0;flex:none}
@@ -1051,6 +1054,27 @@ footer{
       <span class="spacer"></span>
       <button type="button" class="act ghost" id="pk-cancel">Cancel</button>
       <button type="button" class="act go" id="pk-use">Use this folder</button>
+    </div>
+  </div>
+</div>
+
+<div class="picker" id="delconfirm" hidden>
+  <div class="picker-box" role="alertdialog" aria-modal="true" aria-label="Delete this dump" style="max-width:460px">
+    <div class="picker-head">
+      <span>Delete this dump?</span>
+      <span class="spacer"></span>
+      <button type="button" class="ghost act" id="del-close" style="padding:5px 11px;font-size:11px;letter-spacing:.1em">Close</button>
+    </div>
+    <div class="picker-path" style="white-space:normal;line-height:1.55">
+      <b id="del-title" style="color:var(--ink);font-family:var(--display);font-size:15px"></b><br>
+      <span id="del-path"></span><br>
+      <span id="del-size"></span>
+    </div>
+    <div class="picker-note" id="del-note" style="background:rgba(255,77,94,.08)">The folder and everything in it is removed from the drive for good. There is no bin to get it back from.</div>
+    <div class="picker-foot">
+      <span class="spacer"></span>
+      <button type="button" class="act ghost" id="del-cancel">Keep it</button>
+      <button type="button" class="act danger" id="del-go">Delete for good</button>
     </div>
   </div>
 </div>
@@ -2965,13 +2989,15 @@ function renderDumps(){
                 '<span class="where">' + esc(dumpPath(d)) + '</span>' +
                 '<span class="foot"><span class="size">' + (d.bytes ? bytes(d.bytes) : "") + '</span>' +
                 (d.inUse ? '<button type="button" class="mini" data-unlink="' + at + '" style="margin-left:auto">Unlink</button>' : "") +
-                '<button type="button" class="mini" data-move="' + at + '"' + (d.inUse ? ' style="margin-left:6px"' : "") + '>Move</button></span></span></div>';
+                '<button type="button" class="mini" data-move="' + at + '"' + (d.inUse ? ' style="margin-left:6px"' : "") + '>Move</button></span>' +
+                '<span class="foot" style="margin-top:6px"><button type="button" class="mini del" data-del="' + at + '">Delete</button></span></span></div>';
       } else {
         html += '<div class="dumprow"><span class="meta"><span class="name">' + esc(d.title) + '</span>' +
                 '<span class="where">' + dumpTags(d) + esc(dumpPath(d)) + '</span></span>' +
                 '<span class="size">' + (d.bytes ? bytes(d.bytes) : "") + '</span>' +
                 (d.inUse ? '<button type="button" class="mini" data-unlink="' + at + '" style="margin-right:6px">Unlink</button>' : "") +
-                '<button type="button" class="mini" data-move="' + at + '">Move</button></div>';
+                '<button type="button" class="mini" data-move="' + at + '">Move</button>' +
+                '<button type="button" class="mini del" data-del="' + at + '" style="margin-left:6px">Delete</button></div>';
       }
     });
     html += (cards ? '</div>' : "") + '</div></section>';
@@ -2981,6 +3007,9 @@ function renderDumps(){
   $("dumplist").innerHTML = html;
   Array.prototype.forEach.call($("dumplist").querySelectorAll("[data-move]"), function(b){
     b.addEventListener("click", function(){ openMovePicker(state.dumps[Number(b.getAttribute("data-move"))]); });
+  });
+  Array.prototype.forEach.call($("dumplist").querySelectorAll("[data-del]"), function(b){
+    b.addEventListener("click", function(){ openDelete(state.dumps[Number(b.getAttribute("data-del"))]); });
   });
   /* takes the link off the installed game; the dump stays where it is */
   Array.prototype.forEach.call($("dumplist").querySelectorAll("[data-unlink]"), function(b){
@@ -3003,6 +3032,32 @@ Array.prototype.forEach.call($("dumps-view").querySelectorAll("button"), functio
     renderDumps();
   });
 });
+/* Deleting is for good, so it is asked about in a dialog of its own that
+   names what goes - and the server wants the folder's name repeated. */
+var delTarget = null;
+function openDelete(d){
+  if(state.busy){ toast("A dump or a move is running.", "bad"); return; }
+  if(!d) return;
+  delTarget = d;
+  $("del-title").textContent = d.title;
+  $("del-path").textContent = dumpPath(d);
+  $("del-size").textContent = (d.bytes ? bytes(d.bytes) : "size not known") +
+    (d.state && d.state !== "done" ? " - unfinished" : "") + (d.inUse ? " - an installed game is linked to it; the link goes too" : "");
+  $("delconfirm").hidden = false;
+}
+function closeDelete(){ $("delconfirm").hidden = true; delTarget = null; }
+$("del-close").addEventListener("click", closeDelete);
+$("del-cancel").addEventListener("click", closeDelete);
+$("del-go").addEventListener("click", function(){
+  var d = delTarget;
+  if(!d) return;
+  closeDelete();
+  post("/api/dumps/remove", {mount: d.mount, dir: d.dir, folder: d.folder, confirm: d.folder}).then(function(){
+    toast("Deleting " + d.folder + "…", "ok");
+    pollStatus();
+  }).catch(function(e){ toast(e.message, "bad"); });
+});
+
 function renderMove(m){
   var was = state.move ? state.move.state : "idle";
   state.move = m;
@@ -3011,16 +3066,22 @@ function renderMove(m){
   if(!shown) return;
   var running = m.state === "running";
   var pct = m.totalBytes ? Math.min(100, m.copiedBytes / m.totalBytes * 100) : (running ? 0 : 100);
-  $("move-pct").textContent = running ? pct.toFixed(0) + "%" : m.state;
-  $("move-what").textContent = m.folder + ":  " + m.from + "  →  " + m.to;
+  $("movecard").querySelector("h2").textContent = m.deleting ? "Deleting" : "Moving";
+  $("move-pct").textContent = running ? (m.deleting ? "…" : pct.toFixed(0) + "%") : m.state;
+  $("move-what").textContent = m.deleting ? m.folder + "  in  " + m.from : m.folder + ":  " + m.from + "  →  " + m.to;
+  $("move-bar").hidden = !!m.deleting;
   $("move-bar").firstElementChild.style.width = pct.toFixed(1) + "%";
-  $("move-msg").textContent = running ? bytes(m.copiedBytes) + " of " + bytes(m.totalBytes) : m.message;
-  $("move-stop").hidden = !running;
+  $("move-msg").textContent = running ? (m.deleting ? "removing the files - this can take a while" : bytes(m.copiedBytes) + " of " + bytes(m.totalBytes)) : m.message;
+  $("move-stop").hidden = !running || !!m.deleting;
   $("move-ok").hidden = running;
-  if(was === "running" && !running){
-    toast(m.message, m.state === "done" ? "ok" : "bad");
+  /* A result is acted on once, whether or not "running" was ever seen - a
+     rename or a small delete is over before the next poll. */
+  var result = running ? null : m.state + "|" + m.folder + "|" + m.message;
+  if(result && result !== state.moveResult){
+    if(state.moveResult !== undefined || was === "running") toast(m.message, m.state === "done" ? "ok" : "bad");
     loadDumps(); loadDevices();
   }
+  state.moveResult = result;
 }
 $("dumps-rescan").addEventListener("click", loadDumps);
 /* ending somebody else's payload takes a second press */
