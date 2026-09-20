@@ -76,12 +76,12 @@ void json_config(sb_t *sb, const dumper_config_t *cfg)
         "\"ps4BackportLevel\":%d,\"ps5BackportLevel\":%d,"
         "\"enableElf2fself\":%d,\"enableLogging\":%d,\"split\":%d,"
         "\"enableWebui\":%d,\"webPort\":%d,\"autoStart\":%d,"
-        "\"queueDelay\":%d,\"dumpSubdir\":",
+        "\"queueDelay\":%d,\"requireCode\":%d,\"dumpSubdir\":",
         cfg->enable_decrypter, cfg->enable_backport,
         cfg->ps4_backport_level, cfg->ps5_backport_level,
         cfg->enable_elf2fself, cfg->enable_logging, cfg->split,
         cfg->enable_webui, cfg->web_port, cfg->auto_start,
-        cfg->queue_delay);
+        cfg->queue_delay, cfg->require_code);
     sb_json_str(sb, cfg->dump_subdir);
     sb_puts(sb, "}");
 }
@@ -117,6 +117,17 @@ static void handle_config_post(int fd, const params_t *p)
     cfg.queue_delay        = clamp(param_get_int(p, "queueDelay", cfg.queue_delay),
                                    QUEUE_SETTLE_MIN, QUEUE_SETTLE_MAX);
 
+    /* Whether other devices need the code is for the console's own browser to
+       say: a phone that got in must not be able to leave the door open. */
+    if (param_get(p, "requireCode", NULL)) {
+        if (!http_peer_is_local(fd)) {
+            pthread_mutex_unlock(&g_cfg_mtx);
+            send_error(fd, 403, "this can only be changed in the console's own browser");
+            return;
+        }
+        cfg.require_code = param_get_int(p, "requireCode", cfg.require_code) ? 1 : 0;
+    }
+
     const char *subdir = param_get(p, "dumpSubdir", NULL);
     if (subdir) {
         /* a destination folder must stay below the mount point */
@@ -132,6 +143,7 @@ static void handle_config_post(int fd, const params_t *p)
     g_cfg = cfg;
     g_enable_logging = cfg.enable_logging;
     g_split_mode = cfg.split;
+    whb_access_init(cfg.access_code, cfg.access_token, cfg.require_code);
 
     int saved = config_save(&cfg);
     g_cfg_unsaved = (saved == 0) ? 0 : 1;

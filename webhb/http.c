@@ -209,6 +209,7 @@ static const char *status_text(int code)
         case 200: return "OK";
         case 400: return "Bad Request";
         case 401: return "Unauthorized";
+        case 403: return "Forbidden";
         case 429: return "Too Many Requests";
         case 404: return "Not Found";
         case 409: return "Conflict";

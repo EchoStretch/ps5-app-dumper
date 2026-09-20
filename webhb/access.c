@@ -147,13 +147,14 @@ void whb_access_notify(const char *ip, int port)
    could change it anyway. */
 static void handle_access(int fd, const params_t *p)
 {
-    int trusted  = http_peer_is_local(fd) || !whb_access_required();
+    int local    = http_peer_is_local(fd);
+    int trusted  = local || !whb_access_required();
     int unlocked = trusted || whb_access_token_ok(param_get(p, "token", NULL));
 
     sb_t sb;
     sb_init(&sb);
-    sb_printf(&sb, "{\"required\":%s,\"trusted\":%s,\"unlocked\":%s",
-              whb_access_required() ? "true" : "false",
+    sb_printf(&sb, "{\"required\":%s,\"local\":%s,\"trusted\":%s,\"unlocked\":%s",
+              whb_access_required() ? "true" : "false", local ? "true" : "false",
               trusted ? "true" : "false", unlocked ? "true" : "false");
     if (unlocked && whb_access_required()) {
         char code[CODE_LEN + 1];
