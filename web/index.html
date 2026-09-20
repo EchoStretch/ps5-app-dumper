@@ -122,6 +122,7 @@ h1 span{color:var(--accent)}
 .bars b + b{margin-top:3px}
 /* the settings page: one column of cards, spaced by margins (no flex gap needed) */
 .page{max-width:760px;margin:0 auto}
+#view-dumps{max-width:1080px}
 .page .card{margin-bottom:18px}
 .pagehead{display:flex;align-items:center;margin:0 0 16px}
 .pagehead h2{margin:0 0 0 14px;font-family:var(--mono);font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-dim)}
@@ -141,10 +142,31 @@ h1 span{color:var(--accent)}
 .dumprow .where{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-faint);margin-top:3px;word-break:break-all}
 .dumprow .size{font-family:var(--mono);font-size:11.5px;color:var(--ink-dim);margin:0 12px;white-space:nowrap;flex:none}
 .dumprow .mini{flex:none}
+/* dumps as cards: a grid, whose gap the console's browser does honour */
+.dumpgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));grid-gap:12px;gap:12px}
+.dumpcard{border:1px solid var(--line-soft);border-radius:10px;background:var(--panel-2);overflow:hidden;min-width:0}
+.dumpcard .pic{display:block;width:100%;padding-top:100%;position:relative;background:#0a0e14}
+.dumpcard .pic img,.dumpcard .pic .noimg{position:absolute;top:0;left:0;width:100%;height:100%}
+.dumpcard .pic img{object-fit:cover}
+.dumpcard .pic .noimg{display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:13px;
+  letter-spacing:.12em;color:var(--ink-faint)}
+.dumpcard .txt{display:block;padding:10px 11px 11px}
+.dumpcard .name{display:block;font-size:14px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dumpcard .tags{display:block;margin-top:6px}
+.dumpcard .where{display:block;font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);margin-top:6px;word-break:break-all;line-height:1.35}
+.dumpcard .foot{display:flex;align-items:center;margin-top:9px}
+.dumpcard .size{font-family:var(--mono);font-size:11px;color:var(--ink-dim)}
+.dumpcard .mini{margin-left:auto}
 .move-what{font-size:13.5px;margin-bottom:10px;word-break:break-all}
 .move-foot{display:flex;align-items:center;margin-top:10px}
 .move-foot .spacer{margin-left:auto}
 .move-foot .mini{margin-left:8px}
+.smbanner{display:block;margin:0 0 18px;background:rgba(52,211,153,.08);border-color:rgba(52,211,153,.35)}
+.smbanner .sm-txt{display:block;font-size:12.5px;line-height:1.5;color:var(--ink-dim)}
+.smbanner .mini{margin-top:10px}
+.smbanner .mini.arm{border-color:var(--red);color:var(--red)}
+.picker-note{flex:none;padding:10px 16px;border-bottom:1px solid var(--line-soft);font-size:12.5px;line-height:1.45;
+  color:var(--ink-dim);background:rgba(52,211,153,.07)}
 .picker-drives{padding:9px 16px 0;flex:none}
 .picker-drives button{margin:0 6px 6px 0}
 .picker-drives button[aria-pressed=true]{border-color:var(--accent);color:var(--ink)}
@@ -710,7 +732,7 @@ footer{
         <span class="live on" id="conn"><i class="dot"></i><span id="conntext">Connected</span></span>
         <button type="button" class="live menu" id="menubtn" aria-label="Menu" aria-expanded="false"><i class="bars" aria-hidden="true"><b></b><b></b><b></b></i><span>Menu</span></button>
         <div class="menu-pop" id="menupop" hidden>
-          <button type="button" data-go="">Dump console</button>
+          <button type="button" data-go="">Home</button>
           <button type="button" data-go="#dumps">Dumps</button>
           <button type="button" data-go="#settings">Settings</button>
         </div>
@@ -900,7 +922,18 @@ footer{
       <button type="button" class="mini" data-back="1">&larr; Back</button>
       <h2>Dumps</h2>
       <span class="spacer"></span>
-      <button type="button" class="mini" id="dumps-rescan">Rescan</button>
+      <div class="seg" id="dumps-view" role="group" aria-label="How dumps are shown">
+        <button type="button" data-v="cards">Cards</button>
+        <button type="button" data-v="list">List</button>
+      </div>
+      <button type="button" class="mini" id="dumps-rescan" style="margin-left:8px">Rescan</button>
+    </div>
+
+    <div class="banner smbanner" id="smbanner" hidden>
+      <span class="sm-txt"><b>ShadowMount is running.</b> It links every dump it finds to the installed game of the same id - the game then
+        starts from the dump (MOUNT) and cannot be dumped again, and a dump you move within its reach is linked anew. Stop it to keep
+        what you move unlinked; start it again whenever you like, from wherever you usually do.</span>
+      <button type="button" class="mini" id="sm-stop">Stop ShadowMount</button>
     </div>
 
     <section class="card" id="movecard" hidden>
@@ -1001,6 +1034,7 @@ footer{
       <span class="spacer"></span>
       <button type="button" class="ghost act" id="pk-close" style="padding:5px 11px;font-size:11px;letter-spacing:.1em">Close</button>
     </div>
+    <div class="picker-note" id="pk-note" hidden></div>
     <div class="picker-drives" id="pk-drives" hidden></div>
     <div class="picker-path"><span id="pk-drive"></span><span id="pk-crumb"></span></div>
     <div class="picker-list" id="pk-list"></div>
@@ -2585,6 +2619,12 @@ function openMovePicker(d){
   $("pk-use").textContent = "Move here";
   $("pk-create").textContent = "Create & move";
   $("pk-title").textContent = "Move " + d.folder + " to…";
+  $("pk-note").hidden = !d.inUse;
+  $("pk-note").textContent = d.inUse
+    ? "ShadowMount starts " + d.title + " from this folder. It can be moved while the game is not running; afterwards the game starts " +
+      "from its installed package again - unless ShadowMount finds the dump in its new place and links it anew" +
+      (state.shadowMount ? " (it is running: stop it on the Dumps page first to prevent that)." : ".")
+    : "";
   renderPickerDrives();
   $("picker").hidden = false;
   pkBrowse(d.dir || "");
@@ -2618,6 +2658,7 @@ function closePicker(){
   $("pk-use").textContent = "Use this folder";
   $("pk-create").textContent = "Create & use";
   $("pk-title").textContent = "Choose folder";
+  $("pk-note").hidden = true;
   $("pk-drives").hidden = true;
 }
 
@@ -2873,10 +2914,31 @@ function loadDumps(){
   api("/api/dumps?token=" + encodeURIComponent(accessToken())).then(function(d){
     state.dumps = d.dumps || [];
     state.dumpsConsoleListed = !!d.consoleListed;
+    $("smbanner").hidden = !d.shadowMountRunning;
+    state.shadowMount = !!d.shadowMountRunning;
     renderDumps();
   }).catch(function(e){ $("dumplist").innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; });
 }
+var DUMPVIEW_KEY = "dumps.view";
+state.dumpsView = "cards";
+try { if(localStorage.getItem(DUMPVIEW_KEY) === "list") state.dumpsView = "list"; } catch(e){}
+
+function dumpPath(d){ return d.mount + "/" + (d.dir ? d.dir + "/" : "") + d.folder; }
+function dumpTags(d){
+  return (d.titleId.indexOf("CUSA") === 0 ? '<span class="tag ps4">PS4</span>' : '<span class="tag ps5">PS5</span>') +
+    (d.state && d.state !== "done" ? '<span class="tag cut" title="This dump was not finished">UNFINISHED</span>' : "") +
+    (d.inUse ? mountTag(dumpPath(d)) : "");
+}
+function dumpIcon(d){
+  return "/api/dumps/icon?mount=" + encodeURIComponent(d.mount) + "&dir=" + encodeURIComponent(d.dir) +
+         "&folder=" + encodeURIComponent(d.folder) + (d.internal ? "&token=" + encodeURIComponent(accessToken()) : "");
+}
 function renderDumps(){
+  var cards = state.dumpsView !== "list";
+  Array.prototype.forEach.call($("dumps-view").querySelectorAll("button"), function(b){
+    b.setAttribute("aria-pressed", String(b.getAttribute("data-v") === (cards ? "cards" : "list")));
+  });
+
   var groups = {}, order = [];
   state.dumps.forEach(function(d){
     if(!groups[d.mount]){ groups[d.mount] = []; order.push(d.mount); }
@@ -2887,18 +2949,26 @@ function renderDumps(){
     var list = groups[mount];
     list.sort(function(a, b){ return a.title < b.title ? -1 : a.title > b.title ? 1 : a.folder < b.folder ? -1 : 1; });
     html += '<section class="card"><div class="head"><h2>' + (list[0].internal ? "Console storage" : esc(mount)) +
-            '</h2><span class="num">' + list.length + '</span></div><div class="body">';
+            '</h2><span class="num">' + list.length + '</span></div><div class="body">' + (cards ? '<div class="dumpgrid">' : "");
     list.forEach(function(d){
       var at = state.dumps.indexOf(d);
-      var tags = (d.titleId.indexOf("CUSA") === 0 ? '<span class="tag ps4">PS4</span>' : '<span class="tag ps5">PS5</span>') +
-        (d.state && d.state !== "done" ? '<span class="tag cut" title="This dump was not finished">UNFINISHED</span>' : "") +
-        (d.inUse ? mountTag(d.mount + "/" + (d.dir ? d.dir + "/" : "") + d.folder) : "");
-      html += '<div class="dumprow"><span class="meta"><span class="name">' + esc(d.title) + '</span>' +
-              '<span class="where">' + tags + esc(d.mount + "/" + (d.dir ? d.dir + "/" : "") + d.folder) + '</span></span>' +
-              '<span class="size">' + (d.bytes ? bytes(d.bytes) : "") + '</span>' +
-              '<button type="button" class="mini" data-move="' + at + '">Move</button></div>';
+      if(cards){
+        html += '<div class="dumpcard"><span class="pic">' +
+                (d.hasIcon ? '<img alt="" loading="lazy" src="' + esc(dumpIcon(d)) + '">'
+                           : '<span class="noimg">' + esc(d.titleId) + '</span>') + '</span>' +
+                '<span class="txt"><span class="name" title="' + esc(d.title) + '">' + esc(d.title) + '</span>' +
+                '<span class="tags">' + dumpTags(d) + '</span>' +
+                '<span class="where">' + esc(dumpPath(d)) + '</span>' +
+                '<span class="foot"><span class="size">' + (d.bytes ? bytes(d.bytes) : "") + '</span>' +
+                '<button type="button" class="mini" data-move="' + at + '">Move</button></span></span></div>';
+      } else {
+        html += '<div class="dumprow"><span class="meta"><span class="name">' + esc(d.title) + '</span>' +
+                '<span class="where">' + dumpTags(d) + esc(dumpPath(d)) + '</span></span>' +
+                '<span class="size">' + (d.bytes ? bytes(d.bytes) : "") + '</span>' +
+                '<button type="button" class="mini" data-move="' + at + '">Move</button></div>';
+      }
     });
-    html += '</div></section>';
+    html += (cards ? '</div>' : "") + '</div></section>';
   });
   if(!order.length) html = '<div class="empty-state"><strong>No dumps found</strong>Dumps show up here once there are some, on any drive or on the console.</div>';
   if(!state.dumpsConsoleListed) html += '<p class="hint" style="margin:0 4px 18px">Dumps on the console are listed once this device has entered the code.</p>';
@@ -2907,6 +2977,13 @@ function renderDumps(){
     b.addEventListener("click", function(){ openMovePicker(state.dumps[Number(b.getAttribute("data-move"))]); });
   });
 }
+Array.prototype.forEach.call($("dumps-view").querySelectorAll("button"), function(b){
+  b.addEventListener("click", function(){
+    state.dumpsView = b.getAttribute("data-v");
+    try { localStorage.setItem(DUMPVIEW_KEY, state.dumpsView); } catch(e){}
+    renderDumps();
+  });
+});
 function renderMove(m){
   var was = state.move ? state.move.state : "idle";
   state.move = m;
@@ -2927,6 +3004,24 @@ function renderMove(m){
   }
 }
 $("dumps-rescan").addEventListener("click", loadDumps);
+/* ending somebody else's payload takes a second press */
+var smArm;
+$("sm-stop").addEventListener("click", function(){
+  var b = $("sm-stop");
+  if(!b.classList.contains("arm")){
+    b.classList.add("arm");
+    b.textContent = "Really stop it? Press again";
+    clearTimeout(smArm);
+    smArm = setTimeout(function(){ b.classList.remove("arm"); b.textContent = "Stop ShadowMount"; }, 5000);
+    return;
+  }
+  clearTimeout(smArm);
+  b.classList.remove("arm"); b.textContent = "Stop ShadowMount"; b.disabled = true;
+  post("/api/shadowmount/stop").then(function(){
+    toast("ShadowMount stopped. Moved dumps stay unlinked until it is started again.", "ok");
+    loadDumps();
+  }).catch(function(e){ toast(e.message, "bad"); }).then(function(){ b.disabled = false; });
+});
 $("move-stop").addEventListener("click", function(){ post("/api/dumps/move/cancel").catch(function(e){ toast(e.message, "bad"); }); });
 $("move-ok").addEventListener("click", function(){
   post("/api/dumps/move/clear").then(function(){ renderMove({state: "idle"}); }).catch(function(e){ toast(e.message, "bad"); });

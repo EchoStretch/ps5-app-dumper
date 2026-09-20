@@ -56,6 +56,7 @@ q() {
   q GET /api/dumps; q POST /api/dumps/move "mount=usb0&dir=&folder=homebrew&toMount=usb0&toDir=x"
   q POST /api/dumps/move "mount=usb0&dir=&folder=PPSA01234-app0&toMount=usb0&toDir=../x"
   q POST /api/dumps/move "mount=usb0&dir=&folder=PPSA01234-app0&toMount=usb0&toDir=x"; q POST /api/dumps/move/cancel ""
+  q POST /api/shadowmount/stop ""; q POST /api/shadowmount/stop ""; q GET /api/dumps
   q POST /api/quit ""
 } > "$OUT" 2>&1
 

@@ -37,11 +37,18 @@ typedef struct {
                                info file sits next to it (an older or foreign dump) */
     uint64_t bytes;         /* from the info file, 0 when not known              */
     int      in_use;        /* an installed title is redirected to this folder   */
+    int      has_icon;      /* the dump carries its sce_sys/icon0.png            */
 } dumplib_entry_t;
 
 /* Finds them. with_internal = 0 leaves the console's storage out - its folder
    names are not for everybody on the network. Returns how many. */
 int dumplib_scan(dumplib_entry_t *out, int max, int with_internal);
+
+/* The picture of a dump: <mount>/<dir>/<folder>/sce_sys/icon0.png, checked the
+   way a move checks its source. Returns 0 and the path, -1 when there is none
+   or the folder is not a dump. */
+int dumplib_icon_path(const char *mount, const char *dir, const char *folder,
+                      char *out, size_t out_size);
 
 typedef enum { MOVE_IDLE = 0, MOVE_RUNNING, MOVE_DONE, MOVE_FAILED, MOVE_ABORTED } move_state_t;
 

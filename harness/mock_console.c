@@ -29,6 +29,7 @@
 #include "routes.h"
 #include "ps4_dumper.h"
 #include "ps5_dumper.h"
+#include "shadowmount.h"
 #include "utils.h"
 
 static const char *g_usb;      /* the one "drive", a folder relative to the cwd */
@@ -157,6 +158,13 @@ int library_find(const char *id, library_entry_t *out)
 
 int library_pic_path(const char *id, char *o, size_t n) { (void)id; snprintf(o, n, "%s", g_art); return 0; }
 int library_icon_path(const char *id, char *o, size_t n) { (void)id; if (n) o[0] = 0; return -1; }
+
+/* a pretend ShadowMount that runs until it is told to stop */
+static int g_shadowmount = 4711;
+int shadowmount_pid(void)  { return g_shadowmount; }
+int shadowmount_stop(void) { g_shadowmount = 0; return 0; }
+
+int title_drop_mount_link(const char *id, const char *target) { (void)id; (void)target; return 0; }
 
 /* Bloodborne is still coming off its disc - and refused for that before its
    size is even looked at */

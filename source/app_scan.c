@@ -18,6 +18,7 @@ along with this program; see the file COPYING. If not, see
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
+#include <unistd.h>
 #include <sys/param.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
@@ -743,6 +744,24 @@ int library_scan(library_entry_t *out, int max)
     }
 
     return count;
+}
+
+int title_drop_mount_link(const char *title_id, const char *target)
+{
+    if (!is_title_id(title_id) || !target || !target[0]) return 0;
+
+    for (int r = 0; g_app_roots[r].path; r++) {
+        char now[160], path[320];
+        read_mount_link(g_app_roots[r].path, title_id, now, sizeof(now));
+        if (strcmp(now, target) != 0) continue;
+
+        snprintf(path, sizeof(path), "%s/%s/mount.lnk", g_app_roots[r].path, title_id);
+        if (unlink(path) == 0) {
+            write_log(g_log_path, "Removed %s - it pointed at %s, which has been moved", path, target);
+            return 1;
+        }
+    }
+    return 0;
 }
 
 int title_installed_percent(const char *title_id)

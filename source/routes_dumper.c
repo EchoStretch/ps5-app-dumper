@@ -29,6 +29,7 @@ along with this program; see the file COPYING. If not, see
 #include "dump_queue.h"
 #include "dump_store.h"
 #include "dump_library.h"
+#include "shadowmount.h"
 #include "utils.h"
 
 static void json_job(sb_t *sb, const job_status_t *job)
@@ -574,7 +575,8 @@ static void handle_dumps(int fd, const params_t *p)
 
     sb_t sb;
     sb_init(&sb);
-    sb_printf(&sb, "{\"consoleListed\":%s,\"dumps\":[", with_internal ? "true" : "false");
+    sb_printf(&sb, "{\"consoleListed\":%s,\"shadowMountRunning\":%s,\"dumps\":[",
+              with_internal ? "true" : "false", shadowmount_pid() ? "true" : "false");
     for (int i = 0; i < count; i++) {
         if (i) sb_puts(&sb, ",");
         sb_puts(&sb, "{\"mount\":");   sb_json_str(&sb, list[i].mount);
@@ -583,13 +585,42 @@ static void handle_dumps(int fd, const params_t *p)
         sb_puts(&sb, ",\"titleId\":"); sb_json_str(&sb, list[i].title_id);
         sb_puts(&sb, ",\"title\":");   sb_json_str(&sb, list[i].title[0] ? list[i].title : list[i].title_id);
         sb_puts(&sb, ",\"state\":");   sb_json_str(&sb, list[i].state);
-        sb_printf(&sb, ",\"internal\":%s,\"inUse\":%s,\"bytes\":%llu}",
+        sb_printf(&sb, ",\"internal\":%s,\"inUse\":%s,\"hasIcon\":%s,\"bytes\":%llu}",
                   list[i].internal ? "true" : "false", list[i].in_use ? "true" : "false",
+                  list[i].has_icon ? "true" : "false",
                   (unsigned long long)list[i].bytes);
     }
     sb_puts(&sb, "]}");
     free(list);
     send_sb(fd, 200, &sb);
+}
+
+static void handle_dump_icon(int fd, const params_t *p)
+{
+    const char *mount = param_get(p, "mount", "");
+
+    /* what is on the console is only shown to those who are in */
+    if (!strcmp(mount, storage_internal_root()) && !http_peer_is_local(fd) &&
+        !whb_access_token_ok(param_get(p, "token", NULL))) {
+        send_error(fd, 401, "enter the code shown on the TV first");
+        return;
+    }
+
+    char path[512];
+    if (dumplib_icon_path(mount, param_get(p, "dir", ""), param_get(p, "folder", ""), path, sizeof(path)) != 0) {
+        send_error(fd, 404, "no icon");
+        return;
+    }
+    send_file(fd, path, "image/png");
+}
+
+/* Only ever because the user said so, with the consequences in front of them. */
+static void handle_shadowmount_stop(int fd, const params_t *p)
+{
+    (void)p;
+    if (!shadowmount_pid()) { send_json(fd, 200, "{\"stopped\":true,\"wasRunning\":false}"); return; }
+    if (shadowmount_stop() != 0) { send_error(fd, 500, "ShadowMount would not stop"); return; }
+    send_json(fd, 200, "{\"stopped\":true,\"wasRunning\":true}");
 }
 
 static void handle_dump_move(int fd, const params_t *p)
@@ -701,6 +732,8 @@ void routes_dumper_init(void)
     http_route("GET",  "/api/dumps/presence", handle_dump_presence);
     http_route("POST", "/api/dumps/delete",   handle_dump_delete);
     http_route("GET",  "/api/dumps",          handle_dumps);
+    http_route("GET",  "/api/dumps/icon",     handle_dump_icon);
+    http_route("POST", "/api/shadowmount/stop", handle_shadowmount_stop);
     http_route("POST", "/api/dumps/move",     handle_dump_move);
     http_route("POST", "/api/dumps/move/cancel", handle_dump_move_cancel);
     http_route("POST", "/api/dumps/move/clear",  handle_dump_move_clear);

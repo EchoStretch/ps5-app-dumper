@@ -121,6 +121,12 @@ int target_is_known(const char *mount);
    to dump, and waiting for a mount would never end. 1 when that is the case. */
 int title_runs_from_folder(const char *title_id);
 
+/* Removes a title's mount.lnk when it still points at target - the folder a
+   dump has just been moved away from. The title then starts from its package
+   again; ShadowMount writes a new link if it finds the dump elsewhere.
+   Returns 1 when a link was removed. */
+int title_drop_mount_link(const char *title_id, const char *target);
+
 /* See library_entry_t.installed_pct. */
 int title_installed_percent(const char *title_id);
 

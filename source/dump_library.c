@@ -119,8 +119,10 @@ static void add_entry(scan_ctx_t *c, const char *rel, const char *name)
     dump_info_string(dest, name, "title", e->title, sizeof(e->title));
     e->bytes = info_bytes(dest, name);
 
-    char full[384];
+    char full[384], icon[448];
     snprintf(full, sizeof(full), "%s/%s", dest, name);
+    snprintf(icon, sizeof(icon), "%s/sce_sys/icon0.png", full);
+    e->has_icon = file_exists(icon);
     for (int i = 0; i < c->lib_count; i++) {
         if (strcmp(c->lib[i].title_id, e->title_id) != 0) continue;
         if (!e->title[0]) snprintf(e->title, sizeof(e->title), "%s", c->lib[i].title);
@@ -194,6 +196,21 @@ int dumplib_scan(dumplib_entry_t *out, int max, int with_internal)
     return c.count;
 }
 
+int dumplib_icon_path(const char *mount, const char *dir, const char *folder,
+                      char *out, size_t out_size)
+{
+    if (!mount || !dir || !folder || !out || !out_size) return -1;
+    if (!dump_folder_name_ok(folder) || !fs_path_is_safe(dir)) return -1;
+    if (target_is_known(mount) != 0) return -1;
+
+    char dest[256];
+    snprintf(dest, sizeof(dest), "%s%s%s", mount, dir[0] ? "/" : "", dir);
+    if (!looks_like_dump(dest, folder)) return -1;
+
+    snprintf(out, out_size, "%s/%s/sce_sys/icon0.png", dest, folder);
+    return file_exists(out) ? 0 : -1;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Moving one                                                         */
 /* ------------------------------------------------------------------ */
@@ -216,6 +233,16 @@ static void move_finish(move_state_t state, const char *fmt, ...)
     va_end(ap);
     pthread_mutex_unlock(&g_mtx);
     write_log(g_log_path, "Move: %s", g_move.message);
+}
+
+/* src is <...>/<TITLEID>[-app0]: whoever was redirected there is set free */
+static void drop_stale_link(const char *src)
+{
+    const char *name = strrchr(src, '/');
+    if (!name) return;
+    char id[16];
+    snprintf(id, sizeof(id), "%.9s", name + 1);
+    title_drop_mount_link(id, src);
 }
 
 static void *move_thread(void *arg)
@@ -248,6 +275,7 @@ static void *move_thread(void *arg)
 
     int left = dump_remove_tree(req->src);
     unlink(req->src_info);
+    if (left == 0) drop_stale_link(req->src);
 
     if (left != 0)
         move_finish(MOVE_DONE, "%s is now in %s - but the original could not be removed completely",
@@ -314,6 +342,7 @@ int dumplib_move(const char *mount, const char *dir, const char *folder,
             FAIL("could not move it (%s)", strerror(e));
         }
         if (file_exists(req->src_info)) rename(req->src_info, req->dst_info);
+        drop_stale_link(req->src);
         move_finish(MOVE_DONE, "%s is now in %s", folder, dest_dir);
         free(req);
         return 0;
