@@ -1354,21 +1354,14 @@ function renderQueue(){
         var live = state.squeue.current === i;
         var kind = q.state === "done" ? "done" : q.state === "failed" ? "failed"
                  : q.state === "waiting_disc" ? "disc" : live ? "live" : "";
-        var canSkip = live && (q.state === "waiting_disc" || q.state === "launching" || q.state === "settling");
         return queueRowHead(i + 1, q, (live ? "cur " : "") + q.state) +
           (q.message && (q.state === "failed" || q.state === "skipped" || live)
             ? '<span class="q-msg">' + esc(q.message) + '</span>' : "") + '</span>' +
-          (canSkip ? '<button class="mini" type="button" data-skip="1">Skip</button>' : "") +
           '<span class="q-state ' + kind + '"' + (live ? ' id="q-live"' : "") + '>' +
           esc(STATE_LABEL[q.state] || q.state) + '</span></div>';
       }).join("") + '</div>';
 
-      var skip = box.querySelector("[data-skip]");
-      if(skip) skip.addEventListener("click", function(){
-        skip.disabled = true;
-        post("/api/queue/skip").then(function(){ toast("Skipping this title…"); })
-          .catch(function(e){ toast(e.message, "bad"); skip.disabled = false; });
-      });
+
     } else {
       box.innerHTML = '<div class="q-list">' + items.map(function(q, i){
         var open = state.queueOpen === q.titleId;
@@ -1767,9 +1760,18 @@ function updateAction(){
     reload.style.display = "none";
     if(!stop.classList.contains("arm")) stop.textContent = "Stop queue";
     /* with more to come, giving up one dump must not cost the rest */
-    var skip = $("btn-skip"), dumping = !!cur && cur.state === "dumping" && !jobStopping();
-    skip.style.display = dumping ? "" : "none";
-    if(!dumping){ skip.classList.remove("arm"); skip.textContent = "Stop this dump"; }
+    /* One control to leave the title at hand and go on with the next. While
+       it waits - for a disc, the launch, the load time - nothing is lost, so
+       it acts at once; once it dumps it asks first. */
+    var skip = $("btn-skip");
+    var phase = !cur || jobStopping() ? null : cur.state === "dumping" ? "dump"
+              : (cur.state === "waiting_disc" || cur.state === "launching" || cur.state === "settling") ? "wait" : null;
+    skip.style.display = phase ? "" : "none";
+    if(skipPhase !== phase){
+      skipPhase = phase;
+      skip.classList.remove("arm");
+      skip.textContent = phase === "dump" ? "Stop this dump" : "Skip this title";
+    }
     stop.disabled = jobStopping();
     if(jobStopping() && !stop.classList.contains("arm")) stop.textContent = "Stopping…";
     sum.innerHTML = "Queue <b>" + (sq.current + 1) + "/" + sq.items.length + "</b>" +
@@ -2125,10 +2127,10 @@ function stop(){
 
 /* Ends the dump the queue is on and lets it carry on with the next title.
    What was written so far stays on the drive, incomplete - hence the ask. */
-var skipArm;
+var skipArm, skipPhase = null;
 function stopThisDump(){
-  var b = $("btn-skip");
-  if(!b.classList.contains("arm")){
+  var b = $("btn-skip"), dumping = skipPhase === "dump";
+  if(dumping && !b.classList.contains("arm")){
     b.classList.add("arm");
     b.textContent = "Confirm - queue goes on";
     clearTimeout(skipArm);
@@ -2140,10 +2142,11 @@ function stopThisDump(){
   }
   clearTimeout(skipArm);
   b.classList.remove("arm");
-  b.textContent = "Stop this dump";
+  b.textContent = dumping ? "Stop this dump" : "Skip this title";
   b.disabled = true;
   post("/api/queue/skip").then(function(){
-    toast("Stopping this dump - the queue goes on with the next title…");
+    toast(dumping ? "Stopping this dump - the queue goes on with the next title…"
+                  : "Skipping this title…");
   }).catch(function(e){
     toast(e.message, "bad");
   }).then(function(){ b.disabled = false; });
