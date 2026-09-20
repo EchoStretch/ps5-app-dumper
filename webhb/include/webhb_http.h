@@ -40,24 +40,21 @@ void sb_printf(sb_t *sb, const char *fmt, ...);
 void sb_json_str(sb_t *sb, const char *s);
 
 /* ------------------------------------------------------------------ */
-/*  Request parameters - query string and form body alike              */
+/*  A request, as a handler sees it                                    */
 /* ------------------------------------------------------------------ */
 
-/* a queue may bring one settings parameter per title on top of its own */
-#define MAX_PARAMS 40
+/* Method, path, parameters and the connection. Handlers get it from the
+   server and hand it back to whatever they call here; what is inside is the
+   server's business. */
+typedef struct whb_req whb_req_t;
 
-typedef struct {
-    char key[32];
-    char val[192];
-} param_t;
+/* Parameters come from the query string and from a form body alike. */
+#define WHB_PARAM_MAX 192   /* the longest value, its NUL included */
+const char *whb_param(const whb_req_t *req, const char *key, const char *fallback);
+int         whb_param_int(const whb_req_t *req, const char *key, int fallback);
 
-typedef struct {
-    param_t items[MAX_PARAMS];
-    int     count;
-} params_t;
-
-const char *param_get(const params_t *p, const char *key, const char *fallback);
-int         param_get_int(const params_t *p, const char *key, int fallback);
+/* 1 when the request came in over 127.0.0.1 - the console's own browser. */
+int whb_peer_is_local(const whb_req_t *req);
 
 static inline int clamp(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
@@ -65,18 +62,18 @@ static inline int clamp(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? 
 /*  Responses                                                          */
 /* ------------------------------------------------------------------ */
 
-void send_response(int fd, int code, const char *content_type,
-                   const void *body, size_t len, const char *extra_headers);
+void whb_send(whb_req_t *req, int code, const char *content_type,
+              const void *body, size_t len, const char *extra_headers);
 /* Same, with a Cache-Control of the caller's choosing instead of no-store. */
-void send_response_cc(int fd, int code, const char *content_type,
-                      const void *body, size_t len,
-                      const char *cache_control, const char *extra_headers);
-void send_json(int fd, int code, const char *json);
+void whb_send_cc(whb_req_t *req, int code, const char *content_type,
+                 const void *body, size_t len,
+                 const char *cache_control, const char *extra_headers);
+void whb_send_json(whb_req_t *req, int code, const char *json);
 /* Sends what was built and frees the builder. */
-void send_sb(int fd, int code, sb_t *sb);
-void send_error(int fd, int code, const char *message);
+void whb_send_sb(whb_req_t *req, int code, sb_t *sb);
+void whb_send_error(whb_req_t *req, int code, const char *message);
 /* Streams a file from disk. */
-void send_file(int fd, const char *path, const char *content_type);
+void whb_send_file(whb_req_t *req, const char *path, const char *content_type);
 
 /* The live console's feed: log lines newer than since, as a JSON object. */
 void json_log(sb_t *sb, unsigned since);
@@ -85,18 +82,15 @@ void json_log(sb_t *sb, unsigned since);
 /*  Routes and lifecycle                                               */
 /* ------------------------------------------------------------------ */
 
-typedef void (*http_handler_t)(int fd, const params_t *p);
+typedef void (*whb_handler_t)(whb_req_t *req);
 
 /* Registers a handler for an exact method and path. Call before
-   http_server_run(); the strings must outlive the server. */
-void http_route(const char *method, const char *path, http_handler_t fn);
+   whb_serve(); the strings must outlive the server. */
+void whb_route(const char *method, const char *path, whb_handler_t fn);
 
 /* Exempts a POST path from the access check in the dispatcher - for the
    routes a locked-out browser needs to get in. */
-void http_route_open(const char *path);
-
-/* 1 when the request on fd came in over 127.0.0.1. */
-int http_peer_is_local(int fd);
+void whb_route_open(const char *path);
 
 /* Called once, with the port the server ended up on. */
 void http_on_listening(void (*fn)(int port));

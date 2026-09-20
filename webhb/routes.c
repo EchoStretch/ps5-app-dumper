@@ -27,17 +27,16 @@ along with this program; see the file COPYING. If not, see
 #include "webhb.h"
 
 /* Refuses with what the app says it is busy with ("a dump"). */
-static void send_busy(int fd, const char *fmt)
+static void send_busy(whb_req_t *req, const char *fmt)
 {
     char msg[120];
     snprintf(msg, sizeof(msg), fmt, whb_app()->busy_with ? whb_app()->busy_with : "the running work");
-    send_error(fd, 409, msg);
+    whb_send_error(req, 409, msg);
 }
 
 /* What this copy is, and whether it carries an ELF it could store. */
-static void handle_self(int fd, const params_t *p)
+static void handle_self(whb_req_t *req)
 {
-    (void)p;
     sb_t sb;
     sb_init(&sb);
     sb_puts(&sb, "{\"version\":");
@@ -45,28 +44,27 @@ static void handle_self(int fd, const params_t *p)
     sb_puts(&sb, ",\"file\":");
     sb_json_str(&sb, whb_elf_name());
     sb_printf(&sb, ",\"canStore\":%s}", self_store_available() ? "true" : "false");
-    send_sb(fd, 200, &sb);
+    whb_send_sb(req, 200, &sb);
 }
 
 /* Is the file pldmgr holds this very build? The page passes the path it
    got from pldmgr's list; self_store_matches() only accepts a file of our
    name inside a payload manager's storage. */
-static void handle_self_compare(int fd, const params_t *p)
+static void handle_self_compare(whb_req_t *req)
 {
-    int rc = self_store_matches(param_get(p, "path", ""));
+    int rc = self_store_matches(whb_param(req, "path", ""));
 
     char json[64];
     snprintf(json, sizeof(json), "{\"match\":%s}",
              rc == 1 ? "\"same\"" : rc == 0 ? "\"other\"" : "\"unknown\"");
-    send_json(fd, 200, json);
+    whb_send_json(req, 200, json);
 }
 
-static void handle_self_store(int fd, const params_t *p)
+static void handle_self_store(whb_req_t *req)
 {
-    (void)p;
     char err[192] = {0};
     if (self_store_to_pldmgr(err, sizeof(err)) != 0) {
-        send_error(fd, 409, err[0] ? err : "could not store the payload");
+        whb_send_error(req, 409, err[0] ? err : "could not store the payload");
         return;
     }
 
@@ -75,14 +73,13 @@ static void handle_self_store(int fd, const params_t *p)
     sb_puts(&sb, "{\"stored\":true,\"file\":");
     sb_json_str(&sb, whb_elf_name());
     sb_puts(&sb, "}");
-    send_sb(fd, 200, &sb);
+    whb_send_sb(req, 200, &sb);
 }
 
 /* Whether the home-screen shortcut is in place. Reads two small files and
    nothing else, so the settings tab can ask without waking a system service. */
-static void handle_tile_state(int fd, const params_t *p)
+static void handle_tile_state(whb_req_t *req)
 {
-    (void)p;
     /* "installed" without "current" is a tile from an older build, or one
        that points at a port this server is not on */
     int current = tile_is_current(http_server_port());
@@ -91,36 +88,34 @@ static void handle_tile_state(int fd, const params_t *p)
     snprintf(json, sizeof(json), "{\"installed\":%s,\"current\":%s}",
              (current || tile_exists()) ? "true" : "false",
              current ? "true" : "false");
-    send_json(fd, 200, json);
+    whb_send_json(req, 200, json);
 }
 
-static void handle_install_tile(int fd, const params_t *p)
+static void handle_install_tile(whb_req_t *req)
 {
-    (void)p;
     /* Registering a title makes the shell rework its app database. Keep that
        away from work that may be reading the very same titles. */
     if (whb_busy()) {
-        send_busy(fd, "wait for %s to finish first");
+        send_busy(req, "wait for %s to finish first");
         return;
     }
 
     char err[160];
     if (tile_install(http_server_port(), err, sizeof(err)) != 0) {
-        send_error(fd, 500, err[0] ? err : "could not install the shortcut (see log.txt)");
+        whb_send_error(req, 500, err[0] ? err : "could not install the shortcut (see log.txt)");
         return;
     }
-    send_json(fd, 200, "{\"installed\":true}");
+    whb_send_json(req, 200, "{\"installed\":true}");
 }
 
-static void handle_quit(int fd, const params_t *p)
+static void handle_quit(whb_req_t *req)
 {
-    (void)p;
     if (whb_busy()) {
-        send_busy(fd, "%s is running");
+        send_busy(req, "%s is running");
         return;
     }
 
-    send_json(fd, 200, "{\"stopping\":true}");
+    whb_send_json(req, 200, "{\"stopping\":true}");
     printf_notification("%s: web UI closed", whb_app()->name);
     http_server_stop();
 }
@@ -128,16 +123,14 @@ static void handle_quit(int fd, const params_t *p)
 /* The logo as PNG, the one picture the payload carries anyway (the tile
    uses it). iOS wants a PNG for "Add to Home Screen" - it ignores an SVG
    favicon - and Android takes it from the web manifest. */
-static void handle_app_icon(int fd, const params_t *p)
+static void handle_app_icon(whb_req_t *req)
 {
-    (void)p;
-    send_response_cc(fd, 200, "image/png", whb_app()->icon_png, whb_app()->icon_len,
+    whb_send_cc(req, 200, "image/png", whb_app()->icon_png, whb_app()->icon_len,
                      "max-age=86400", NULL);
 }
 
-static void handle_web_manifest(int fd, const params_t *p)
+static void handle_web_manifest(whb_req_t *req)
 {
-    (void)p;
     sb_t sb;
     sb_init(&sb);
     sb_puts(&sb, "{\"name\":");
@@ -150,18 +143,17 @@ static void handle_web_manifest(int fd, const params_t *p)
         "\"icons\":[{\"src\":\"/icon.png\",\"sizes\":\"512x512\",\"type\":\"image/png\","
         "\"purpose\":\"any maskable\"}]}");
 
-    if (sb.oom) { send_sb(fd, 500, &sb); return; }
-    send_response(fd, 200, "application/manifest+json", sb.buf, sb.len, NULL);
+    if (sb.oom) { whb_send_sb(req, 500, &sb); return; }
+    whb_send(req, 200, "application/manifest+json", sb.buf, sb.len, NULL);
     sb_free(&sb);
 }
 
-static void handle_index(int fd, const params_t *p)
+static void handle_index(whb_req_t *req)
 {
-    (void)p;
     /* "no-store" would keep the page out of the browser's application cache,
        which is what lets the home-screen tile open it while the payload is
        not running. The manifest below takes care of freshness. */
-    send_response_cc(fd, 200, "text/html; charset=utf-8",
+    whb_send_cc(req, 200, "text/html; charset=utf-8",
                      whb_app()->page, whb_app()->page_len, "no-cache", NULL);
 }
 
@@ -170,9 +162,8 @@ static void handle_index(int fd, const params_t *p)
    this port; the page then says so and offers to start the payload. The
    comment line carries a checksum of the page: any change to it makes the
    browser fetch the new one. Everything else always goes to the network. */
-static void handle_manifest(int fd, const params_t *p)
+static void handle_manifest(whb_req_t *req)
 {
-    (void)p;
     uint32_t sum = 2166136261u;   /* FNV-1a */
     for (size_t i = 0; i < whb_app()->page_len; i++)
         sum = (sum ^ whb_app()->page[i]) * 16777619u;
@@ -192,41 +183,41 @@ static void handle_manifest(int fd, const params_t *p)
                      "*\n",
                      (unsigned)sum, whb_app()->page_len);
 
-    send_response(fd, 200, "text/cache-manifest", body, (size_t)n, NULL);
+    whb_send(req, 200, "text/cache-manifest", body, (size_t)n, NULL);
 }
 
 /* Resolves the drive to browse: the caller-named mount if it is one of ours,
    otherwise the drive holding config.ini. Returns NULL when none is usable. */
-static const char *browse_mount(const params_t *p)
+static const char *browse_mount(const whb_req_t *req)
 {
-    const char *mount = param_get(p, "mount", NULL);
+    const char *mount = whb_param(req, "mount", NULL);
     if (mount && *mount && target_is_known(mount) == 0) return mount;
     return NULL;
 }
 
 /* What is on a stick is no secret to the network it is plugged into; what is
    on the console is only shown to those who may change things anyway. */
-static int may_browse(int fd, const params_t *p, const char *mount)
+static int may_browse(whb_req_t *req, const char *mount)
 {
     if (strcmp(mount, storage_internal_root()) != 0) return 1;
-    return http_peer_is_local(fd) || whb_access_token_ok(param_get(p, "token", NULL));
+    return whb_peer_is_local(req) || whb_access_token_ok(whb_param(req, "token", NULL));
 }
 
-static void handle_browse(int fd, const params_t *p)
+static void handle_browse(whb_req_t *req)
 {
-    const char *mount = browse_mount(p);
-    if (!mount) { send_error(fd, 400, "unknown drive"); return; }
-    if (!may_browse(fd, p, mount)) { send_error(fd, 401, "enter the code shown on the TV first"); return; }
+    const char *mount = browse_mount(req);
+    if (!mount) { whb_send_error(req, 400, "unknown drive"); return; }
+    if (!may_browse(req, mount)) { whb_send_error(req, 401, "enter the code shown on the TV first"); return; }
 
-    const char *rel = param_get(p, "path", "");
-    if (!fs_path_is_safe(rel)) { send_error(fd, 400, "invalid path"); return; }
+    const char *rel = whb_param(req, "path", "");
+    if (!fs_path_is_safe(rel)) { whb_send_error(req, 400, "invalid path"); return; }
 
     /* the listing can be large; keep it off the connection thread's stack */
     char (*names)[FS_NAME_MAX] = calloc(FS_BROWSE_MAX, FS_NAME_MAX);
-    if (!names) { send_error(fd, 500, "out of memory"); return; }
+    if (!names) { whb_send_error(req, 500, "out of memory"); return; }
 
     int count = fs_list_dirs(mount, rel, names, FS_BROWSE_MAX);
-    if (count < 0) { free(names); send_error(fd, 404, "cannot open folder"); return; }
+    if (count < 0) { free(names); whb_send_error(req, 404, "cannot open folder"); return; }
 
     sb_t sb;
     sb_init(&sb);
@@ -242,23 +233,23 @@ static void handle_browse(int fd, const params_t *p)
     sb_puts(&sb, "]}");
 
     free(names);
-    send_sb(fd, 200, &sb);
+    whb_send_sb(req, 200, &sb);
 }
 
-static void handle_mkdir(int fd, const params_t *p)
+static void handle_mkdir(whb_req_t *req)
 {
-    const char *mount = browse_mount(p);
-    if (!mount) { send_error(fd, 400, "unknown drive"); return; }
+    const char *mount = browse_mount(req);
+    if (!mount) { whb_send_error(req, 400, "unknown drive"); return; }
 
-    const char *rel  = param_get(p, "path", "");
-    const char *name = param_get(p, "name", NULL);
-    if (!name || !*name)          { send_error(fd, 400, "no folder name"); return; }
-    if (!fs_name_is_safe(name))   { send_error(fd, 400, "invalid folder name"); return; }
-    if (!fs_path_is_safe(rel))    { send_error(fd, 400, "invalid path"); return; }
+    const char *rel  = whb_param(req, "path", "");
+    const char *name = whb_param(req, "name", NULL);
+    if (!name || !*name)          { whb_send_error(req, 400, "no folder name"); return; }
+    if (!fs_name_is_safe(name))   { whb_send_error(req, 400, "invalid folder name"); return; }
+    if (!fs_path_is_safe(rel))    { whb_send_error(req, 400, "invalid path"); return; }
 
     char newrel[128];
     if (fs_make_subdir(mount, rel, name, newrel, sizeof(newrel)) != 0) {
-        send_error(fd, 400, "could not create the folder (name too long or not writable)");
+        whb_send_error(req, 400, "could not create the folder (name too long or not writable)");
         return;
     }
 
@@ -267,7 +258,7 @@ static void handle_mkdir(int fd, const params_t *p)
     sb_puts(&sb, "{\"path\":");
     sb_json_str(&sb, newrel);
     sb_puts(&sb, "}");
-    send_sb(fd, 200, &sb);
+    whb_send_sb(req, 200, &sb);
 }
 
 /* What the page's poll needs and every app can give: the live console's feed
@@ -275,14 +266,14 @@ static void handle_mkdir(int fd, const params_t *p)
    of its own, keeps "log" and "busy" in it and points the page there
    (whb.app.statusPath) - one question a second instead of two. The next copy
    of the payload asks this one, whatever the app. */
-static void handle_status(int fd, const params_t *p)
+static void handle_status(whb_req_t *req)
 {
     sb_t sb;
     sb_init(&sb);
     sb_puts(&sb, "{\"log\":");
-    json_log(&sb, (unsigned)param_get_int(p, "since", 0));
+    json_log(&sb, (unsigned)whb_param_int(req, "since", 0));
     sb_printf(&sb, ",\"busy\":%s}", whb_busy() ? "true" : "false");
-    send_sb(fd, 200, &sb);
+    whb_send_sb(req, 200, &sb);
 }
 
 static void on_listening(int port)
@@ -300,22 +291,22 @@ void whb_routes_init(void)
     whb_config_routes_init();
     whb_access_routes_init();
 
-    http_route("GET",  "/",                     handle_index);
-    http_route("GET",  "/index.html",           handle_index);
-    http_route("GET",  "/cache.appcache",       handle_manifest);
-    http_route("GET",  "/icon.png",             handle_app_icon);
-    http_route("GET",  "/apple-touch-icon.png", handle_app_icon);
-    http_route("GET",  "/apple-touch-icon-precomposed.png", handle_app_icon);
-    http_route("GET",  "/app.webmanifest",      handle_web_manifest);
-    http_route("GET",  WHB_API "/status",           handle_status);
-    http_route("GET",  WHB_API "/self",             handle_self);
-    http_route("GET",  WHB_API "/self/compare",     handle_self_compare);
-    http_route("POST", WHB_API "/self/store",       handle_self_store);
-    http_route("GET",  WHB_API "/tile",             handle_tile_state);
-    http_route("POST", WHB_API "/tile",             handle_install_tile);
-    http_route("GET",  WHB_API "/browse",           handle_browse);
-    http_route("POST", WHB_API "/mkdir",            handle_mkdir);
-    http_route("POST", WHB_API "/quit",             handle_quit);
+    whb_route("GET",  "/",                     handle_index);
+    whb_route("GET",  "/index.html",           handle_index);
+    whb_route("GET",  "/cache.appcache",       handle_manifest);
+    whb_route("GET",  "/icon.png",             handle_app_icon);
+    whb_route("GET",  "/apple-touch-icon.png", handle_app_icon);
+    whb_route("GET",  "/apple-touch-icon-precomposed.png", handle_app_icon);
+    whb_route("GET",  "/app.webmanifest",      handle_web_manifest);
+    whb_route("GET",  WHB_API "/status",           handle_status);
+    whb_route("GET",  WHB_API "/self",             handle_self);
+    whb_route("GET",  WHB_API "/self/compare",     handle_self_compare);
+    whb_route("POST", WHB_API "/self/store",       handle_self_store);
+    whb_route("GET",  WHB_API "/tile",             handle_tile_state);
+    whb_route("POST", WHB_API "/tile",             handle_install_tile);
+    whb_route("GET",  WHB_API "/browse",           handle_browse);
+    whb_route("POST", WHB_API "/mkdir",            handle_mkdir);
+    whb_route("POST", WHB_API "/quit",             handle_quit);
 }
 
 int whb_serve(int port)

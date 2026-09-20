@@ -343,35 +343,34 @@ void whb_config_json(sb_t *sb)
     whb_config_unlock();
 }
 
-static void handle_config_get(int fd, const params_t *p)
+static void handle_config_get(whb_req_t *req)
 {
-    (void)p;
     sb_t sb;
     sb_init(&sb);
     whb_config_json(&sb);
-    send_sb(fd, 200, &sb);
+    whb_send_sb(req, 200, &sb);
 }
 
 /* Takes one key's value out of a request. Returns 0, or the HTTP status to
    refuse the whole request with and why. */
-static int val_from_request(int fd, const params_t *p, const whb_cfg_key_t *k,
+static int val_from_request(whb_req_t *req, const whb_cfg_key_t *k,
                             cfg_val_t *v, const char **why)
 {
-    const char *given = param_get(p, k->web_name, NULL);
+    const char *given = whb_param(req, k->web_name, NULL);
 
     /* Whether other devices need the code is for the console's own browser to
        say: a phone that got in must not be able to leave the door open. */
-    if ((k->flags & WHB_CFG_LOCAL) && given && !http_peer_is_local(fd)) {
+    if ((k->flags & WHB_CFG_LOCAL) && given && !whb_peer_is_local(req)) {
         *why = "this can only be changed in the console's own browser";
         return 403;
     }
 
     switch (k->type) {
     case WHB_CFG_BOOL:
-        v->i = param_get_int(p, k->web_name, v->i) ? 1 : 0;
+        v->i = whb_param_int(req, k->web_name, v->i) ? 1 : 0;
         break;
     case WHB_CFG_INT:
-        v->i = clamp(param_get_int(p, k->web_name, v->i), k->lo, k->hi);
+        v->i = clamp(whb_param_int(req, k->web_name, v->i), k->lo, k->hi);
         break;
     case WHB_CFG_STRING:
         if (!given) break;
@@ -395,7 +394,7 @@ static int val_from_request(int fd, const params_t *p, const whb_cfg_key_t *k,
     return 0;
 }
 
-static void handle_config_post(int fd, const params_t *p)
+static void handle_config_post(whb_req_t *req)
 {
     whb_config_lock();
 
@@ -408,10 +407,10 @@ static void handle_config_post(int fd, const params_t *p)
         if ((k->flags & WHB_CFG_SECRET) || !k->web_name) continue;
 
         const char *why = NULL;
-        int refused = val_from_request(fd, p, k, &vals[i], &why);
+        int refused = val_from_request(req, k, &vals[i], &why);
         if (refused) {
             whb_config_unlock();
-            send_error(fd, refused, why);
+            whb_send_error(req, refused, why);
             return;
         }
     }
@@ -439,14 +438,13 @@ static void handle_config_post(int fd, const params_t *p)
                 : "no drive connected - settings stay active until the payload restarts, "
                   "and are written as soon as a drive shows up");
     sb_puts(&sb, "}");
-    send_sb(fd, 200, &sb);
+    whb_send_sb(req, 200, &sb);
 }
 
 /* Puts a copy of the settings on the console, for the day the drive that
    carries them is not plugged in. While it is, the drive's own still win. */
-static void handle_config_to_console(int fd, const params_t *p)
+static void handle_config_to_console(whb_req_t *req)
 {
-    (void)p;
     char dir[160], path[200];
     storage_internal_data_dir(dir, sizeof(dir));
     mkdirs(dir);
@@ -457,7 +455,7 @@ static void handle_config_to_console(int fd, const params_t *p)
     whb_config_unlock();
 
     if (written != 0) {
-        send_error(fd, 500, "could not write the settings to the console");
+        whb_send_error(req, 500, "could not write the settings to the console");
         return;
     }
     write_log(g_log_path, "Settings copied to %s", path);
@@ -467,7 +465,7 @@ static void handle_config_to_console(int fd, const params_t *p)
     sb_puts(&sb, "{\"saved\":true,\"path\":");
     sb_json_str(&sb, path);
     sb_puts(&sb, "}");
-    send_sb(fd, 200, &sb);
+    whb_send_sb(req, 200, &sb);
 }
 
 void whb_config_routes_init(void)
@@ -476,7 +474,7 @@ void whb_config_routes_init(void)
     access_adopt();
     whb_config_unlock();
 
-    http_route("GET",  WHB_API "/config",         handle_config_get);
-    http_route("POST", WHB_API "/config",         handle_config_post);
-    http_route("POST", WHB_API "/config/console", handle_config_to_console);
+    whb_route("GET",  WHB_API "/config",         handle_config_get);
+    whb_route("POST", WHB_API "/config",         handle_config_post);
+    whb_route("POST", WHB_API "/config/console", handle_config_to_console);
 }

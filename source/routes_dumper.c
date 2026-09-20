@@ -88,14 +88,14 @@ static void json_queue(sb_t *sb, const queue_status_t *q)
     sb_puts(sb, "]}");
 }
 
-static void handle_status(int fd, const params_t *q)
+static void handle_status(whb_req_t *req)
 {
     job_status_t job;
     job_get_status(&job);
 
     /* too large for a connection thread's stack next to the request buffers */
     queue_status_t *queue = malloc(sizeof(*queue));
-    if (!queue) { send_error(fd, 500, "out of memory"); return; }
+    if (!queue) { whb_send_error(req, 500, "out of memory"); return; }
     queue_get_status(queue);
 
     sb_t sb;
@@ -106,7 +106,7 @@ static void handle_status(int fd, const params_t *q)
     sb_puts(&sb, ",\"queue\":");
     json_queue(&sb, queue);
     sb_puts(&sb, ",\"log\":");
-    json_log(&sb, (unsigned)param_get_int(q, "since", 0));
+    json_log(&sb, (unsigned)whb_param_int(req, "since", 0));
     move_status_t mv;
     dumplib_move_status(&mv);
     static const char *const move_names[] = { "idle", "running", "done", "failed", "aborted" };
@@ -123,10 +123,10 @@ static void handle_status(int fd, const params_t *q)
 
     free(queue);
 
-    send_sb(fd, 200, &sb);
+    whb_send_sb(req, 200, &sb);
 }
 
-static void handle_devices(int fd, const params_t *p)
+static void handle_devices(whb_req_t *req)
 {
     /* Pick up a drive that was plugged in or pulled after the payload
        started. Only a change of place may touch the settings - rereading them
@@ -137,7 +137,7 @@ static void handle_devices(int fd, const params_t *p)
     target_entry_t *targets = calloc(TARGET_SCAN_MAX, sizeof(*targets));
     if (!apps || !targets) {
         free(apps); free(targets);
-        send_error(fd, 500, "out of memory");
+        whb_send_error(req, 500, "out of memory");
         return;
     }
 
@@ -225,7 +225,7 @@ static void handle_devices(int fd, const params_t *p)
 
     /* the page is waiting for a title it started: tell it when that title
        is up without a package mount, which no amount of waiting changes */
-    const char *waiting = param_get(p, "waiting", NULL);
+    const char *waiting = whb_param(req, "waiting", NULL);
     if (waiting)
         sb_printf(&sb, ",\"waitingRunsFromFolder\":%s",
                   title_runs_from_folder(waiting) ? "true" : "false");
@@ -243,23 +243,23 @@ static void handle_devices(int fd, const params_t *p)
 
     free(apps);
     free(targets);
-    send_sb(fd, 200, &sb);
+    whb_send_sb(req, 200, &sb);
 }
 
-static void handle_dump(int fd, const params_t *p)
+static void handle_dump(whb_req_t *req)
 {
-    const char *app = param_get(p, "app", NULL);
-    const char *target = param_get(p, "target", NULL);
+    const char *app = whb_param(req, "app", NULL);
+    const char *target = whb_param(req, "target", NULL);
 
-    if (queue_is_active())   { send_error(fd, 409, "a queue is running"); return; }
-    if (!app || !*app)       { send_error(fd, 400, "no app selected"); return; }
-    if (!target || !*target) { send_error(fd, 400, "no destination selected"); return; }
+    if (queue_is_active())   { whb_send_error(req, 409, "a queue is running"); return; }
+    if (!app || !*app)       { whb_send_error(req, 400, "no app selected"); return; }
+    if (!target || !*target) { whb_send_error(req, 400, "no destination selected"); return; }
 
     dumper_config_t cfg;
     cfg_snapshot(&cfg);
 
     char err[160] = {0};
-    int rc = job_start(app, target, &cfg, param_get_int(p, "overwrite", 0), err, sizeof(err));
+    int rc = job_start(app, target, &cfg, whb_param_int(req, "overwrite", 0), err, sizeof(err));
 
     if (rc == JOB_ERR_EXISTS) {
         /* the page asks, and comes back with overwrite=1 */
@@ -268,11 +268,11 @@ static void handle_dump(int fd, const params_t *p)
         sb_puts(&sb, "{\"error\":");
         sb_json_str(&sb, err);
         sb_puts(&sb, ",\"exists\":true}");
-        send_sb(fd, 409, &sb);
+        whb_send_sb(req, 409, &sb);
         return;
     }
     if (rc != 0) {
-        send_error(fd, 409, err[0] ? err : "could not start the dump");
+        whb_send_error(req, 409, err[0] ? err : "could not start the dump");
         return;
     }
 
@@ -283,17 +283,17 @@ static void handle_dump(int fd, const params_t *p)
     sb_puts(&sb, "{\"started\":true,\"job\":");
     json_job(&sb, &job);
     sb_puts(&sb, "}");
-    send_sb(fd, 200, &sb);
+    whb_send_sb(req, 200, &sb);
 }
 
 /* Which of these titles are on the drive already - so the page can say so
    before a queue is started, and the choice between skipping and replacing
    them is not made blind. "titles" as for the queue; the general split mode
    decides the folder names, as it does for a title without own settings. */
-static void handle_dump_presence(int fd, const params_t *p)
+static void handle_dump_presence(whb_req_t *req)
 {
-    const char *mount = param_get(p, "target", NULL);
-    if (!mount || target_is_known(mount) != 0) { send_error(fd, 400, "unknown drive"); return; }
+    const char *mount = whb_param(req, "target", NULL);
+    if (!mount || target_is_known(mount) != 0) { whb_send_error(req, 400, "unknown drive"); return; }
 
     dumper_config_t cfg;
     cfg_snapshot(&cfg);
@@ -301,8 +301,8 @@ static void handle_dump_presence(int fd, const params_t *p)
     char dest[384];
     job_dest_path(mount, &cfg, dest, sizeof(dest));
 
-    char list[sizeof(((param_t *)0)->val)];
-    snprintf(list, sizeof(list), "%s", param_get(p, "titles", ""));
+    char list[WHB_PARAM_MAX];
+    snprintf(list, sizeof(list), "%s", whb_param(req, "titles", ""));
 
     sb_t sb;
     sb_init(&sb);
@@ -322,18 +322,18 @@ static void handle_dump_presence(int fd, const params_t *p)
     }
 
     sb_puts(&sb, "}}");
-    send_sb(fd, 200, &sb);
+    whb_send_sb(req, 200, &sb);
 }
 
 /* Clears away a dump that was cut short. dump_remove_incomplete() only ever
    deletes a folder whose info file says it is an unfinished dump of ours. */
-static void handle_dump_delete(int fd, const params_t *p)
+static void handle_dump_delete(whb_req_t *req)
 {
-    const char *mount  = param_get(p, "mount", NULL);
-    const char *folder = param_get(p, "folder", NULL);
+    const char *mount  = whb_param(req, "mount", NULL);
+    const char *folder = whb_param(req, "folder", NULL);
 
-    if (!mount || !folder || target_is_known(mount) != 0) { send_error(fd, 400, "unknown drive"); return; }
-    if (dumper_busy())                                     { send_error(fd, 409, "a dump is running"); return; }
+    if (!mount || !folder || target_is_known(mount) != 0) { whb_send_error(req, 400, "unknown drive"); return; }
+    if (dumper_busy())                                     { whb_send_error(req, 409, "a dump is running"); return; }
 
     dumper_config_t cfg;
     cfg_snapshot(&cfg);
@@ -342,31 +342,30 @@ static void handle_dump_delete(int fd, const params_t *p)
     job_dest_path(mount, &cfg, dest, sizeof(dest));
 
     if (dump_remove_incomplete(dest, folder) != 0) {
-        send_error(fd, 409, "not an unfinished dump of this tool - nothing was deleted");
+        whb_send_error(req, 409, "not an unfinished dump of this tool - nothing was deleted");
         return;
     }
 
     write_log(g_log_path, "Web UI: removed the unfinished dump %s/%s", dest, folder);
-    send_json(fd, 200, "{\"deleted\":true}");
+    whb_send_json(req, 200, "{\"deleted\":true}");
 }
 
-static void handle_abort(int fd, const params_t *p)
+static void handle_abort(whb_req_t *req)
 {
-    (void)p;
     /* stopping the dump of a queued title stops the queue with it */
     if (queue_is_active()) {
         queue_stop();
-        send_json(fd, 200, "{\"stopping\":true}");
+        whb_send_json(req, 200, "{\"stopping\":true}");
         return;
     }
 
     if (!job_is_active()) {
-        send_error(fd, 409, "no dump is running");
+        whb_send_error(req, 409, "no dump is running");
         return;
     }
 
     job_abort();
-    send_json(fd, 200, "{\"stopping\":true}");
+    whb_send_json(req, 200, "{\"stopping\":true}");
 }
 
 /* Applies a title's own settings, e.g. "d1f0b1p4q1s3", to cfg: decrypt,
@@ -397,13 +396,13 @@ static int apply_item_settings(dumper_config_t *cfg, const char *spec)
 /* "PPSA01234,CUSA05678" -> the titles to dump, in that order. "discs" names
    those among them the user marked as disc games; when the page sends it,
    even empty, it overrules what the scanner believes. */
-static void handle_queue_start(int fd, const params_t *p)
+static void handle_queue_start(whb_req_t *req)
 {
-    const char *target = param_get(p, "target", NULL);
-    if (!target || !*target) { send_error(fd, 400, "no destination selected"); return; }
+    const char *target = whb_param(req, "target", NULL);
+    if (!target || !*target) { whb_send_error(req, 400, "no destination selected"); return; }
 
-    char list[sizeof(((param_t *)0)->val)];
-    snprintf(list, sizeof(list), "%s", param_get(p, "titles", ""));
+    char list[WHB_PARAM_MAX];
+    snprintf(list, sizeof(list), "%s", whb_param(req, "titles", ""));
 
     const char *ids[QUEUE_MAX + 1];
     int count = 0;
@@ -413,7 +412,7 @@ static void handle_queue_start(int fd, const params_t *p)
         ids[count++] = tok;
     }
 
-    const char *discs = param_get(p, "discs", NULL);
+    const char *discs = whb_param(req, "discs", NULL);
     int is_disc[QUEUE_MAX + 1] = {0};
     for (int i = 0; discs && i < count; i++)
         is_disc[i] = (strstr(discs, ids[i]) != NULL);
@@ -423,20 +422,20 @@ static void handle_queue_start(int fd, const params_t *p)
 
     /* "o_<title id>" carries the settings of a title that has its own */
     dumper_config_t *own = calloc(QUEUE_MAX + 1, sizeof(*own));
-    if (!own) { send_error(fd, 500, "out of memory"); return; }
+    if (!own) { whb_send_error(req, 500, "out of memory"); return; }
 
     const dumper_config_t *item_cfg[QUEUE_MAX + 1] = {0};
     for (int i = 0; i < count && i <= QUEUE_MAX; i++) {
         char key[32];
         snprintf(key, sizeof(key), "o_%s", ids[i]);
 
-        const char *spec = param_get(p, key, NULL);
+        const char *spec = whb_param(req, key, NULL);
         if (!spec || !*spec) continue;
 
         own[i] = cfg;
         if (apply_item_settings(&own[i], spec) != 0) {
             free(own);
-            send_error(fd, 400, "invalid settings for a queued title");
+            whb_send_error(req, 400, "invalid settings for a queued title");
             return;
         }
         item_cfg[i] = &own[i];
@@ -444,76 +443,73 @@ static void handle_queue_start(int fd, const params_t *p)
 
     char err[160] = {0};
     int rc = queue_start(ids, discs ? is_disc : NULL, item_cfg, count, target,
-                         cfg.queue_delay, param_get_int(p, "replace", 0),
+                         cfg.queue_delay, whb_param_int(req, "replace", 0),
                          &cfg, err, sizeof(err));
     free(own);
 
     if (rc != 0) {
-        send_error(fd, 409, err[0] ? err : "could not start the queue");
+        whb_send_error(req, 409, err[0] ? err : "could not start the queue");
         return;
     }
 
-    send_json(fd, 200, "{\"started\":true}");
+    whb_send_json(req, 200, "{\"started\":true}");
 }
 
-static void handle_queue_skip(int fd, const params_t *p)
+static void handle_queue_skip(whb_req_t *req)
 {
-    (void)p;
     if (queue_skip() != 0) {
-        send_error(fd, 409, "the queue is not working on a title right now");
+        whb_send_error(req, 409, "the queue is not working on a title right now");
         return;
     }
 
-    send_json(fd, 200, "{\"skipping\":true}");
+    whb_send_json(req, 200, "{\"skipping\":true}");
 }
 
-static void handle_queue_clear(int fd, const params_t *p)
+static void handle_queue_clear(whb_req_t *req)
 {
-    (void)p;
     if (queue_clear() != 0) {
-        send_error(fd, 409, "the queue is still running");
+        whb_send_error(req, 409, "the queue is still running");
         return;
     }
 
-    send_json(fd, 200, "{\"cleared\":true}");
+    whb_send_json(req, 200, "{\"cleared\":true}");
 }
 
-static void handle_icon(int fd, const params_t *p)
+static void handle_icon(whb_req_t *req)
 {
-    const char *dir = param_get(p, "app", NULL);
-    if (!dir || !*dir) { send_error(fd, 400, "no app given"); return; }
+    const char *dir = whb_param(req, "app", NULL);
+    if (!dir || !*dir) { whb_send_error(req, 400, "no app given"); return; }
 
     app_entry_t app;
     char path[512];
 
     if (app_find(dir, &app) != 0 || app_icon_path(&app, path, sizeof(path)) != 0) {
-        send_error(fd, 404, "no icon");
+        whb_send_error(req, 404, "no icon");
         return;
     }
 
-    send_file(fd, path, "image/png");
+    whb_send_file(req, path, "image/png");
 }
 
-static void handle_size(int fd, const params_t *p)
+static void handle_size(whb_req_t *req)
 {
-    const char *dir = param_get(p, "app", NULL);
-    if (!dir || !*dir) { send_error(fd, 400, "no app given"); return; }
+    const char *dir = whb_param(req, "app", NULL);
+    if (!dir || !*dir) { whb_send_error(req, 400, "no app given"); return; }
 
     app_entry_t app;
-    if (app_find(dir, &app) != 0) { send_error(fd, 404, "app is not mounted"); return; }
+    if (app_find(dir, &app) != 0) { whb_send_error(req, 404, "app is not mounted"); return; }
 
     char json[128];
     snprintf(json, sizeof(json), "{\"bytes\":%llu}", (unsigned long long)app_size(&app));
-    send_json(fd, 200, json);
+    whb_send_json(req, 200, json);
 }
 
-static void handle_library(int fd, const params_t *p)
+static void handle_library(whb_req_t *req)
 {
-    (void)p;
     /* A console with a full library needs ~25 KB here, which is more than a
        connection thread's stack can take. */
     library_entry_t *lib = calloc(LIBRARY_SCAN_MAX, sizeof(*lib));
-    if (!lib) { send_error(fd, 500, "out of memory"); return; }
+    if (!lib) { whb_send_error(req, 500, "out of memory"); return; }
 
     int count = library_scan(lib, LIBRARY_SCAN_MAX);
 
@@ -558,20 +554,20 @@ static void handle_library(int fd, const params_t *p)
               app_launch_probably_available() ? "true" : "false");
 
     free(lib);
-    send_sb(fd, 200, &sb);
+    whb_send_sb(req, 200, &sb);
 }
 
 /* ------------------------------------------------------------------ */
 /*  The dumps that exist                                               */
 /* ------------------------------------------------------------------ */
 
-static void handle_dumps(int fd, const params_t *p)
+static void handle_dumps(whb_req_t *req)
 {
     /* what is on the console is only listed for those who are in */
-    int with_internal = http_peer_is_local(fd) || whb_access_token_ok(param_get(p, "token", NULL));
+    int with_internal = whb_peer_is_local(req) || whb_access_token_ok(whb_param(req, "token", NULL));
 
     dumplib_entry_t *list = calloc(DUMPLIB_MAX, sizeof(*list));
-    if (!list) { send_error(fd, 500, "out of memory"); return; }
+    if (!list) { whb_send_error(req, 500, "out of memory"); return; }
     int count = dumplib_scan(list, DUMPLIB_MAX, with_internal);
 
     sb_t sb;
@@ -593,125 +589,122 @@ static void handle_dumps(int fd, const params_t *p)
     }
     sb_puts(&sb, "]}");
     free(list);
-    send_sb(fd, 200, &sb);
+    whb_send_sb(req, 200, &sb);
 }
 
-static void handle_dump_icon(int fd, const params_t *p)
+static void handle_dump_icon(whb_req_t *req)
 {
-    const char *mount = param_get(p, "mount", "");
+    const char *mount = whb_param(req, "mount", "");
 
     /* what is on the console is only shown to those who are in */
-    if (!strcmp(mount, storage_internal_root()) && !http_peer_is_local(fd) &&
-        !whb_access_token_ok(param_get(p, "token", NULL))) {
-        send_error(fd, 401, "enter the code shown on the TV first");
+    if (!strcmp(mount, storage_internal_root()) && !whb_peer_is_local(req) &&
+        !whb_access_token_ok(whb_param(req, "token", NULL))) {
+        whb_send_error(req, 401, "enter the code shown on the TV first");
         return;
     }
 
     char path[512];
-    if (dumplib_icon_path(mount, param_get(p, "dir", ""), param_get(p, "folder", ""), path, sizeof(path)) != 0) {
-        send_error(fd, 404, "no icon");
+    if (dumplib_icon_path(mount, whb_param(req, "dir", ""), whb_param(req, "folder", ""), path, sizeof(path)) != 0) {
+        whb_send_error(req, 404, "no icon");
         return;
     }
-    send_file(fd, path, "image/png");
+    whb_send_file(req, path, "image/png");
 }
 
 /* Takes the link off a title that is redirected to this dump, without moving
    the dump: the game then starts from its installed package again. */
-static void handle_dump_unlink(int fd, const params_t *p)
+static void handle_dump_unlink(whb_req_t *req)
 {
-    const char *mount  = param_get(p, "mount", NULL);
-    const char *dir    = param_get(p, "dir", "");
-    const char *folder = param_get(p, "folder", NULL);
+    const char *mount  = whb_param(req, "mount", NULL);
+    const char *dir    = whb_param(req, "dir", "");
+    const char *folder = whb_param(req, "folder", NULL);
 
-    if (!mount || !folder || target_is_known(mount) != 0) { send_error(fd, 400, "unknown drive"); return; }
-    if (!dump_folder_name_ok(folder) || !fs_path_is_safe(dir)) { send_error(fd, 400, "not a dump folder"); return; }
+    if (!mount || !folder || target_is_known(mount) != 0) { whb_send_error(req, 400, "unknown drive"); return; }
+    if (!dump_folder_name_ok(folder) || !fs_path_is_safe(dir)) { whb_send_error(req, 400, "not a dump folder"); return; }
 
     char id[16], path[384];
     snprintf(id, sizeof(id), "%.9s", folder);
     snprintf(path, sizeof(path), "%s%s%s/%s", mount, dir[0] ? "/" : "", dir, folder);
 
     if (title_runs_from_folder(id)) {
-        send_error(fd, 409, "the game is running from this folder right now - close it first");
+        whb_send_error(req, 409, "the game is running from this folder right now - close it first");
         return;
     }
     if (!title_drop_mount_link(id, path)) {
-        send_error(fd, 409, "no installed game is linked to this dump");
+        whb_send_error(req, 409, "no installed game is linked to this dump");
         return;
     }
 
     sb_t sb;
     sb_init(&sb);
     sb_printf(&sb, "{\"unlinked\":true,\"shadowMountRunning\":%s}", shadowmount_pid() ? "true" : "false");
-    send_sb(fd, 200, &sb);
+    whb_send_sb(req, 200, &sb);
 }
 
 /* Only ever because the user said so, with the consequences in front of them. */
-static void handle_shadowmount_stop(int fd, const params_t *p)
+static void handle_shadowmount_stop(whb_req_t *req)
 {
-    (void)p;
-    if (!shadowmount_pid()) { send_json(fd, 200, "{\"stopped\":true,\"wasRunning\":false}"); return; }
-    if (shadowmount_stop() != 0) { send_error(fd, 500, "ShadowMount would not stop"); return; }
-    send_json(fd, 200, "{\"stopped\":true,\"wasRunning\":true}");
+    if (!shadowmount_pid()) { whb_send_json(req, 200, "{\"stopped\":true,\"wasRunning\":false}"); return; }
+    if (shadowmount_stop() != 0) { whb_send_error(req, 500, "ShadowMount would not stop"); return; }
+    whb_send_json(req, 200, "{\"stopped\":true,\"wasRunning\":true}");
 }
 
-static void handle_dump_move(int fd, const params_t *p)
+static void handle_dump_move(whb_req_t *req)
 {
     char err[256] = {0};
-    if (dumplib_move(param_get(p, "mount", NULL), param_get(p, "dir", ""), param_get(p, "folder", NULL),
-                     param_get(p, "toMount", NULL), param_get(p, "toDir", ""), err, sizeof(err)) != 0) {
-        send_error(fd, 409, err[0] ? err : "could not move the dump");
+    if (dumplib_move(whb_param(req, "mount", NULL), whb_param(req, "dir", ""), whb_param(req, "folder", NULL),
+                     whb_param(req, "toMount", NULL), whb_param(req, "toDir", ""), err, sizeof(err)) != 0) {
+        whb_send_error(req, 409, err[0] ? err : "could not move the dump");
         return;
     }
 
     move_status_t mv;
     dumplib_move_status(&mv);
-    send_json(fd, 200, mv.state == MOVE_RUNNING ? "{\"started\":true,\"copying\":true}"
+    whb_send_json(req, 200, mv.state == MOVE_RUNNING ? "{\"started\":true,\"copying\":true}"
                                                 : "{\"started\":true,\"copying\":false}");
 }
 
-static void handle_dump_remove(int fd, const params_t *p)
+static void handle_dump_remove(whb_req_t *req)
 {
     char err[256] = {0};
-    if (dumplib_delete(param_get(p, "mount", NULL), param_get(p, "dir", ""), param_get(p, "folder", NULL),
-                       param_get(p, "confirm", NULL), err, sizeof(err)) != 0) {
-        send_error(fd, 409, err[0] ? err : "could not delete the dump");
+    if (dumplib_delete(whb_param(req, "mount", NULL), whb_param(req, "dir", ""), whb_param(req, "folder", NULL),
+                       whb_param(req, "confirm", NULL), err, sizeof(err)) != 0) {
+        whb_send_error(req, 409, err[0] ? err : "could not delete the dump");
         return;
     }
-    send_json(fd, 200, "{\"started\":true}");
+    whb_send_json(req, 200, "{\"started\":true}");
 }
 
-static void handle_dump_move_cancel(int fd, const params_t *p)
+static void handle_dump_move_cancel(whb_req_t *req)
 {
-    (void)p;
     dumplib_move_cancel();
-    send_json(fd, 200, "{\"stopping\":true}");
+    whb_send_json(req, 200, "{\"stopping\":true}");
 }
 
-static void handle_dump_move_clear(int fd, const params_t *p)
+static void handle_dump_move_clear(whb_req_t *req)
 {
-    (void)p;
     dumplib_move_clear();
-    send_json(fd, 200, "{\"cleared\":true}");
+    whb_send_json(req, 200, "{\"cleared\":true}");
 }
 
-static void handle_launch(int fd, const params_t *p)
+static void handle_launch(whb_req_t *req)
 {
-    const char *title = param_get(p, "title", NULL);
-    if (!title || !*title) { send_error(fd, 400, "no title given"); return; }
+    const char *title = whb_param(req, "title", NULL);
+    if (!title || !*title) { whb_send_error(req, 400, "no title given"); return; }
 
     if (dumper_busy()) {
-        send_error(fd, 409, "a dump is running");
+        whb_send_error(req, 409, "a dump is running");
         return;
     }
 
     /* Said before anything is closed: starting a disc game without its disc
        would end the running game and then fail. */
     if (title_is_disc_game(title) && !title_on_disc(title)) {
-        send_error(fd, 409, "this game needs its disc - insert it and try again");
+        whb_send_error(req, 409, "this game needs its disc - insert it and try again");
         return;
     }
 
-    int close_running = param_get_int(p, "force", 0);
+    int close_running = whb_param_int(req, "force", 0);
     char err[192] = {0};
 
     if (app_launch_title(title, close_running, err, sizeof(err)) != 0) {
@@ -722,66 +715,66 @@ static void handle_launch(int fd, const params_t *p)
         sb_puts(&sb, "{\"error\":");
         sb_json_str(&sb, err[0] ? err : "could not start the title");
         sb_printf(&sb, ",\"needsClose\":%s}", running ? "true" : "false");
-        send_sb(fd, 409, &sb);
+        whb_send_sb(req, 409, &sb);
         return;
     }
 
-    send_json(fd, 200, "{\"launched\":true}");
+    whb_send_json(req, 200, "{\"launched\":true}");
 }
 
-static void handle_library_icon(int fd, const params_t *p)
+static void handle_library_icon(whb_req_t *req)
 {
-    const char *title = param_get(p, "title", NULL);
-    if (!title || !*title) { send_error(fd, 400, "no title given"); return; }
+    const char *title = whb_param(req, "title", NULL);
+    if (!title || !*title) { whb_send_error(req, 400, "no title given"); return; }
 
     /* library_icon_path only accepts a title id, so no path can be injected */
     char path[512];
     if (library_icon_path(title, path, sizeof(path)) != 0) {
-        send_error(fd, 404, "no icon");
+        whb_send_error(req, 404, "no icon");
         return;
     }
 
-    send_file(fd, path, "image/png");
+    whb_send_file(req, path, "image/png");
 }
 
-static void handle_library_pic(int fd, const params_t *p)
+static void handle_library_pic(whb_req_t *req)
 {
-    const char *title = param_get(p, "title", NULL);
-    if (!title || !*title) { send_error(fd, 400, "no title given"); return; }
+    const char *title = whb_param(req, "title", NULL);
+    if (!title || !*title) { whb_send_error(req, 400, "no title given"); return; }
 
     /* library_pic_path only accepts a title id, so no path can be injected */
     char path[512];
     if (library_pic_path(title, path, sizeof(path)) != 0) {
-        send_error(fd, 404, "no artwork");
+        whb_send_error(req, 404, "no artwork");
         return;
     }
 
-    send_file(fd, path, "image/png");
+    whb_send_file(req, path, "image/png");
 }
 
 void routes_dumper_init(void)
 {
-    http_route("GET",  "/api/status",         handle_status);
-    http_route("GET",  "/api/devices",        handle_devices);
-    http_route("GET",  "/api/library",        handle_library);
-    http_route("GET",  "/api/icon",           handle_icon);
-    http_route("GET",  "/api/libicon",        handle_library_icon);
-    http_route("GET",  "/api/libpic",         handle_library_pic);
-    http_route("GET",  "/api/size",           handle_size);
-    http_route("POST", "/api/launch",         handle_launch);
-    http_route("POST", "/api/dump",           handle_dump);
-    http_route("POST", "/api/abort",          handle_abort);
-    http_route("GET",  "/api/dumps/presence", handle_dump_presence);
-    http_route("POST", "/api/dumps/delete",   handle_dump_delete);
-    http_route("GET",  "/api/dumps",          handle_dumps);
-    http_route("GET",  "/api/dumps/icon",     handle_dump_icon);
-    http_route("POST", "/api/shadowmount/stop", handle_shadowmount_stop);
-    http_route("POST", "/api/dumps/unlink",   handle_dump_unlink);
-    http_route("POST", "/api/dumps/move",     handle_dump_move);
-    http_route("POST", "/api/dumps/remove",   handle_dump_remove);
-    http_route("POST", "/api/dumps/move/cancel", handle_dump_move_cancel);
-    http_route("POST", "/api/dumps/move/clear",  handle_dump_move_clear);
-    http_route("POST", "/api/queue/start",    handle_queue_start);
-    http_route("POST", "/api/queue/skip",     handle_queue_skip);
-    http_route("POST", "/api/queue/clear",    handle_queue_clear);
+    whb_route("GET",  "/api/status",         handle_status);
+    whb_route("GET",  "/api/devices",        handle_devices);
+    whb_route("GET",  "/api/library",        handle_library);
+    whb_route("GET",  "/api/icon",           handle_icon);
+    whb_route("GET",  "/api/libicon",        handle_library_icon);
+    whb_route("GET",  "/api/libpic",         handle_library_pic);
+    whb_route("GET",  "/api/size",           handle_size);
+    whb_route("POST", "/api/launch",         handle_launch);
+    whb_route("POST", "/api/dump",           handle_dump);
+    whb_route("POST", "/api/abort",          handle_abort);
+    whb_route("GET",  "/api/dumps/presence", handle_dump_presence);
+    whb_route("POST", "/api/dumps/delete",   handle_dump_delete);
+    whb_route("GET",  "/api/dumps",          handle_dumps);
+    whb_route("GET",  "/api/dumps/icon",     handle_dump_icon);
+    whb_route("POST", "/api/shadowmount/stop", handle_shadowmount_stop);
+    whb_route("POST", "/api/dumps/unlink",   handle_dump_unlink);
+    whb_route("POST", "/api/dumps/move",     handle_dump_move);
+    whb_route("POST", "/api/dumps/remove",   handle_dump_remove);
+    whb_route("POST", "/api/dumps/move/cancel", handle_dump_move_cancel);
+    whb_route("POST", "/api/dumps/move/clear",  handle_dump_move_clear);
+    whb_route("POST", "/api/queue/start",    handle_queue_start);
+    whb_route("POST", "/api/queue/skip",     handle_queue_skip);
+    whb_route("POST", "/api/queue/clear",    handle_queue_clear);
 }

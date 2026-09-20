@@ -153,6 +153,26 @@ static void url_decode(const char *in, size_t in_len, char *out, size_t out_size
 }
 
 /* Parses "a=1&b=hello%20world" into params. */
+/* a queue may bring one settings parameter per title on top of its own */
+#define MAX_PARAMS 40
+
+typedef struct {
+    char key[32];
+    char val[WHB_PARAM_MAX];
+} param_t;
+
+typedef struct {
+    param_t items[MAX_PARAMS];
+    int     count;
+} params_t;
+
+struct whb_req {
+    int             fd;
+    const char     *method;
+    const char     *path;
+    const params_t *params;
+};
+
 static void params_parse(params_t *p, const char *query)
 {
     if (!query) return;
@@ -174,14 +194,14 @@ static void params_parse(params_t *p, const char *query)
     }
 }
 
-const char *param_get(const params_t *p, const char *key, const char *fallback)
+static const char *param_get(const params_t *p, const char *key, const char *fallback)
 {
     for (int i = 0; i < p->count; i++)
         if (strcmp(p->items[i].key, key) == 0) return p->items[i].val;
     return fallback;
 }
 
-int param_get_int(const params_t *p, const char *key, int fallback)
+static int param_get_int(const params_t *p, const char *key, int fallback)
 {
     const char *v = param_get(p, key, NULL);
     return v && *v ? atoi(v) : fallback;
@@ -219,7 +239,7 @@ static const char *status_text(int code)
     return "OK";
 }
 
-void send_response_cc(int fd, int code, const char *content_type,
+static void send_response_cc(int fd, int code, const char *content_type,
                              const void *body, size_t len,
                              const char *cache_control, const char *extra_headers)
 {
@@ -240,26 +260,26 @@ void send_response_cc(int fd, int code, const char *content_type,
     if (len) send_all(fd, body, len);
 }
 
-void send_response(int fd, int code, const char *content_type,
+static void send_response(int fd, int code, const char *content_type,
                           const void *body, size_t len, const char *extra_headers)
 {
     send_response_cc(fd, code, content_type, body, len, "no-store", extra_headers);
 }
 
-void send_json(int fd, int code, const char *json)
+static void send_json(int fd, int code, const char *json)
 {
     send_response(fd, code, "application/json; charset=utf-8",
                   json, strlen(json), NULL);
 }
 
-void send_sb(int fd, int code, sb_t *sb)
+static void send_sb(int fd, int code, sb_t *sb)
 {
     if (sb->oom) send_json(fd, 500, "{\"error\":\"out of memory\"}");
     else         send_json(fd, code, sb->buf);
     sb_free(sb);
 }
 
-void send_error(int fd, int code, const char *message)
+static void send_error(int fd, int code, const char *message)
 {
     sb_t sb;
     sb_init(&sb);
@@ -270,7 +290,7 @@ void send_error(int fd, int code, const char *message)
 }
 
 /* Streams a file from disk, used for the app icons. */
-void send_file(int fd, const char *path, const char *content_type)
+static void send_file(int fd, const char *path, const char *content_type)
 {
     struct stat st;
     if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) {
@@ -342,11 +362,11 @@ void json_log(sb_t *sb, unsigned since)
 
 #define MAX_ROUTES 64
 
-static struct { const char *method, *path; http_handler_t fn; } g_routes[MAX_ROUTES];
+static struct { const char *method, *path; whb_handler_t fn; } g_routes[MAX_ROUTES];
 static int g_route_count = 0;
 static void (*g_on_listening)(int port);
 
-void http_route(const char *method, const char *path, http_handler_t fn)
+void whb_route(const char *method, const char *path, whb_handler_t fn)
 {
     if (g_route_count < MAX_ROUTES) {
         g_routes[g_route_count].method = method;
@@ -360,12 +380,12 @@ void http_route(const char *method, const char *path, http_handler_t fn)
 static const char *g_open_routes[MAX_OPEN_ROUTES];
 static int g_open_count = 0;
 
-void http_route_open(const char *path)
+void whb_route_open(const char *path)
 {
     if (g_open_count < MAX_OPEN_ROUTES) g_open_routes[g_open_count++] = path;
 }
 
-int http_peer_is_local(int fd)
+static int http_peer_is_local(int fd)
 {
     struct sockaddr_in peer;
     socklen_t len = sizeof(peer);
@@ -373,6 +393,33 @@ int http_peer_is_local(int fd)
     return peer.sin_family == AF_INET &&
            (ntohl(peer.sin_addr.s_addr) >> 24) == 127;
 }
+
+/* ------------------------------------------------------------------ */
+/*  What handlers call                                                 */
+/* ------------------------------------------------------------------ */
+
+const char *whb_param(const whb_req_t *req, const char *key, const char *fallback)
+{ return param_get(req->params, key, fallback); }
+
+int whb_param_int(const whb_req_t *req, const char *key, int fallback)
+{ return param_get_int(req->params, key, fallback); }
+
+int whb_peer_is_local(const whb_req_t *req) { return http_peer_is_local(req->fd); }
+
+void whb_send(whb_req_t *req, int code, const char *content_type,
+              const void *body, size_t len, const char *extra_headers)
+{ send_response(req->fd, code, content_type, body, len, extra_headers); }
+
+void whb_send_cc(whb_req_t *req, int code, const char *content_type,
+                 const void *body, size_t len,
+                 const char *cache_control, const char *extra_headers)
+{ send_response_cc(req->fd, code, content_type, body, len, cache_control, extra_headers); }
+
+void whb_send_json(whb_req_t *req, int code, const char *json)  { send_json(req->fd, code, json); }
+void whb_send_sb(whb_req_t *req, int code, sb_t *sb)            { send_sb(req->fd, code, sb); }
+void whb_send_error(whb_req_t *req, int code, const char *msg)  { send_error(req->fd, code, msg); }
+void whb_send_file(whb_req_t *req, const char *path, const char *content_type)
+{ send_file(req->fd, path, content_type); }
 
 /* Reading is free; changing something takes the token, unless the request
    comes from the console itself. See access.c. */
@@ -397,7 +444,8 @@ static void dispatch(int fd, const char *method, const char *path, const params_
                 send_error(fd, 401, "enter the code shown on the TV first");
                 return;
             }
-            g_routes[i].fn(fd, p);
+            whb_req_t req = { fd, method, path, p };
+            g_routes[i].fn(&req);
             return;
         }
     }

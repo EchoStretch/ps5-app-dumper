@@ -161,15 +161,15 @@ static void *reader_thread(void *arg)
 
 /* Puts a line of one's own between the kernel's - "pressed the button now" -
    so that what follows can be found again. */
-static void handle_mark(int fd, const params_t *p)
+static void handle_mark(whb_req_t *req)
 {
     char stamp[16], line[LOG_LINE_MAX];
     time_t now = time(NULL);
     strftime(stamp, sizeof(stamp), "%H:%M:%S", localtime(&now));
-    snprintf(line, sizeof(line), "======== %s  %s ========", stamp, param_get(p, "text", "mark"));
+    snprintf(line, sizeof(line), "======== %s  %s ========", stamp, whb_param(req, "text", "mark"));
     take_line(line);
     flush_file();
-    send_json(fd, 200, "{\"marked\":true}");
+    whb_send_json(req, 200, "{\"marked\":true}");
 }
 
 /* ------------------------------------------------------------------ */
@@ -209,7 +209,7 @@ int main(void)
     pthread_create(&tid, &attr, reader_thread, NULL);
     pthread_attr_destroy(&attr);
 
-    http_route("POST", "/api/klog/mark", handle_mark);
+    whb_route("POST", "/api/klog/mark", handle_mark);
 
     int port = 0;
 #ifdef WHB_HOST

@@ -86,9 +86,10 @@ branches off in between: `whb_start(app)` (name, hello, settings, takeover of
 an idle copy; 1 when a busy copy stays) and `whb_serve(port)` (built-in
 routes, then the server; port 0 takes the one from the settings). The struct
 gained `on_start` - what must be set up before anything talks to the system
-services - and `busy_with` ("a dump") for messages. The request type
-`whb_req_t` and the `whb_` names for the server functions are not in yet -
-handlers are still `(int fd, const params_t *p)`.
+services - and `busy_with` ("a dump") for messages. The request type is in as sketched: handlers are `void fn(whb_req_t *req)`,
+registered with `whb_route()`, and see the request only through `whb_param()`,
+`whb_param_int()`, `whb_peer_is_local()` and the `whb_send*()` family - the
+socket and the parameter table are `http.c`'s own.
 
 `busy()` is the one callback the core needs: single-instance takeover, `quit`
 and the cached page's reload all ask it instead of knowing about dumps.

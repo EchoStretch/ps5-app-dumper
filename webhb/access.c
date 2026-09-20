@@ -145,11 +145,11 @@ void whb_access_notify(const char *ip, int port)
 
 /* Where this browser stands. The code itself is only told to those who
    could change it anyway. */
-static void handle_access(int fd, const params_t *p)
+static void handle_access(whb_req_t *req)
 {
-    int local    = http_peer_is_local(fd);
+    int local    = whb_peer_is_local(req);
     int trusted  = local || !whb_access_required();
-    int unlocked = trusted || whb_access_token_ok(param_get(p, "token", NULL));
+    int unlocked = trusted || whb_access_token_ok(whb_param(req, "token", NULL));
 
     sb_t sb;
     sb_init(&sb);
@@ -163,12 +163,12 @@ static void handle_access(int fd, const params_t *p)
         sb_json_str(&sb, code);
     }
     sb_puts(&sb, "}");
-    send_sb(fd, 200, &sb);
+    whb_send_sb(req, 200, &sb);
 }
 
-static void handle_unlock(int fd, const params_t *p)
+static void handle_unlock(whb_req_t *req)
 {
-    const char *given = param_get(p, "code", "");
+    const char *given = whb_param(req, "code", "");
     time_t now = time(NULL);
 
     pthread_mutex_lock(&g_mtx);
@@ -178,7 +178,7 @@ static void handle_unlock(int fd, const params_t *p)
 
         char msg[96];
         snprintf(msg, sizeof(msg), "too many wrong codes - try again in %d s", wait);
-        send_error(fd, 429, msg);
+        whb_send_error(req, 429, msg);
         return;
     }
 
@@ -196,7 +196,7 @@ static void handle_unlock(int fd, const params_t *p)
 
     if (!ok) {
         write_log(g_log_path, "Web UI: a wrong code was entered");
-        send_error(fd, 401, "wrong code");
+        whb_send_error(req, 401, "wrong code");
         return;
     }
 
@@ -205,14 +205,13 @@ static void handle_unlock(int fd, const params_t *p)
     sb_puts(&sb, "{\"token\":");
     sb_json_str(&sb, token);
     sb_puts(&sb, "}");
-    send_sb(fd, 200, &sb);
+    whb_send_sb(req, 200, &sb);
 }
 
 /* For a browser that is locked out: puts the code on the TV again. Open to
    everybody by necessity, so it is kept from being used to flood the screen. */
-static void handle_show_code(int fd, const params_t *p)
+static void handle_show_code(whb_req_t *req)
 {
-    (void)p;
     time_t now = time(NULL);
 
     pthread_mutex_lock(&g_mtx);
@@ -225,7 +224,7 @@ static void handle_show_code(int fd, const params_t *p)
         whb_access_get(code, sizeof(code), NULL, 0);
         printf_notification_quiet("%s\nCode: %s", whb_app()->name, code);
     }
-    send_json(fd, 200, "{\"shown\":true}");
+    whb_send_json(req, 200, "{\"shown\":true}");
 }
 
 void whb_access_routes_init(void)
@@ -233,9 +232,9 @@ void whb_access_routes_init(void)
     /* an app that stores nothing still gets a code, new with every start */
     if (!g_code[0]) whb_access_init(NULL, NULL, 1);
 
-    http_route("GET",  WHB_API "/access",      handle_access);
-    http_route("POST", WHB_API "/unlock",      handle_unlock);
-    http_route("POST", WHB_API "/access/show", handle_show_code);
-    http_route_open(WHB_API "/unlock");
-    http_route_open(WHB_API "/access/show");
+    whb_route("GET",  WHB_API "/access",      handle_access);
+    whb_route("POST", WHB_API "/unlock",      handle_unlock);
+    whb_route("POST", WHB_API "/access/show", handle_show_code);
+    whb_route_open(WHB_API "/unlock");
+    whb_route_open(WHB_API "/access/show");
 }
