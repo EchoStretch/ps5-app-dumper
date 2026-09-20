@@ -22,7 +22,7 @@ GEN  := $(OUT)/web_assets.c $(OUT)/tile_assets.c
 CFLAGS := -O1 -Wall -pthread -I$(ROOT)/include -I$(ROOT)/webhb/include \
           -DMOUNT_TIMEOUT=15 -DINTERNAL_ROOT='"data"' -DSTORE_ROOT='"$(abspath $(RUN))/pstore/"'
 
-.PHONY: sim run pldmgr snapshot render clean
+.PHONY: sim run pldmgr snapshot render styles clean
 
 sim: $(OUT)/sim
 
@@ -55,6 +55,10 @@ snapshot: $(OUT)/sim
 # what a browser makes of the page: run `make run` in another terminal first
 render:
 	./domcheck.sh http://127.0.0.1:$(PORT)/
+
+# the computed style of every element in every view - see README.md
+styles:
+	node --experimental-websocket stylecheck.js http://127.0.0.1:$(PORT)/ $(OUT)/styles.json
 
 clean:
 	rm -rf $(OUT)

@@ -10,6 +10,7 @@ make -C harness run         # serve http://127.0.0.1:8099/  (Ctrl-C to stop)
 make -C harness pldmgr      # a stand-in for Payload Manager on :8084
 make -C harness snapshot    # every route's answer -> out/snapshot.txt
 make -C harness render      # what headless Chrome makes of the page (needs `run`)
+make -C harness styles      # every element's computed style, view by view -> out/styles.json (needs `run`)
 ```
 
 What is real and what is not: `mock_console.c` fakes the mounted games, the
@@ -47,6 +48,24 @@ page calls is gone. `render` loads the page in headless Chrome, lets its script
 run and reports what ended up on screen: titles, drives, connection state, log
 lines. Each count includes one hit from the page's own source, so compare the
 numbers before and after rather than reading them as absolutes.
+
+`styles` is for changes to the stylesheet or the markup that are not meant to
+be seen - moving rules around, splitting files. `stylecheck.js` walks the page
+through its views and dialogs (queue, settings, folder picker, unlock, a dump
+from start to end, the dumps page, delete, and everything un-hidden at once),
+at two widths, with and without the flex-gap fallback, and writes down the
+computed style of every element. Do it before and after, each time against a
+freshly started simulator, and compare:
+
+```sh
+node harness/stylediff.js before.json after.json
+```
+
+Two runs of the same page differ in a handful of elements that depend on
+timing (the progress bar in mid-dump, a button that shows a moment later) -
+run the old page twice to know them. Hover, focus and disabled states are not
+reached this way; rules for those want a look at what changed places. It needs
+Node 20 or newer and Chrome.
 
 ## What this cannot show
 
