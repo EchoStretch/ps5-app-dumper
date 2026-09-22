@@ -30,6 +30,7 @@ along with this program; see the file COPYING. If not, see
 #include <sys/stat.h>
 
 #include "dump_library.h"
+#include "elf2fself.h"
 #include "dump_store.h"
 #include "app_scan.h"
 #include "routes.h"
@@ -117,6 +118,7 @@ static void add_entry(scan_ctx_t *c, const char *rel, const char *name)
     else        snprintf(dest, sizeof(dest), "%s", e->mount);
 
     dump_info_string(dest, name, "state", e->state, sizeof(e->state));
+    if (dump_info_int(dest, name, "fself", &e->fself) != 0) e->fself = -1;
     dump_info_string(dest, name, "title", e->title, sizeof(e->title));
     e->bytes = info_bytes(dest, name);
 
@@ -507,4 +509,107 @@ void dumplib_move_clear(void)
     pthread_mutex_lock(&g_mtx);
     if (g_move.state != MOVE_RUNNING) memset(&g_move, 0, sizeof(g_move));
     pthread_mutex_unlock(&g_mtx);
+}
+
+/* ------------------------------------------------------------------ */
+/*  FSELF after the fact                                               */
+/* ------------------------------------------------------------------ */
+
+static int is_executable_name(const char *name)
+{
+    const char *ext = strrchr(name, '.');
+    if (!ext) return 0;
+    return !strcasecmp(ext, ".elf") || !strcasecmp(ext, ".self") || !strcasecmp(ext, ".prx") ||
+           !strcasecmp(ext, ".sprx") || !strcasecmp(ext, ".bin");
+}
+
+/* 1 for a file that starts with the ELF magic - decrypted, not yet FSELF */
+static int is_plain_elf(const char *path)
+{
+    unsigned char magic[4] = {0};
+    FILE *f = fopen(path, "rb");
+    if (!f) return 0;
+    size_t n = fread(magic, 1, 4, f);
+    fclose(f);
+    return n == 4 && magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F';
+}
+
+static void fself_walk(const char *dir, int depth, int *converted, int *skipped)
+{
+    if (depth > 12) return;
+    DIR *d = opendir(dir);
+    if (!d) return;
+
+    struct dirent *ent;
+    while ((ent = readdir(d))) {
+        if (!strcmp(ent->d_name, ".") || !strcmp(ent->d_name, "..")) continue;
+        /* the plain copies made for backporting stay plain on purpose */
+        if (depth == 0 && !strcmp(ent->d_name, "decrypted")) continue;
+
+        char path[1024];
+        if (snprintf(path, sizeof(path), "%s/%s", dir, ent->d_name) >= (int)sizeof(path)) continue;
+
+        struct stat st;
+        if (stat(path, &st) != 0) continue;
+        if (S_ISDIR(st.st_mode)) { fself_walk(path, depth + 1, converted, skipped); continue; }
+        if (!S_ISREG(st.st_mode) || !is_executable_name(ent->d_name)) continue;
+        if (!is_plain_elf(path)) { (*skipped)++; continue; }
+
+        char tmp[1040];
+        snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+        if (rename(path, tmp) != 0) { (*skipped)++; continue; }
+        if (elf2fself(tmp, path) == 0) {
+            unlink(tmp);
+            (*converted)++;
+        } else {
+            rename(tmp, path);
+            (*skipped)++;
+            write_log(g_log_path, "FSELF: %s could not be converted - left as it was", path);
+        }
+    }
+    closedir(d);
+}
+
+/* one conversion at a time: two walking the same folder rename each
+   other's files away */
+static pthread_mutex_t g_fself_mtx = PTHREAD_MUTEX_INITIALIZER;
+static int             g_fself_running = 0;
+
+int dumplib_fself_active(void) { return g_fself_running; }
+
+int dumplib_fself(const char *mount, const char *dir, const char *folder,
+                  int *converted, int *skipped, char *err, size_t err_size)
+{
+    #define FAIL(...) do { if (err && err_size) snprintf(err, err_size, __VA_ARGS__); return -1; } while (0)
+    if (!mount || !dir || !folder)           FAIL("missing parameters");
+    if (!dump_folder_name_ok(folder))        FAIL("not a dump folder");
+    if (!fs_path_is_safe(dir))               FAIL("invalid folder");
+    if (target_is_known(mount) != 0)         FAIL("unknown drive");
+    if (dumper_busy())                       FAIL("a dump or a move is running");
+
+    pthread_mutex_lock(&g_fself_mtx);
+    if (g_fself_running) { pthread_mutex_unlock(&g_fself_mtx); FAIL("a conversion is running already"); }
+    g_fself_running = 1;
+    pthread_mutex_unlock(&g_fself_mtx);
+    #undef FAIL
+    #define FAIL(...) do { if (err && err_size) snprintf(err, err_size, __VA_ARGS__); g_fself_running = 0; return -1; } while (0)
+
+    char dest[512], path[640];
+    snprintf(dest, sizeof(dest), "%s%s%s", mount, dir[0] ? "/" : "", dir);
+    snprintf(path, sizeof(path), "%s/%s", dest, folder);
+    if (!dir_exists(path))                   FAIL("no such dump");
+
+    char state[16] = {0};
+    dump_info_string(dest, folder, "state", state, sizeof(state));
+    if (state[0] && strcmp(state, "done") != 0) FAIL("this dump was not finished");
+
+    *converted = *skipped = 0;
+    write_log(g_log_path, "FSELF: converting the executables of %s", path);
+    fself_walk(path, 0, converted, skipped);
+    write_log(g_log_path, "FSELF: %s - %d converted, %d left as they were", folder, *converted, *skipped);
+
+    if (*converted > 0 || *skipped == 0) dump_info_set_int(dest, folder, "fself", 1);
+    g_fself_running = 0;
+    return 0;
+    #undef FAIL
 }

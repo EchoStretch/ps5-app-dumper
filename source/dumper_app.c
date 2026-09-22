@@ -31,7 +31,7 @@ extern const size_t        app_icon_png_len;
 
 int dumper_busy(void)
 {
-    return job_is_active() || queue_is_active() || dumplib_move_active();
+    return job_is_active() || queue_is_active() || dumplib_move_active() || dumplib_fself_active();
 }
 
 const whb_app_t *dumper_app(void)

@@ -2074,8 +2074,11 @@ function dumpTags(d){
   return (d.titleId.indexOf("CUSA") === 0 ? '<span class="tag ps4">PS4</span>' : '<span class="tag ps5">PS5</span>') +
     (/-patch0$/.test(d.folder) ? '<span class="tag pkg" title="The update of this game - its base game is a folder of its own, ending in -app0">PATCH</span>' : "") +
     (d.state && d.state !== "done" ? '<span class="tag cut" title="This dump was not finished">UNFINISHED</span>' : "") +
+    (d.fself === 1 ? '<span class="tag pkg" title="The executables are FSELF files">FSELF</span>' : "") +
     (d.inUse ? mountTag(dumpPath(d)) : "");
 }
+/* a finished dump whose executables are still plain ELF can get them as FSELF now */
+function canFself(d){ return (!d.state || d.state === "done") && d.fself !== 1; }
 /* the other half of a PS4 dump made with split: <id>-app0 next to <id>-patch0 */
 function dumpSibling(d){
   var other = /-patch0$/.test(d.folder) ? d.titleId + "-app0" : /-app0$/.test(d.folder) ? d.titleId + "-patch0" : null;
@@ -2117,12 +2120,15 @@ function renderDumps(){
                 '<span class="foot"><span class="size">' + (d.bytes ? bytes(d.bytes) : "") + '</span>' +
                 (d.inUse ? '<button type="button" class="mini" data-unlink="' + at + '" style="margin-left:auto">Unlink</button>' : "") +
                 '<button type="button" class="mini" data-move="' + at + '"' + (d.inUse ? ' style="margin-left:6px"' : "") + '>Move</button></span>' +
-                '<span class="foot" style="margin-top:6px"><button type="button" class="mini del" data-del="' + at + '">Delete</button></span></span></div>';
+                '<span class="foot" style="margin-top:6px">' +
+                (canFself(d) ? '<button type="button" class="mini" data-fself="' + at + '" title="Turn the decrypted executables into FSELF files, as the FSELF option does while dumping" style="margin-right:6px">FSELF</button>' : "") +
+                '<button type="button" class="mini del" data-del="' + at + '">Delete</button></span></span></div>';
       } else {
         html += '<div class="dumprow"><span class="meta"><span class="name">' + esc(d.title) + '</span>' +
                 '<span class="where">' + dumpTags(d) + esc(dumpPath(d)) + '</span></span>' +
                 '<span class="size">' + (d.bytes ? bytes(d.bytes) : "") + '</span>' +
                 (d.inUse ? '<button type="button" class="mini" data-unlink="' + at + '" style="margin-right:6px">Unlink</button>' : "") +
+                (canFself(d) ? '<button type="button" class="mini" data-fself="' + at + '" style="margin-right:6px">FSELF</button>' : "") +
                 '<button type="button" class="mini" data-move="' + at + '">Move</button>' +
                 '<button type="button" class="mini del" data-del="' + at + '" style="margin-left:6px">Delete</button></div>';
       }
@@ -2139,6 +2145,18 @@ function renderDumps(){
     b.addEventListener("click", function(){ openDelete(state.dumps[Number(b.getAttribute("data-del"))]); });
   });
   /* takes the link off the installed game; the dump stays where it is */
+  Array.prototype.forEach.call($("dumplist").querySelectorAll("[data-fself]"), function(b){
+    b.addEventListener("click", function(){
+      var d = state.dumps[Number(b.getAttribute("data-fself"))];
+      if(whb.busy){ toast("A dump or a move is running.", "bad"); return; }
+      b.disabled = true; b.textContent = "Converting…";
+      post("/api/dumps/fself", {mount: d.mount, dir: d.dir, folder: d.folder}).then(function(r){
+        toast(r.converted + " file" + (r.converted === 1 ? "" : "s") + " turned into FSELF" +
+              (r.skipped ? ", " + r.skipped + " left as they were" : ""), "ok");
+        loadDumps();
+      }).catch(function(e){ toast(e.message, "bad"); b.disabled = false; b.textContent = "FSELF"; });
+    });
+  });
   Array.prototype.forEach.call($("dumplist").querySelectorAll("[data-unlink]"), function(b){
     b.addEventListener("click", function(){
       var d = state.dumps[Number(b.getAttribute("data-unlink"))];

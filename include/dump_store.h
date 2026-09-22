@@ -89,6 +89,9 @@ int dump_list_incomplete(const char *dest, dump_entry_t *out, int max);
 int dump_folder_name_ok(const char *name);
 /* One string value from <dest>/<folder>.dump-info.json, 0 on success. */
 int dump_info_string(const char *dest, const char *folder, const char *key, char *out, size_t out_size);
+/* A number from the info file ("fself": 1), and changing one in place. */
+int dump_info_int(const char *dest, const char *folder, const char *key, int *out);
+int dump_info_set_int(const char *dest, const char *folder, const char *key, int value);
 /* Removes a folder and all below it. Only ever to be called on a path that
    ends in a dump folder name. */
 int dump_remove_tree(const char *path);

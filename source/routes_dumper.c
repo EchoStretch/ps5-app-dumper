@@ -586,14 +586,29 @@ static void handle_dumps(whb_req_t *req)
         sb_puts(&sb, ",\"titleId\":"); sb_json_str(&sb, list[i].title_id);
         sb_puts(&sb, ",\"title\":");   sb_json_str(&sb, list[i].title[0] ? list[i].title : list[i].title_id);
         sb_puts(&sb, ",\"state\":");   sb_json_str(&sb, list[i].state);
-        sb_printf(&sb, ",\"internal\":%s,\"inUse\":%s,\"hasIcon\":%s,\"bytes\":%llu}",
+        sb_printf(&sb, ",\"internal\":%s,\"inUse\":%s,\"hasIcon\":%s,\"bytes\":%llu,\"fself\":%d}",
                   list[i].internal ? "true" : "false", list[i].in_use ? "true" : "false",
                   list[i].has_icon ? "true" : "false",
-                  (unsigned long long)list[i].bytes);
+                  (unsigned long long)list[i].bytes, list[i].fself);
     }
     sb_puts(&sb, "]}");
     free(list);
     whb_send_sb(req, 200, &sb);
+}
+
+/* FSELF after the fact, for a dump made without it. */
+static void handle_dumps_fself(whb_req_t *req)
+{
+    int converted = 0, skipped = 0;
+    char err[160];
+    if (dumplib_fself(whb_param(req, "mount", NULL), whb_param(req, "dir", ""), whb_param(req, "folder", NULL),
+                      &converted, &skipped, err, sizeof(err)) != 0) {
+        whb_send_error(req, 400, err);
+        return;
+    }
+    char json[96];
+    snprintf(json, sizeof(json), "{\"converted\":%d,\"skipped\":%d}", converted, skipped);
+    whb_send_json(req, 200, json);
 }
 
 static void handle_dump_icon(whb_req_t *req)
@@ -770,6 +785,7 @@ void routes_dumper_init(void)
     whb_route("POST", "/api/abort",          handle_abort);
     whb_route("GET",  "/api/dumps/presence", handle_dump_presence);
     whb_route("POST", "/api/dumps/delete",   handle_dump_delete);
+    whb_route("POST", "/api/dumps/fself",   handle_dumps_fself);
     whb_route("GET",  "/api/dumps",          handle_dumps);
     whb_route("GET",  "/api/dumps/icon",     handle_dump_icon);
     whb_route("POST", "/api/shadowmount/stop", handle_shadowmount_stop);

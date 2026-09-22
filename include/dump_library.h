@@ -39,6 +39,7 @@ typedef struct {
     uint64_t bytes;         /* from the info file, 0 when not known              */
     int      in_use;        /* an installed title is redirected to this folder   */
     int      has_icon;      /* the dump carries its sce_sys/icon0.png            */
+    int      fself;         /* 1: executables are FSELF, 0: plain, -1: not known  */
 } dumplib_entry_t;
 
 /* Finds them. with_internal = 0 leaves the console's storage out - its folder
@@ -76,7 +77,14 @@ int  dumplib_move(const char *mount, const char *dir, const char *folder,
    Reported through the move status, with deleting set. */
 int  dumplib_delete(const char *mount, const char *dir, const char *folder,
                     const char *confirm, char *err, size_t err_size);
+/* Turns the decrypted executables of a finished dump into FSELF files in
+   place - what enable_elf2fself would have done while dumping. Files that
+   are not plain ELF (still encrypted, or FSELF already) are left alone, and
+   so is the decrypted/ folder. Returns 0 with the counts, -1 with a reason. */
+int  dumplib_fself(const char *mount, const char *dir, const char *folder,
+                   int *converted, int *skipped, char *err, size_t err_size);
 int  dumplib_move_active(void);
+int  dumplib_fself_active(void);
 void dumplib_move_cancel(void);
 void dumplib_move_status(move_status_t *out);
 /* Forgets the result of the last move. */

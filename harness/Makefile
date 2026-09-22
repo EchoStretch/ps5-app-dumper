@@ -16,13 +16,13 @@ CC   ?= cc
 REAL := $(filter-out %/tile.c %/instance.c %/drives.c %/start.c,$(shell ls $(WEBHB)/webhb/*.c)) \
         $(ROOT)/source/routes_dumper.c $(ROOT)/source/dumper_app.c $(ROOT)/source/dumper_config.c \
         $(ROOT)/source/dump_job.c $(ROOT)/source/dump_queue.c $(ROOT)/source/dump_store.c $(ROOT)/source/dump_library.c \
-        $(ROOT)/source/utils.c
+        $(ROOT)/source/utils.c $(ROOT)/source/elf2fself.c $(ROOT)/source/sha256.c
 
 GEN  := $(OUT)/web_assets.c $(OUT)/icon_assets.c
 
 # short timeouts keep a queue run watchable; the stored-file check is pointed
 # at a folder the fake Payload Manager really writes to
-CFLAGS := -O1 -Wall -pthread -I$(ROOT)/include -I$(WEBHB)/webhb/include \
+CFLAGS := -O1 -Wall -pthread -Icompat -I$(ROOT)/include -I$(WEBHB)/webhb/include \
           -DMOUNT_TIMEOUT=15 -DINTERNAL_ROOT='"data"' -DSTORE_ROOT='"$(abspath $(RUN))/pstore/"'
 
 .PHONY: sim run pldmgr snapshot render styles clean

@@ -270,6 +270,53 @@ int dump_info_string(const char *dest, const char *folder, const char *key, char
     return info_read(path, key, out, out_size);
 }
 
+int dump_info_int(const char *dest, const char *folder, const char *key, int *out)
+{
+    char path[512], buf[2048], needle[48];
+    info_path(dest, folder, path, sizeof(path));
+    FILE *f = fopen(path, "r");
+    if (!f) return -1;
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+
+    snprintf(needle, sizeof(needle), "\"%s\": ", key);
+    const char *p = strstr(buf, needle);
+    if (!p) return -1;
+    p += strlen(needle);
+    if (*p < '0' || *p > '9') return -1;
+    *out = atoi(p);
+    return 0;
+}
+
+int dump_info_set_int(const char *dest, const char *folder, const char *key, int value)
+{
+    char path[512], buf[2048], needle[48], tail[2048];
+    info_path(dest, folder, path, sizeof(path));
+    FILE *f = fopen(path, "r");
+    if (!f) return -1;
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+
+    snprintf(needle, sizeof(needle), "\"%s\": ", key);
+    char *p = strstr(buf, needle);
+    if (!p) return -1;
+    p += strlen(needle);
+    char *rest = p;
+    while (*rest >= '0' && *rest <= '9') rest++;
+    snprintf(tail, sizeof(tail), "%s", rest);
+    snprintf(p, sizeof(buf) - (size_t)(p - buf), "%d%s", value, tail);
+
+    f = fopen(path, "w");
+    if (!f) return -1;
+    fputs(buf, f);
+    fflush(f);
+    fsync(fileno(f));
+    fclose(f);
+    return 0;
+}
+
 int dump_remove_tree(const char *path)
 {
     const char *name = path ? strrchr(path, '/') : NULL;
