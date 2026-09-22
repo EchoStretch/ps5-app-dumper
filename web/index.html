@@ -141,6 +141,7 @@ main{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:18px;a
 .tag.disc.out{opacity:.6;border-style:dashed}
 .tag.mount{color:var(--green)}
 .tag.inst{color:var(--amber);border-style:dashed}
+.tag.part{color:var(--ink-dim);border-style:dashed}
 .tag.all{color:var(--ink-faint);margin-right:0}
 .tag.all.on{color:var(--ink);background:rgba(47,157,255,.22);border-color:var(--accent)}
 button.tag{font:inherit;font-family:var(--mono);font-size:9px;letter-spacing:.1em;background:none;cursor:pointer;line-height:inherit}
@@ -656,9 +657,13 @@ function mountTag(from){
 }
 /* A title can be played before all of it is on the console; a dump of it
    would have holes. -1 / undefined: not known. */
-function installing(t){ return typeof t.installed === "number" && t.installed >= 0 && t.installed < 100; }
+function installing(t){ return !!t.installing; }
+/* below 100 with the install over: chunks the console never fetched */
+function partial(t){ return !t.installing && typeof t.installed === "number" && t.installed >= 0 && t.installed < 100; }
 function installTag(t){
-  return installing(t) ? '<span class="tag inst" title="Only ' + t.installed + ' % of this title is on the console yet - a dump now would be incomplete">INSTALLING ' + t.installed + '%</span>' : "";
+  if(installing(t)) return '<span class="tag inst" title="Only ' + t.installed + ' % of this title is on the console yet - a dump now would be incomplete">INSTALLING ' + t.installed + '%</span>';
+  if(partial(t)) return '<span class="tag part" title="' + t.installed + ' % of the package is on the console and the rest never arrived - content the console did not fetch. A dump has what is there">' + t.installed + '% HERE</span>';
+  return "";
 }
 
 /* ---------------- rendering: apps ---------------- */
@@ -677,7 +682,7 @@ function renderApps(){
 
   var sig = state.apps.map(function(a){
     var known = libraryEntry(a.titleId);
-    return a.dir + "|" + a.title + "|" + a.version + "|" + a.hasIcon + "|" + a.media + a.discIn + "|" + a.installed +
+    return a.dir + "|" + a.title + "|" + a.version + "|" + a.hasIcon + "|" + a.media + a.discIn + "|" + a.installed + a.installing +
            "|" + !!(known && known.hasPic) + "|" + !!known + "|" + state.canLaunch;
   }).join("~");
 
@@ -708,7 +713,7 @@ function renderApps(){
       '</span></div>' +
       '<div class="hero-bar">' +
         '<span class="hero-pick"' + (installing(a) ? ' style="color:var(--amber)"' : "") + '>' +
-          (installing(a) ? "still installing - not ready to dump" : state.apps.length > 1 ? "tap to select" : "ready to dump") + '</span>' +
+          (installing(a) ? "still installing - not ready to dump" : partial(a) ? "ready to dump - " + a.installed + " % of the package is here, the rest never arrived" : state.apps.length > 1 ? "tap to select" : "ready to dump") + '</span>' +
         (known && state.canLaunch ? '<button class="mini" type="button" data-queue="' + esc(a.titleId) + '"></button>' : "") +
       '</div></div>';
   });
@@ -757,7 +762,7 @@ function renderLibrary(){
   var list = state.library.filter(function(t){ return !mounted[t.titleId]; });
 
   var sig = (state.canLaunch === false ? "nolaunch~" : "") + list.map(function(t){
-    return t.titleId + "|" + t.title + "|" + t.isRunning + "|" + t.media + t.discIn + "|" + (t.mountedFrom || "") + "|" + t.installed;
+    return t.titleId + "|" + t.title + "|" + t.isRunning + "|" + t.media + t.discIn + "|" + (t.mountedFrom || "") + "|" + t.installed + t.installing;
   }).join("~") + "#" + state.library.length;
   if(sig === libSig) return;
   libSig = sig;

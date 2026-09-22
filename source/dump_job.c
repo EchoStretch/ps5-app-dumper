@@ -244,17 +244,24 @@ int job_start(const char *app_dir, const char *mount,
     if (target_is_known(mount) != 0) FAIL("unknown destination");
 
     /* A title can be played long before all of it is on the console; a dump
-       made then would have holes nobody sees until the game is rebuilt from
-       it. Refused for the web UI, the queue and auto_start alike. */
+       made while blocks still arrive would have holes nobody sees until the
+       game is rebuilt from it. Refused for the web UI, the queue and
+       auto_start alike. A title that stands below 100 % for good - PlayGo
+       chunks the console never fetches - is dumped as it is, and the log
+       says so. */
     {
         char id[16] = {0};
         snprintf(id, sizeof(id), "%.9s", app_dir);
         int installed = title_installed_percent(id);
         if (installed >= 0 && installed < 100) {
-            char why[160];
-            snprintf(why, sizeof(why), "%s is still installing (%d %%) - the dump would be "
-                                       "incomplete, wait until it is done", id, installed);
-            FAIL(why);
+            if (title_install_moving(id)) {
+                char why[160];
+                snprintf(why, sizeof(why), "%s is still installing (%d %%) - the dump would be "
+                                           "incomplete, wait until it is done", id, installed);
+                FAIL(why);
+            }
+            write_log(g_log_path, "%s has %d %% of its package on the console and the rest never arrived "
+                                  "(content the console did not fetch) - dumping what is there", id, installed);
         }
     }
 

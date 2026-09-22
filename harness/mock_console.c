@@ -177,7 +177,9 @@ int title_drop_mount_link(const char *id, const char *target)
 
 /* Bloodborne is still coming off its disc - and refused for that before its
    size is even looked at */
-int title_installed_percent(const char *id) { return (id && !strcmp(id, "CUSA00900")) ? 63 : 100; }
+int title_installed_percent(const char *id) { return (id && !strcmp(id, "CUSA00900")) ? 63 : (id && !strcmp(id, "PPSA04567")) ? 73 : 100; }
+/* Bloodborne is still arriving; Spider-Man stands at 73 for good */
+int title_install_moving(const char *id) { return id && !strcmp(id, "CUSA00900"); }
 
 /* up two seconds after its launch, and never mounted */
 int title_runs_from_folder(const char *id)

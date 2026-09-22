@@ -585,6 +585,34 @@ static int installed_percent_at(const char *root, const char *title_id)
     return pct;
 }
 
+/* Blocks still arrive while the bitmap keeps changing. Once it has stood
+   still for this long the install is over - what is missing then are PlayGo
+   chunks the console never fetches (languages it does not need, say), and
+   they never will. Seen on FW 12.00: a title at 73 % with four holes in the
+   middle of the package and a bitmap untouched for days. */
+#define INSTALL_QUIET_SECONDS (10 * 60)
+
+static int install_moving_at(const char *root, const char *title_id)
+{
+    char path[320];
+    snprintf(path, sizeof(path), "%s/%s/app.pbm", root, title_id);
+
+    struct stat st;
+    if (stat(path, &st) != 0) return -1;
+    return (time(NULL) - st.st_mtime) < INSTALL_QUIET_SECONDS;
+}
+
+int title_install_moving(const char *title_id)
+{
+    if (!is_title_id(title_id)) return 0;
+
+    for (int r = 0; g_app_roots[r].path; r++) {
+        int moving = install_moving_at(g_app_roots[r].path, title_id);
+        if (moving >= 0) return moving && title_installed_percent(title_id) < 100;
+    }
+    return 0;
+}
+
 /* The folder a title is redirected to, read from <root>/<id>/mount.lnk - a
    single line, the path. Empty when there is no such file. */
 static void read_mount_link(const char *root, const char *title_id, char *out, size_t out_size)
@@ -610,6 +638,7 @@ static void library_fill(library_entry_t *e, const char *title_id, const char *r
     memset(e, 0, sizeof(*e));
     read_mount_link(root, title_id, e->mounted_from, sizeof(e->mounted_from));
     e->installed_pct = installed_percent_at(root, title_id);
+    e->install_moving = e->installed_pct >= 0 && e->installed_pct < 100 && install_moving_at(root, title_id) > 0;
     strncpy(e->title_id, title_id, sizeof(e->title_id) - 1);
     strncpy(e->source, label, sizeof(e->source) - 1);
     e->is_ps4 = (strncmp(title_id, "CUSA", 4) == 0);

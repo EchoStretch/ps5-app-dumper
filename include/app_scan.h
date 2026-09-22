@@ -72,6 +72,7 @@ typedef struct {
        of it is. -1 when that cannot be told. A title can be started long
        before it is complete - a dump of it would have holes. */
     int  installed_pct;
+    int  install_moving;  /* 1 while blocks still arrive; a title can stand below 100 for good */
 } library_entry_t;
 
 #define LIBRARY_SCAN_MAX 128
@@ -116,5 +117,7 @@ int title_drop_mount_link(const char *title_id, const char *target);
 
 /* See library_entry_t.installed_pct. */
 int title_installed_percent(const char *title_id);
+/* See library_entry_t.install_moving. */
+int title_install_moving(const char *title_id);
 
 #endif /* APP_SCAN_H */
