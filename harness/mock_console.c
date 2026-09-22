@@ -317,6 +317,7 @@ static int g_tile_ok = 0;
 int tile_exists(void) { return 1; }
 int tile_is_current(int port) { (void)port; return g_tile_ok; }
 int tile_install(int port, char *err, size_t n) { (void)port; (void)err; (void)n; g_tile_ok = 1; return 0; }
+int tile_remove(char *err, size_t n) { (void)err; (void)n; g_tile_ok = 0; return 0; }
 
 /* ------------------------------------------------------------------ */
 

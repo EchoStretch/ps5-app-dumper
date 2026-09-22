@@ -61,6 +61,7 @@ static const whb_cfg_key_t g_keys[] = {
                  "; enable_webui = 1 -> serve the web interface (default)\n"
                  "; enable_webui = 0 -> headless, dump the running app right away\n" },
     WHB_CFG_STD_WEB_PORT,
+    WHB_CFG_STD_TILE,
     { .ini_name = "auto_start", .web_name = "autoStart", .type = WHB_CFG_BOOL, .def = 0,
       .comment = "; auto_start = 1 -> dump the running game right at launch; the web UI comes\n"
                  ";                   up as well, to watch it, stop it or switch this off\n" },
