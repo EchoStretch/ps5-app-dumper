@@ -660,9 +660,15 @@ function mountTag(from){
 function installing(t){ return !!t.installing; }
 /* below 100 with the install over: chunks the console never fetched */
 function partial(t){ return !t.installing && typeof t.installed === "number" && t.installed >= 0 && t.installed < 100; }
+function partialWhy(t){
+  var c = t.chunks || [];
+  return c[0] ? "The package has " + c[0] + " PlayGo chunks; this console wants " + c[1] + " of them (its languages and region) and has them all. " +
+                "The other " + (c[0] - c[1]) + " were never fetched. A dump has what is here"
+              : t.installed + " % of the package is on the console and the rest never arrived - content the console did not fetch. A dump has what is here";
+}
 function installTag(t){
   if(installing(t)) return '<span class="tag inst" title="Only ' + t.installed + ' % of this title is on the console yet - a dump now would be incomplete">INSTALLING ' + t.installed + '%</span>';
-  if(partial(t)) return '<span class="tag part" title="' + t.installed + ' % of the package is on the console and the rest never arrived - content the console did not fetch. A dump has what is there">' + t.installed + '% HERE</span>';
+  if(partial(t)) return '<span class="tag part" title="' + partialWhy(t) + '">' + t.installed + '% HERE</span>';
   return "";
 }
 
@@ -713,7 +719,7 @@ function renderApps(){
       '</span></div>' +
       '<div class="hero-bar">' +
         '<span class="hero-pick"' + (installing(a) ? ' style="color:var(--amber)"' : "") + '>' +
-          (installing(a) ? "still installing - not ready to dump" : partial(a) ? "ready to dump - " + a.installed + " % of the package is here, the rest never arrived" : state.apps.length > 1 ? "tap to select" : "ready to dump") + '</span>' +
+          (installing(a) ? "still installing - not ready to dump" : partial(a) ? "ready to dump - " + (a.chunks && a.chunks[0] ? a.chunks[2] + " of " + a.chunks[0] + " chunks, all this console wants" : a.installed + " % of the package is here, the rest never arrived") : state.apps.length > 1 ? "tap to select" : "ready to dump") + '</span>' +
         (known && state.canLaunch ? '<button class="mini" type="button" data-queue="' + esc(a.titleId) + '"></button>' : "") +
       '</div></div>';
   });

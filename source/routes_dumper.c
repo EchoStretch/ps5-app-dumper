@@ -160,13 +160,15 @@ static void handle_devices(whb_req_t *req)
         sb_json_str(&sb, apps[i].version);
         sb_puts(&sb, ",\"patchDir\":");
         sb_json_str(&sb, apps[i].patch_dir);
-        sb_printf(&sb, ",\"isPs4\":%s,\"hasIcon\":%s,\"media\":\"%s\",\"discIn\":%s,\"installed\":%d,\"installing\":%s}",
+        playgo_status_t pg;
+        if (title_playgo_status(apps[i].title_id, &pg) != 0) memset(&pg, 0, sizeof(pg));
+        sb_printf(&sb, ",\"isPs4\":%s,\"hasIcon\":%s,\"media\":\"%s\",\"discIn\":%s,\"installed\":%d,\"installing\":%s,\"chunks\":[%d,%d,%d]}",
                   apps[i].is_ps4 ? "true" : "false",
                   apps[i].has_icon ? "true" : "false",
                   apps[i].is_disc ? "disc" : "pkg",
                   apps[i].on_disc ? "true" : "false",
                   title_installed_percent(apps[i].title_id),
-                  title_install_moving(apps[i].title_id) ? "true" : "false");
+                  title_install_pending(apps[i].title_id) ? "true" : "false", pg.chunks, pg.wanted, pg.here);
     }
 
     sb_puts(&sb, "],\"targets\":[");
@@ -536,7 +538,8 @@ static void handle_library(whb_req_t *req)
                   lib[i].is_running ? "true" : "false",
                   lib[i].is_disc ? "disc" : "pkg",
                   lib[i].on_disc ? "true" : "false");
-        sb_printf(&sb, ",\"installed\":%d,\"installing\":%s", lib[i].installed_pct, lib[i].install_moving ? "true" : "false");
+        sb_printf(&sb, ",\"installed\":%d,\"installing\":%s,\"chunks\":[%d,%d,%d]", lib[i].installed_pct, lib[i].install_pending ? "true" : "false",
+                  lib[i].playgo.chunks, lib[i].playgo.wanted, lib[i].playgo.here);
         sb_puts(&sb, ",\"mountedFrom\":");
         sb_json_str(&sb, lib[i].mounted_from);
         sb_puts(&sb, "}");

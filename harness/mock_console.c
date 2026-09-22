@@ -141,6 +141,8 @@ static void fill_lib(library_entry_t *e, int i)
     e->is_disc = LIB[i].disc;
     e->has_pic = 1;
     e->installed_pct = title_installed_percent(LIB[i].id);
+    e->install_pending = title_install_pending(LIB[i].id);
+    if (title_playgo_status(LIB[i].id, &e->playgo) != 0) memset(&e->playgo, 0, sizeof(e->playgo));
     if (!strcmp(LIB[i].id, "PPSA07777") && g_folder_linked) strcpy(e->mounted_from, FOLDER_GAME_DUMP);
     e->is_running = (running_now(id) && !strcmp(id, LIB[i].id)) || title_runs_from_folder(LIB[i].id);
 }
@@ -178,8 +180,9 @@ int title_drop_mount_link(const char *id, const char *target)
 /* Bloodborne is still coming off its disc - and refused for that before its
    size is even looked at */
 int title_installed_percent(const char *id) { return (id && !strcmp(id, "CUSA00900")) ? 63 : (id && !strcmp(id, "PPSA04567")) ? 73 : 100; }
-/* Bloodborne is still arriving; Spider-Man stands at 73 for good */
-int title_install_moving(const char *id) { return id && !strcmp(id, "CUSA00900"); }
+/* Bloodborne is still arriving; Spider-Man wants 7 of 21 chunks and has them */
+int title_install_pending(const char *id) { return id && !strcmp(id, "CUSA00900"); }
+int title_playgo_status(const char *id, playgo_status_t *st) { if (!id || strcmp(id, "PPSA04567")) return -1; st->chunks = 21; st->wanted = 7; st->here = 7; return 0; }
 
 /* up two seconds after its launch, and never mounted */
 int title_runs_from_folder(const char *id)

@@ -585,30 +585,73 @@ static int installed_percent_at(const char *root, const char *title_id)
     return pct;
 }
 
-/* Blocks still arrive while the bitmap keeps changing. Once it has stood
-   still for this long the install is over - what is missing then are PlayGo
-   chunks the console never fetches (languages it does not need, say), and
-   they never will. Seen on FW 12.00: a title at 73 % with four holes in the
-   middle of the package and a bitmap untouched for days. */
-#define INSTALL_QUIET_SECONDS (10 * 60)
-
-static int install_moving_at(const char *root, const char *title_id)
+/* A package comes in PlayGo chunks, and the console fetches only the ones
+   it needs - the languages it is set to, say. So the bitmap can stand below
+   100 % for good. What the shell thinks about it is in <root>/<id>/app.xml
+   ("playgo-status"): one <chunk> per chunk with locus="3" when it is here,
+   and req_locus="3" when this console wants it. The install is over when
+   every wanted chunk is here. Seen on FW 12.00: Hogwarts Legacy at 73 % with
+   7 of 21 chunks wanted, all 7 present, the bitmap untouched for days. */
+static int playgo_status_at(const char *root, const char *title_id, playgo_status_t *st)
 {
     char path[320];
-    snprintf(path, sizeof(path), "%s/%s/app.pbm", root, title_id);
+    snprintf(path, sizeof(path), "%s/%s/app.xml", root, title_id);
 
-    struct stat st;
-    if (stat(path, &st) != 0) return -1;
-    return (time(NULL) - st.st_mtime) < INSTALL_QUIET_SECONDS;
+    FILE *f = fopen(path, "r");
+    if (!f) return -1;
+    char *xml = calloc(1, 65536);
+    if (!xml) { fclose(f); return -1; }
+    size_t n = fread(xml, 1, 65535, f);
+    fclose(f);
+    xml[n] = '\0';
+
+    memset(st, 0, sizeof(*st));
+    if (!strstr(xml, "playgo-status")) { free(xml); return -1; }
+
+    for (const char *p = strstr(xml, "<chunk "); p; p = strstr(p + 1, "<chunk ")) {
+        const char *end = strchr(p, '>');
+        if (!end) break;
+        const char *l = strstr(p, "locus=\"");
+        const char *r = strstr(p, "req_locus=\"");
+        /* "locus" also matches inside "req_locus": take the one that is not */
+        while (l && l < end && l > p && l[-1] == '_') l = strstr(l + 1, "locus=\"");
+        int locus = (l && l < end) ? atoi(l + 7) : 0;
+        int want  = (r && r < end) ? atoi(r + 11) : -1;
+        st->chunks++;
+        if (want >= 0) {
+            st->wanted++;
+            if (locus == want) st->here++;
+        }
+    }
+    free(xml);
+    return st->chunks ? 0 : -1;
 }
 
-int title_install_moving(const char *title_id)
+int title_playgo_status(const char *title_id, playgo_status_t *st)
 {
-    if (!is_title_id(title_id)) return 0;
+    if (!is_title_id(title_id)) return -1;
+    for (int r = 0; g_app_roots[r].path; r++)
+        if (playgo_status_at(g_app_roots[r].path, title_id, st) == 0) return 0;
+    return -1;
+}
+
+/* Without a PlayGo status (PS4 titles, older layouts) the bitmap has to do:
+   blocks still arrive while it keeps changing. */
+#define INSTALL_QUIET_SECONDS (10 * 60)
+
+int title_install_pending(const char *title_id)
+{
+    int pct = title_installed_percent(title_id);
+    if (pct < 0 || pct >= 100) return 0;
+
+    playgo_status_t st;
+    if (title_playgo_status(title_id, &st) == 0) return st.here < st.wanted;
 
     for (int r = 0; g_app_roots[r].path; r++) {
-        int moving = install_moving_at(g_app_roots[r].path, title_id);
-        if (moving >= 0) return moving && title_installed_percent(title_id) < 100;
+        char path[320];
+        snprintf(path, sizeof(path), "%s/%s/app.pbm", g_app_roots[r].path, title_id);
+        struct stat s;
+        if (stat(path, &s) == 0) return (time(NULL) - s.st_mtime) < INSTALL_QUIET_SECONDS;
     }
     return 0;
 }
@@ -638,7 +681,8 @@ static void library_fill(library_entry_t *e, const char *title_id, const char *r
     memset(e, 0, sizeof(*e));
     read_mount_link(root, title_id, e->mounted_from, sizeof(e->mounted_from));
     e->installed_pct = installed_percent_at(root, title_id);
-    e->install_moving = e->installed_pct >= 0 && e->installed_pct < 100 && install_moving_at(root, title_id) > 0;
+    e->install_pending = title_install_pending(title_id);
+    if (title_playgo_status(title_id, &e->playgo) != 0) memset(&e->playgo, 0, sizeof(e->playgo));
     strncpy(e->title_id, title_id, sizeof(e->title_id) - 1);
     strncpy(e->source, label, sizeof(e->source) - 1);
     e->is_ps4 = (strncmp(title_id, "CUSA", 4) == 0);

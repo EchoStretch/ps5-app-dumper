@@ -52,6 +52,13 @@ int app_icon_path(const app_entry_t *app, char *out, size_t out_size);
 /* Total size of the app payload in pfsmnt, patch folder included. */
 uint64_t app_size(const app_entry_t *app);
 
+/* What the shell's PlayGo status says about a title's chunks: how many the
+   package has, how many this console wants, how many of those are here. All
+   zero when there is no such status. */
+typedef struct {
+    int chunks, wanted, here;
+} playgo_status_t;
+
 /* One installed title, whether or not it is currently running. */
 typedef struct {
     char title_id[16];
@@ -72,7 +79,8 @@ typedef struct {
        of it is. -1 when that cannot be told. A title can be started long
        before it is complete - a dump of it would have holes. */
     int  installed_pct;
-    int  install_moving;  /* 1 while blocks still arrive; a title can stand below 100 for good */
+    int  install_pending; /* 1 while chunks this console wants are still missing */
+    playgo_status_t playgo;
 } library_entry_t;
 
 #define LIBRARY_SCAN_MAX 128
@@ -117,7 +125,8 @@ int title_drop_mount_link(const char *title_id, const char *target);
 
 /* See library_entry_t.installed_pct. */
 int title_installed_percent(const char *title_id);
-/* See library_entry_t.install_moving. */
-int title_install_moving(const char *title_id);
+/* See library_entry_t.install_pending and .playgo. */
+int title_install_pending(const char *title_id);
+int title_playgo_status(const char *title_id, playgo_status_t *st);
 
 #endif /* APP_SCAN_H */

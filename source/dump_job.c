@@ -254,14 +254,20 @@ int job_start(const char *app_dir, const char *mount,
         snprintf(id, sizeof(id), "%.9s", app_dir);
         int installed = title_installed_percent(id);
         if (installed >= 0 && installed < 100) {
-            if (title_install_moving(id)) {
+            if (title_install_pending(id)) {
                 char why[160];
                 snprintf(why, sizeof(why), "%s is still installing (%d %%) - the dump would be "
                                            "incomplete, wait until it is done", id, installed);
                 FAIL(why);
             }
-            write_log(g_log_path, "%s has %d %% of its package on the console and the rest never arrived "
-                                  "(content the console did not fetch) - dumping what is there", id, installed);
+            playgo_status_t pg;
+            if (title_playgo_status(id, &pg) == 0)
+                write_log(g_log_path, "%s: %d of %d chunks are wanted on this console and all are here; "
+                                      "the other %d (other languages or regions) were never fetched - dumping what is there",
+                          id, pg.wanted, pg.chunks, pg.chunks - pg.wanted);
+            else
+                write_log(g_log_path, "%s has %d %% of its package on the console and the rest never arrived "
+                                      "(content the console did not fetch) - dumping what is there", id, installed);
         }
     }
 
