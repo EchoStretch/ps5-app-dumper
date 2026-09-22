@@ -147,6 +147,50 @@ static void meta_dirs(const app_entry_t *app, char dirs[3][256])
     snprintf(dirs[2], 256, "/user/appmeta/%s", app->title_id);
 }
 
+/* The title's name in the language param.json calls its default, else in
+   en-US, else the first one in the file. The localized entries are listed
+   alphabetically, so the first "titleName" is usually the Arabic one. */
+static int json_read_title(const char *path, char *out, size_t out_size)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+    char buf[16384];
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    if (n == 0) return -1;
+    buf[n] = '\0';
+
+    char lang[24] = {0};
+    const char *p = strstr(buf, "\"defaultLanguage\"");
+    if (p && (p = strchr(p + 17, '"')) != NULL) {
+        size_t i = 0;
+        for (p++; *p && *p != '"' && i + 1 < sizeof(lang); p++) lang[i++] = *p;
+        lang[i] = '\0';
+    }
+
+    const char *tries[] = { lang[0] ? lang : NULL, "en-US" };
+    for (int t = 0; t < 2; t++) {
+        if (!tries[t]) continue;
+        char needle[40];
+        snprintf(needle, sizeof(needle), "\"%s\"", tries[t]);
+        const char *block = strstr(buf, needle);
+        if (!block) continue;
+        const char *end = strchr(block, '}');
+        const char *name = strstr(block, "\"titleName\"");
+        if (!name || (end && name > end)) continue;
+        name = strchr(name + 11, '"');
+        if (!name) continue;
+        size_t i = 0;
+        for (name++; *name && *name != '"' && i + 1 < out_size; name++) {
+            if (*name == '\\' && name[1]) name++;
+            out[i++] = *name;
+        }
+        out[i] = '\0';
+        if (out[0]) return 0;
+    }
+    return json_read_string(path, "titleName", out, out_size);
+}
+
 /* Reads title and version out of the first directory that carries them. */
 static void read_metadata(char dirs[][256], int dir_count, int is_ps4,
                           char *title, size_t title_size,
@@ -165,7 +209,7 @@ static void read_metadata(char dirs[][256], int dir_count, int is_ps4,
             snprintf(path, sizeof(path), "%s/param.json", dirs[i]);
             if (!file_exists(path)) continue;
 
-            if (!title[0])   json_read_string(path, "titleName", title, title_size);
+            if (!title[0])   json_read_title(path, title, title_size);
             if (!version[0]) json_read_string(path, "contentVersion", version, version_size);
         }
 

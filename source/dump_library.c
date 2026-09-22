@@ -128,7 +128,9 @@ static void add_entry(scan_ctx_t *c, const char *rel, const char *name)
     e->has_icon = file_exists(icon);
     for (int i = 0; i < c->lib_count; i++) {
         if (strcmp(c->lib[i].title_id, e->title_id) != 0) continue;
-        if (!e->title[0]) snprintf(e->title, sizeof(e->title), "%s", c->lib[i].title);
+        /* the installed title's name wins over what the info file kept: that
+           one was written in whatever language came first at the time */
+        if (c->lib[i].title[0]) snprintf(e->title, sizeof(e->title), "%s", c->lib[i].title);
         if (!strcmp(c->lib[i].mounted_from, full)) e->in_use = 1;
     }
 }
