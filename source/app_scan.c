@@ -746,6 +746,8 @@ static void library_fill(library_entry_t *e, const char *title_id, const char *r
     e->is_running = dir_exists(mounted) || title_runs_from_folder(e->title_id);
     e->on_disc = title_on_disc(e->title_id);
     e->is_disc = e->on_disc || title_is_disc_game(e->title_id);
+    /* a title ShadowMount serves from a dump folder does not need its disc */
+    if (e->mounted_from[0] && !e->on_disc) e->is_disc = 0;
 }
 
 int library_scan(library_entry_t *out, int max)

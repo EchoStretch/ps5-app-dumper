@@ -731,8 +731,11 @@ static void handle_launch(whb_req_t *req)
     }
 
     /* Said before anything is closed: starting a disc game without its disc
-       would end the running game and then fail. */
-    if (title_is_disc_game(title) && !title_on_disc(title)) {
+       would end the running game and then fail. A title that ShadowMount
+       serves from a dump folder starts without the disc. */
+    library_entry_t lib;
+    int mounted = library_find(title, &lib) == 0 && lib.mounted_from[0];
+    if (!mounted && title_is_disc_game(title) && !title_on_disc(title)) {
         whb_send_error(req, 409, "this game needs its disc - insert it and try again");
         return;
     }
