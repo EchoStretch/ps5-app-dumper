@@ -84,6 +84,9 @@ int  dumplib_delete(const char *mount, const char *dir, const char *folder,
 int  dumplib_fself(const char *mount, const char *dir, const char *folder,
                    int *converted, int *skipped, char *err, size_t err_size);
 int  dumplib_move_active(void);
+/* The way back, from the plain copies in decrypted/. */
+int  dumplib_unfself(const char *mount, const char *dir, const char *folder,
+                     int *restored, int *skipped, char *err, size_t err_size);
 int  dumplib_fself_active(void);
 void dumplib_move_cancel(void);
 void dumplib_move_status(move_status_t *out);

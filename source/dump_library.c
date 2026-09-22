@@ -534,7 +534,24 @@ static int is_plain_elf(const char *path)
     return n == 4 && magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F';
 }
 
-static void fself_walk(const char *dir, int depth, int *converted, int *skipped)
+/* <root>/decrypted/<rel>: the plain copy the dump option keeps, and what an
+   undo restores from. Returns 0 when it is there afterwards. */
+static int keep_plain_copy(const char *root, const char *path)
+{
+    const char *rel = path + strlen(root);
+    if (*rel == '/') rel++;
+    char copy[1100];
+    if (snprintf(copy, sizeof(copy), "%s/decrypted/%s", root, rel) >= (int)sizeof(copy)) return -1;
+    if (file_exists(copy)) return 0;
+
+    char dir[1100];
+    snprintf(dir, sizeof(dir), "%s", copy);
+    char *slash = strrchr(dir, '/');
+    if (slash) { *slash = '\0'; mkdirs(dir); }
+    return fs_copy_file(path, copy) == 0 && file_exists(copy) ? 0 : -1;
+}
+
+static void fself_walk(const char *root, const char *dir, int depth, int *converted, int *skipped)
 {
     if (depth > 12) return;
     DIR *d = opendir(dir);
@@ -551,9 +568,16 @@ static void fself_walk(const char *dir, int depth, int *converted, int *skipped)
 
         struct stat st;
         if (stat(path, &st) != 0) continue;
-        if (S_ISDIR(st.st_mode)) { fself_walk(path, depth + 1, converted, skipped); continue; }
+        if (S_ISDIR(st.st_mode)) { fself_walk(root, path, depth + 1, converted, skipped); continue; }
         if (!S_ISREG(st.st_mode) || !is_executable_name(ent->d_name)) continue;
         if (!is_plain_elf(path)) { (*skipped)++; continue; }
+
+        /* the original stays, as it does when the option is on while dumping */
+        if (keep_plain_copy(root, path) != 0) {
+            write_log(g_log_path, "FSELF: no room for a plain copy of %s - left as it was", path);
+            (*skipped)++;
+            continue;
+        }
 
         char tmp[1040];
         snprintf(tmp, sizeof(tmp), "%s.tmp", path);
@@ -605,10 +629,74 @@ int dumplib_fself(const char *mount, const char *dir, const char *folder,
 
     *converted = *skipped = 0;
     write_log(g_log_path, "FSELF: converting the executables of %s", path);
-    fself_walk(path, 0, converted, skipped);
+    fself_walk(path, path, 0, converted, skipped);
     write_log(g_log_path, "FSELF: %s - %d converted, %d left as they were", folder, *converted, *skipped);
 
     if (*converted > 0 || *skipped == 0) dump_info_set_int(dest, folder, "fself", 1);
+    g_fself_running = 0;
+    return 0;
+    #undef FAIL
+}
+
+/* Back from FSELF: every file under decrypted/ that has an FSELF counterpart
+   in the dump is copied over it. Files without a plain copy stay as they are. */
+static void unfself_walk(const char *root, const char *dir, int depth, int *restored, int *skipped)
+{
+    if (depth > 12) return;
+    DIR *d = opendir(dir);
+    if (!d) return;
+
+    struct dirent *ent;
+    while ((ent = readdir(d))) {
+        if (!strcmp(ent->d_name, ".") || !strcmp(ent->d_name, "..")) continue;
+        char copy[1024];
+        if (snprintf(copy, sizeof(copy), "%s/%s", dir, ent->d_name) >= (int)sizeof(copy)) continue;
+
+        struct stat st;
+        if (stat(copy, &st) != 0) continue;
+        if (S_ISDIR(st.st_mode)) { unfself_walk(root, copy, depth + 1, restored, skipped); continue; }
+        if (!S_ISREG(st.st_mode) || !is_executable_name(ent->d_name) || !is_plain_elf(copy)) continue;
+
+        /* <root>/decrypted/<rel> -> <root>/<rel> */
+        const char *rel = copy + strlen(root) + strlen("/decrypted/");
+        char path[1100];
+        snprintf(path, sizeof(path), "%s/%s", root, rel);
+        if (!file_exists(path) || is_plain_elf(path)) continue;   /* nothing to undo there */
+
+        if (fs_copy_file(copy, path) == 0) (*restored)++;
+        else { (*skipped)++; write_log(g_log_path, "FSELF undo: %s could not be restored", path); }
+    }
+    closedir(d);
+}
+
+int dumplib_unfself(const char *mount, const char *dir, const char *folder,
+                    int *restored, int *skipped, char *err, size_t err_size)
+{
+    #define FAIL(...) do { if (err && err_size) snprintf(err, err_size, __VA_ARGS__); g_fself_running = 0; return -1; } while (0)
+    if (!mount || !dir || !folder)           { g_fself_running = 0; FAIL("missing parameters"); }
+    if (!dump_folder_name_ok(folder))        FAIL("not a dump folder");
+    if (!fs_path_is_safe(dir))               FAIL("invalid folder");
+    if (target_is_known(mount) != 0)         FAIL("unknown drive");
+    if (dumper_busy())                       FAIL("a dump or a move is running");
+
+    pthread_mutex_lock(&g_fself_mtx);
+    if (g_fself_running) { pthread_mutex_unlock(&g_fself_mtx); if (err && err_size) snprintf(err, err_size, "a conversion is running already"); return -1; }
+    g_fself_running = 1;
+    pthread_mutex_unlock(&g_fself_mtx);
+
+    char dest[512], path[640], plain[660];
+    snprintf(dest, sizeof(dest), "%s%s%s", mount, dir[0] ? "/" : "", dir);
+    snprintf(path, sizeof(path), "%s/%s", dest, folder);
+    snprintf(plain, sizeof(plain), "%s/decrypted", path);
+    if (!dir_exists(path))                   FAIL("no such dump");
+    if (!dir_exists(plain))                  FAIL("this dump keeps no plain copies (decrypted/) - nothing to restore from");
+
+    *restored = *skipped = 0;
+    write_log(g_log_path, "FSELF undo: restoring the executables of %s from decrypted/", path);
+    unfself_walk(path, plain, 0, restored, skipped);
+    write_log(g_log_path, "FSELF undo: %s - %d restored, %d not", folder, *restored, *skipped);
+
+    if (*restored > 0) dump_info_set_int(dest, folder, "fself", 0);
     g_fself_running = 0;
     return 0;
     #undef FAIL

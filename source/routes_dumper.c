@@ -611,6 +611,20 @@ static void handle_dumps_fself(whb_req_t *req)
     whb_send_json(req, 200, json);
 }
 
+static void handle_dumps_unfself(whb_req_t *req)
+{
+    int restored = 0, skipped = 0;
+    char err[160];
+    if (dumplib_unfself(whb_param(req, "mount", NULL), whb_param(req, "dir", ""), whb_param(req, "folder", NULL),
+                        &restored, &skipped, err, sizeof(err)) != 0) {
+        whb_send_error(req, 400, err);
+        return;
+    }
+    char json[96];
+    snprintf(json, sizeof(json), "{\"restored\":%d,\"skipped\":%d}", restored, skipped);
+    whb_send_json(req, 200, json);
+}
+
 static void handle_dump_icon(whb_req_t *req)
 {
     const char *mount = whb_param(req, "mount", "");
@@ -786,6 +800,7 @@ void routes_dumper_init(void)
     whb_route("GET",  "/api/dumps/presence", handle_dump_presence);
     whb_route("POST", "/api/dumps/delete",   handle_dump_delete);
     whb_route("POST", "/api/dumps/fself",   handle_dumps_fself);
+    whb_route("POST", "/api/dumps/unfself", handle_dumps_unfself);
     whb_route("GET",  "/api/dumps",          handle_dumps);
     whb_route("GET",  "/api/dumps/icon",     handle_dump_icon);
     whb_route("POST", "/api/shadowmount/stop", handle_shadowmount_stop);

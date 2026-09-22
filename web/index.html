@@ -2079,6 +2079,7 @@ function dumpTags(d){
 }
 /* a finished dump whose executables are still plain ELF can get them as FSELF now */
 function canFself(d){ return (!d.state || d.state === "done") && d.fself !== 1; }
+function canUnfself(d){ return (!d.state || d.state === "done") && d.fself === 1; }
 /* the other half of a PS4 dump made with split: <id>-app0 next to <id>-patch0 */
 function dumpSibling(d){
   var other = /-patch0$/.test(d.folder) ? d.titleId + "-app0" : /-app0$/.test(d.folder) ? d.titleId + "-patch0" : null;
@@ -2121,7 +2122,8 @@ function renderDumps(){
                 (d.inUse ? '<button type="button" class="mini" data-unlink="' + at + '" style="margin-left:auto">Unlink</button>' : "") +
                 '<button type="button" class="mini" data-move="' + at + '"' + (d.inUse ? ' style="margin-left:6px"' : "") + '>Move</button></span>' +
                 '<span class="foot" style="margin-top:6px">' +
-                (canFself(d) ? '<button type="button" class="mini" data-fself="' + at + '" title="Turn the decrypted executables into FSELF files, as the FSELF option does while dumping" style="margin-right:6px">FSELF</button>' : "") +
+                (canFself(d) ? '<button type="button" class="mini" data-fself="' + at + '" title="Turn the decrypted executables into FSELF files, as the FSELF option does while dumping; plain copies stay in decrypted/" style="margin-right:6px">FSELF</button>' : "") +
+                (canUnfself(d) ? '<button type="button" class="mini" data-unfself="' + at + '" title="Put the plain executables from decrypted/ back" style="margin-right:6px">Undo FSELF</button>' : "") +
                 '<button type="button" class="mini del" data-del="' + at + '">Delete</button></span></span></div>';
       } else {
         html += '<div class="dumprow"><span class="meta"><span class="name">' + esc(d.title) + '</span>' +
@@ -2129,6 +2131,7 @@ function renderDumps(){
                 '<span class="size">' + (d.bytes ? bytes(d.bytes) : "") + '</span>' +
                 (d.inUse ? '<button type="button" class="mini" data-unlink="' + at + '" style="margin-right:6px">Unlink</button>' : "") +
                 (canFself(d) ? '<button type="button" class="mini" data-fself="' + at + '" style="margin-right:6px">FSELF</button>' : "") +
+                (canUnfself(d) ? '<button type="button" class="mini" data-unfself="' + at + '" style="margin-right:6px">Undo FSELF</button>' : "") +
                 '<button type="button" class="mini" data-move="' + at + '">Move</button>' +
                 '<button type="button" class="mini del" data-del="' + at + '" style="margin-left:6px">Delete</button></div>';
       }
@@ -2155,6 +2158,17 @@ function renderDumps(){
               (r.skipped ? ", " + r.skipped + " left as they were" : ""), "ok");
         loadDumps();
       }).catch(function(e){ toast(e.message, "bad"); b.disabled = false; b.textContent = "FSELF"; });
+    });
+  });
+  Array.prototype.forEach.call($("dumplist").querySelectorAll("[data-unfself]"), function(b){
+    b.addEventListener("click", function(){
+      var d = state.dumps[Number(b.getAttribute("data-unfself"))];
+      if(whb.busy){ toast("A dump or a move is running.", "bad"); return; }
+      b.disabled = true; b.textContent = "Restoring…";
+      post("/api/dumps/unfself", {mount: d.mount, dir: d.dir, folder: d.folder}).then(function(r){
+        toast(r.restored + " file" + (r.restored === 1 ? "" : "s") + " restored" + (r.skipped ? ", " + r.skipped + " not" : ""), r.restored ? "ok" : "bad");
+        loadDumps();
+      }).catch(function(e){ toast(e.message, "bad"); b.disabled = false; b.textContent = "Undo FSELF"; });
     });
   });
   Array.prototype.forEach.call($("dumplist").querySelectorAll("[data-unlink]"), function(b){
