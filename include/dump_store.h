@@ -87,6 +87,8 @@ int dump_list_incomplete(const char *dest, dump_entry_t *out, int max);
 
 /* 1 for "PPSA01234", "PPSA01234-app0", "CUSA01234-patch0" - a dump folder. */
 int dump_folder_name_ok(const char *name);
+/* "EP9000-PPSA01521_00-BURNINGSHORESPS5-ac": a dumped DLC. */
+int dump_is_dlc_folder_name(const char *name);
 /* One string value from <dest>/<folder>.dump-info.json, 0 on success. */
 int dump_info_string(const char *dest, const char *folder, const char *key, char *out, size_t out_size);
 /* A number from the info file ("fself": 1), and changing one in place. */

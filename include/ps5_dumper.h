@@ -17,6 +17,10 @@ along with this program; see the file COPYING. If not, see
 #ifndef PS5_DUMPER_H
 #define PS5_DUMPER_H
 
+/* Copies one mounted DLC (a pfsmnt -ac folder) next to the app's dump,
+   under its content id, and leaves an info file with it. Returns 0. */
+int dump_dlc_folder(const char *sandbox, const char *name, const char *title_id, const char *dest);
+
 int dump_ps5_ppsa_app(
     const char *sandbox,
     const char *app_folder,

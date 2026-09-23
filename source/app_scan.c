@@ -296,6 +296,31 @@ static void app_find_patch(app_entry_t *app)
         strncpy(app->patch_dir, patch, sizeof(app->patch_dir) - 1);
 }
 
+/* A running title's DLC are mounted next to it under pfsmnt, one folder per
+   content id: <region>-<TITLEID>_00-<LABEL>-ac, with a -nest twin that is
+   the same package seen another way. Seen on FW 12.00 (Horizon Forbidden
+   West, Burning Shores). Listing pfsmnt is not allowed on every console;
+   then there are none to find. */
+static void app_find_dlc(app_entry_t *app)
+{
+    app->dlc_count = 0;
+    DIR *d = opendir(SANDBOX_PATH);
+    if (!d) return;
+
+    char mark[24];
+    snprintf(mark, sizeof(mark), "-%s_00-", app->title_id);
+
+    struct dirent *ent;
+    while ((ent = readdir(d)) && app->dlc_count < (int)(sizeof(app->dlc) / sizeof(app->dlc[0]))) {
+        size_t len = strlen(ent->d_name);
+        if (len < 20 || len >= sizeof(app->dlc[0])) continue;
+        if (!strstr(ent->d_name, mark)) continue;
+        if (strcmp(ent->d_name + len - 3, "-ac") != 0) continue;
+        snprintf(app->dlc[app->dlc_count++], sizeof(app->dlc[0]), "%s", ent->d_name);
+    }
+    closedir(d);
+}
+
 int app_scan(app_entry_t *out, int max)
 {
     if (!out || max <= 0) return 0;
@@ -329,6 +354,8 @@ int app_find(const char *dir, app_entry_t *out)
     if (!dir_exists(path)) return -1;
 
     app_find_patch(out);
+
+    app_find_dlc(out);
     app_read_metadata(out);
     return 0;
 }

@@ -99,6 +99,7 @@ static void fill_app(app_entry_t *a, int i)
     strcpy(a->title, LIB[i].title);
     strcpy(a->version, LIB[i].ver);
     a->is_ps4  = !strncmp(LIB[i].id, "CUSA", 4);
+    if (!strcmp(LIB[i].id, "PPSA01234")) { a->dlc_count = 1; snprintf(a->dlc[0], sizeof(a->dlc[0]), "UP9000-PPSA01234_00-ASTRODLC01-ac"); }
     a->on_disc = title_on_disc(LIB[i].id);
     a->is_disc = LIB[i].disc;
 }
@@ -301,6 +302,16 @@ static int fake_dump(const char *dir, const char *dest)
 int dump_ps4_cusa_app(const char *s, const char *dir, const char *patch, const char *dest,
                       int a, int b, int c)
 { (void)s; (void)patch; (void)a; (void)b; (void)c; return fake_dump(dir, dest); }
+
+int dump_dlc_folder(const char *s, const char *name, const char *title_id, const char *dest)
+{
+    (void)s; char p[512];
+    snprintf(p, sizeof(p), "%s/%s/localcacheps5", dest, name); mkdirs(p);
+    snprintf(p, sizeof(p), "%s/%s/localcacheps5/data.bin", dest, name); FILE *f = fopen(p, "w"); if (f) { fputs("dlc", f); fclose(f); }
+    snprintf(p, sizeof(p), "%s/%s.dump-info.json", dest, name); f = fopen(p, "w");
+    if (f) { fprintf(f, "{\n  \"kind\": \"dlc\",\n  \"titleId\": \"%s\",\n  \"title\": \"MILESDLC01\",\n  \"state\": \"done\"\n}\n", title_id); fclose(f); }
+    return 0;
+}
 
 int dump_ps5_ppsa_app(const char *s, const char *dir, const char *dest, int a, int b, int c)
 { (void)s; (void)a; (void)b; (void)c; return fake_dump(dir, dest); }

@@ -31,8 +31,22 @@ along with this program; see the file COPYING. If not, see
 
 /* "PPSA01234", optionally followed by "-app0" or "-patch0" - the only kind
    of name this module will ever build a path to delete from. */
+/* <region>-<TITLEID>_00-<LABEL>-ac: a DLC, as pfsmnt names it */
+int dump_is_dlc_folder_name(const char *name)
+{
+    size_t len = name ? strlen(name) : 0;
+    if (len < 22 || len > 90) return 0;
+    if (strcmp(name + len - 3, "-ac") != 0) return 0;
+    if (name[6] != '-' || (strncmp(name + 7, "PPSA", 4) != 0 && strncmp(name + 7, "CUSA", 4) != 0)) return 0;
+    if (strncmp(name + 16, "_00-", 4) != 0) return 0;
+    for (size_t i = 0; i < len; i++)
+        if (!((name[i] >= 'A' && name[i] <= 'Z') || (name[i] >= 'a' && name[i] <= 'z') || (name[i] >= '0' && name[i] <= '9') || name[i] == '-' || name[i] == '_')) return 0;
+    return 1;
+}
+
 static int is_dump_folder_name(const char *name)
 {
+    if (dump_is_dlc_folder_name(name)) return 1;
     if (!name || strlen(name) < 9) return 0;
     if (strncmp(name, "PPSA", 4) != 0 && strncmp(name, "CUSA", 4) != 0) return 0;
 

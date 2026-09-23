@@ -31,6 +31,10 @@ along with this program; see the file COPYING. If not, see
 typedef struct {
     char dir[128];        /* mount folder, e.g. "PPSA01234-app0"        */
     char patch_dir[128];  /* "CUSA01234-patch0", empty when there is none */
+    /* the additional content mounted with it, as pfsmnt names it:
+       "EP9000-PPSA01521_00-BURNINGSHORESPS5-ac" (the -nest twin is not a copy) */
+    int  dlc_count;
+    char dlc[8][96];
     char title_id[16];    /* "PPSA01234"                                */
     char title[128];      /* human readable name, empty when unknown    */
     char version[24];     /* content/app version, empty when unknown    */

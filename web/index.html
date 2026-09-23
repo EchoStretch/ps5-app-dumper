@@ -662,6 +662,10 @@ function mountTag(from){
 function installing(t){ return !!t.installing; }
 /* below 100 with the install over: chunks the console never fetched */
 function partial(t){ return !t.installing && typeof t.installed === "number" && t.installed >= 0 && t.installed < 100; }
+function dlcTag(a){
+  var n = a.dlc ? a.dlc.length : 0;
+  return n ? '<span class="tag pkg" title="' + esc(a.dlc.join(", ")) + ' - dumped along, each as a folder of its own">+' + n + ' DLC</span>' : "";
+}
 function partialWhy(t){
   var c = t.chunks || [];
   return c[0] ? "The package has " + c[0] + " PlayGo chunks; this console wants " + c[1] + " of them (its languages and region) and has them all. " +
@@ -690,7 +694,7 @@ function renderApps(){
 
   var sig = state.apps.map(function(a){
     var known = libraryEntry(a.titleId);
-    return a.dir + "|" + a.title + "|" + a.version + "|" + a.hasIcon + "|" + a.media + a.discIn + "|" + a.installed + a.installing +
+    return a.dir + "|" + a.title + "|" + a.version + "|" + a.hasIcon + "|" + a.media + a.discIn + "|" + a.installed + a.installing + "|" + (a.dlc || []).join(",") +
            "|" + !!(known && known.hasPic) + "|" + !!known + "|" + state.canLaunch;
   }).join("~");
 
@@ -717,7 +721,7 @@ function renderApps(){
       '<span class="meta">' +
         '<span class="hero-state"><i class="dot"></i>Running now</span>' +
         '<span class="name">' + esc(a.title) + '</span>' +
-        '<span class="id">' + tag + mediaTag(a.media, a.discIn) + installTag(a) + esc(a.titleId) + (a.version ? " &middot; " + esc(a.version) : "") + '</span>' +
+        '<span class="id">' + tag + mediaTag(a.media, a.discIn) + installTag(a) + dlcTag(a) + esc(a.titleId) + (a.version ? " &middot; " + esc(a.version) : "") + '</span>' +
       '</span></div>' +
       '<div class="hero-bar">' +
         '<span class="hero-pick"' + (installing(a) ? ' style="color:var(--amber)"' : "") + '>' +
@@ -2073,12 +2077,13 @@ function dumpPath(d){ return d.mount + "/" + (d.dir ? d.dir + "/" : "") + d.fold
 function dumpTags(d){
   return (d.titleId.indexOf("CUSA") === 0 ? '<span class="tag ps4">PS4</span>' : '<span class="tag ps5">PS5</span>') +
     (/-patch0$/.test(d.folder) ? '<span class="tag pkg" title="The update of this game - its base game is a folder of its own, ending in -app0">PATCH</span>' : "") +
+    (/-ac$/.test(d.folder) ? '<span class="tag pkg" title="Additional content of this game, dumped from its own package mount">DLC</span>' : "") +
     (d.state && d.state !== "done" ? '<span class="tag cut" title="This dump was not finished">UNFINISHED</span>' : "") +
     (d.fself === 1 ? '<span class="tag pkg" title="The executables are FSELF files">FSELF</span>' : "") +
     (d.inUse ? mountTag(dumpPath(d)) : "");
 }
 /* a finished dump whose executables are still plain ELF can get them as FSELF now */
-function canFself(d){ return (!d.state || d.state === "done") && d.fself !== 1; }
+function canFself(d){ return (!d.state || d.state === "done") && d.fself !== 1 && !/-ac$/.test(d.folder); }
 function canUnfself(d){ return (!d.state || d.state === "done") && d.fself === 1; }
 /* the other half of a PS4 dump made with split: <id>-app0 next to <id>-patch0 */
 function dumpSibling(d){

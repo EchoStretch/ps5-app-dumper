@@ -162,6 +162,9 @@ static void handle_devices(whb_req_t *req)
         sb_json_str(&sb, apps[i].patch_dir);
         playgo_status_t pg;
         if (title_playgo_status(apps[i].title_id, &pg) != 0) memset(&pg, 0, sizeof(pg));
+        sb_puts(&sb, ",\"dlc\":[");
+        for (int k = 0; k < apps[i].dlc_count; k++) { if (k) sb_puts(&sb, ","); sb_json_str(&sb, apps[i].dlc[k]); }
+        sb_puts(&sb, "]");
         sb_printf(&sb, ",\"isPs4\":%s,\"hasIcon\":%s,\"media\":\"%s\",\"discIn\":%s,\"installed\":%d,\"installing\":%s,\"chunks\":[%d,%d,%d]}",
                   apps[i].is_ps4 ? "true" : "false",
                   apps[i].has_icon ? "true" : "false",

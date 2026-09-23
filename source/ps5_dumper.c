@@ -223,3 +223,30 @@ int dump_ps5_ppsa_app(
 
     return 0;
 }
+int dump_dlc_folder(const char *sandbox, const char *name, const char *title_id, const char *dest)
+{
+    char src[1024], dst[1024];
+    snprintf(src, sizeof(src), "%s/%s", sandbox, name);
+    snprintf(dst, sizeof(dst), "%s/%s", dest, name);
+
+    write_log(g_log_path, "DLC: copying %s -> %s", src, dst);
+    printf_notification("Dumping DLC: %s", name);
+    mkdirs(dst);
+    copy_dir_recursive_tracked(src, dst);
+    if (abort_requested()) return -1;
+
+    /* the label between _00- and -ac is what the content is called */
+    const char *label = strstr(name, "_00-");
+    label = label ? label + 4 : name;
+    char info[1100];
+    snprintf(info, sizeof(info), "%s/%s.dump-info.json", dest, name);
+    FILE *f = fopen(info, "w");
+    if (f) {
+        fprintf(f, "{\n  \"tool\": \"ps5-app-dumper\",\n  \"kind\": \"dlc\",\n  \"titleId\": \"%s\",\n"
+                   "  \"title\": \"%.*s\",\n  \"folder\": \"%s\",\n  \"state\": \"done\",\n  \"finished\": %lld\n}\n",
+                title_id, (int)(strlen(label) - 3), label, name, (long long)time(NULL));
+        fclose(f);
+    }
+    write_log(g_log_path, "DLC: done %s", name);
+    return 0;
+}

@@ -111,7 +111,7 @@ static void add_entry(scan_ctx_t *c, const char *rel, const char *name)
     e->internal = c->target->internal;
     snprintf(e->dir, sizeof(e->dir), "%s", rel);
     snprintf(e->folder, sizeof(e->folder), "%s", name);
-    snprintf(e->title_id, sizeof(e->title_id), "%.9s", name);
+    snprintf(e->title_id, sizeof(e->title_id), "%.9s", dump_is_dlc_folder_name(name) ? name + 7 : name);
 
     char dest[256];
     if (rel[0]) snprintf(dest, sizeof(dest), "%s/%s", e->mount, rel);
@@ -129,8 +129,12 @@ static void add_entry(scan_ctx_t *c, const char *rel, const char *name)
     for (int i = 0; i < c->lib_count; i++) {
         if (strcmp(c->lib[i].title_id, e->title_id) != 0) continue;
         /* the installed title's name wins over what the info file kept: that
-           one was written in whatever language came first at the time */
-        if (c->lib[i].title[0]) snprintf(e->title, sizeof(e->title), "%s", c->lib[i].title);
+           one was written in whatever language came first at the time; a
+           DLC keeps its label behind the game's name */
+        if (c->lib[i].title[0] && dump_is_dlc_folder_name(name)) {
+            char label[96]; snprintf(label, sizeof(label), "%s", e->title[0] ? e->title : name);
+            snprintf(e->title, sizeof(e->title), "%s - %s", c->lib[i].title, label);
+        } else if (c->lib[i].title[0]) snprintf(e->title, sizeof(e->title), "%s", c->lib[i].title);
         if (!strcmp(c->lib[i].mounted_from, full)) e->in_use = 1;
     }
 }

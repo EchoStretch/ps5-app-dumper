@@ -191,6 +191,12 @@ static void *worker(void *arg)
                                req->cfg.enable_elf2fself, req->cfg.enable_backport);
     }
 
+    /* the DLC mounted with the title go next to it, each as a folder of its own */
+    for (int i = 0; rc == 0 && !abort_requested() && i < req->app.dlc_count; i++) {
+        set_stage("Dumping DLC");
+        rc = dump_dlc_folder(SANDBOX_PATH, req->app.dlc[i], req->app.title_id, req->dest);
+    }
+
     if (abort_requested()) {
         info.state = "aborted";
         finish(JOB_ABORTED, "Dump stopped, %s is incomplete", req->dest);
