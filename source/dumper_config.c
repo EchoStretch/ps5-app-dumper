@@ -65,6 +65,10 @@ static const whb_cfg_key_t g_keys[] = {
     { .ini_name = "auto_start", .web_name = "autoStart", .type = WHB_CFG_BOOL, .def = 0,
       .comment = "; auto_start = 1 -> dump the running game right at launch; the web UI comes\n"
                  ";                   up as well, to watch it, stop it or switch this off\n" },
+    { .ini_name = "dump_dlc", .web_name = "dumpDlc", .type = WHB_CFG_BOOL, .def = 1,
+      .comment = "; === Additional content ===\n"
+                 "; dump_dlc = 1 -> the DLC mounted with a title are dumped along with it, each as a\n"
+                 ";                 folder of its own next to the game's (default)\n" },
     { .ini_name = "queue_delay", .web_name = "queueDelay", .type = WHB_CFG_INT,
       .lo = QUEUE_SETTLE_MIN, .hi = QUEUE_SETTLE_MAX, .def = 30,
       .comment = "; === Dump Queue ===\n"
@@ -93,6 +97,7 @@ void cfg_snapshot(dumper_config_t *out)
     out->web_port           = whb_config_int("web_port", whb_app()->default_port);
     out->auto_start         = whb_config_int("auto_start", 0);
     out->queue_delay        = whb_config_int("queue_delay", 30);
+    out->dump_dlc           = whb_config_int("dump_dlc", 1);
     whb_config_str("dump_subdir", out->dump_subdir, sizeof(out->dump_subdir));
     whb_config_str("dump_subdir_console", out->dump_subdir_console, sizeof(out->dump_subdir_console));
     whb_config_unlock();

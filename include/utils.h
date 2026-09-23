@@ -69,6 +69,7 @@ typedef struct {
     char dump_subdir[64];      /* dump folder below a drive's mount point */
     char dump_subdir_console[64]; /* the same below /data, the console's own storage */
     int  queue_delay;          /* seconds a queued title gets to load before its dump */
+    int  dump_dlc;             /* 1 -> the DLC mounted with a title go along with it   */
 } dumper_config_t;
 
 /* ------------------------------------------------------------------ */

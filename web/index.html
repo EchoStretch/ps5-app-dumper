@@ -497,6 +497,13 @@ button.tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
             </div>
             <div class="row">
               <div class="txt">
+                <div class="label">Dump DLC along</div>
+                <div class="hint">The additional content mounted with a game goes with it, each DLC as a folder of its own next to the game's.</div>
+              </div>
+              <label class="sw"><input type="checkbox" id="c-dlc"><span></span></label>
+            </div>
+            <div class="row">
+              <div class="txt">
                 <div class="label">SDK backport</div>
                 <div class="hint">Patch SDK versions down. May break the dump.</div>
               </div>
@@ -664,7 +671,9 @@ function installing(t){ return !!t.installing; }
 function partial(t){ return !t.installing && typeof t.installed === "number" && t.installed >= 0 && t.installed < 100; }
 function dlcTag(a){
   var n = a.dlc ? a.dlc.length : 0;
-  return n ? '<span class="tag pkg" title="' + esc(a.dlc.join(", ")) + ' - dumped along, each as a folder of its own">+' + n + ' DLC</span>' : "";
+  var on = !state.config || state.config.dumpDlc !== 0;
+  return n ? '<span class="tag pkg"' + (on ? "" : ' style="opacity:.5;text-decoration:line-through"') + ' title="' + esc(a.dlc.join(", ")) +
+             (on ? ' - dumped along, each as a folder of its own' : ' - not dumped: DLC are switched off under Settings') + '">+' + n + ' DLC</span>' : "";
 }
 function partialWhy(t){
   var c = t.chunks || [];
@@ -1396,6 +1405,7 @@ function applyConfig(c){
   state.config = c;
   $("c-decrypt").checked  = !!c.enableDecrypter;
   $("c-logging").checked  = !!c.enableLogging;
+  if($("c-dlc")) $("c-dlc").checked = c.dumpDlc !== 0;
   $("c-fself").checked    = !!c.enableElf2fself;
   $("c-backport").checked = !!c.enableBackport;
   $("c-auto").checked     = !!c.autoStart;
@@ -1432,6 +1442,7 @@ function collectConfig(){
   return {
     enableDecrypter: $("c-decrypt").checked ? 1 : 0,
     enableLogging:   $("c-logging").checked ? 1 : 0,
+    dumpDlc:         $("c-dlc") && $("c-dlc").checked ? 1 : 0,
     enableElf2fself: $("c-fself").checked ? 1 : 0,
     enableBackport:  $("c-backport").checked ? 1 : 0,
     autoStart:       $("c-auto").checked ? 1 : 0,
@@ -1460,7 +1471,7 @@ function saveConfig(){
 }
 
 function wireSettings(){
-  ["c-decrypt","c-logging","c-fself","c-backport","c-auto"].forEach(function(id){
+  ["c-decrypt","c-logging","c-fself","c-dlc","c-backport","c-auto"].forEach(function(id){
     $(id).addEventListener("change", function(){
       if(id === "c-backport" && $(id).checked)
         toast("Backporting is experimental and can break the dump.", "bad");
@@ -2083,7 +2094,7 @@ function dumpTags(d){
     (d.inUse ? mountTag(dumpPath(d)) : "");
 }
 /* a finished dump whose executables are still plain ELF can get them as FSELF now */
-function canFself(d){ return (!d.state || d.state === "done") && d.fself !== 1 && !/-ac$/.test(d.folder); }
+function canFself(d){ return (!d.state || d.state === "done") && d.fself !== 1; }
 function canUnfself(d){ return (!d.state || d.state === "done") && d.fself === 1; }
 /* the other half of a PS4 dump made with split: <id>-app0 next to <id>-patch0 */
 function dumpSibling(d){

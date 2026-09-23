@@ -192,7 +192,9 @@ static void *worker(void *arg)
     }
 
     /* the DLC mounted with the title go next to it, each as a folder of its own */
-    for (int i = 0; rc == 0 && !abort_requested() && i < req->app.dlc_count; i++) {
+    if (!req->cfg.dump_dlc && req->app.dlc_count)
+        write_log(g_log_path, "DLC: %d mounted, left out (dump_dlc = 0)", req->app.dlc_count);
+    for (int i = 0; req->cfg.dump_dlc && rc == 0 && !abort_requested() && i < req->app.dlc_count; i++) {
         set_stage("Dumping DLC");
         rc = dump_dlc_folder(SANDBOX_PATH, req->app.dlc[i], req->app.title_id, req->dest);
     }
