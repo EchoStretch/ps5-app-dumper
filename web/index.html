@@ -1896,11 +1896,13 @@ function setOnline(ok){
    This is a convenience on top, never a requirement: with no launcher
    around the banner just says how things stand. Further ones go in here. */
 var OFFLINE_HINT = "This page comes from the browser's cache. Start the payload the way you usually do - it connects by itself.";
-var PAYLOAD_FILE = "ps5-app-dumper.elf";
+/* Payload managers keep the ELF under a name of their choosing, version
+   suffix and all, so it is looked up in their list rather than assumed. */
+var PAYLOAD_PATTERN = /(^|\/)ps5-app-dumper[^\/]*\.(elf|bin)$/i;
 var LAUNCHERS = [
-  { name: "Payload Manager", port: 8084, probe: "/version",
-    start: "/loadpayload:" + PAYLOAD_FILE,
-    missing: "Payload Manager does not know " + PAYLOAD_FILE + " - upload it there once, then this button works." }
+  { name: "Payload Manager", port: 8084, list: "/list_payloads",
+    pick: function(d){ return (d && d.payloads) || []; },
+    start: function(path){ return "/loadpayload:" + path; } }
 ];
 var launcher = null;
 
@@ -1911,10 +1913,18 @@ function findLauncher(){
   $("offline-start").hidden = true;
 
   LAUNCHERS.forEach(function(l){
-    fetch(launcherUrl(l, l.probe)).then(function(r){
-      if(!r.ok || launcher || state.online) return;
-      launcher = l;
+    fetch(launcherUrl(l, l.list)).then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
+      if(!d || launcher || state.online) return;
+
+      var paths = l.pick(d).filter(function(p){ return typeof p === "string" && PAYLOAD_PATTERN.test(p); });
+      if(!paths.length){
+        $("offline-msg").textContent = OFFLINE_HINT + " (" + l.name + " is running, but has no ps5-app-dumper ELF in its list - " +
+                                       "upload it there once and this page can start it.)";
+        return;
+      }
+      launcher = { name: l.name, url: launcherUrl(l, l.start(paths[paths.length - 1])), file: paths[paths.length - 1].split("/").pop() };
       $("offline-start").textContent = "Start it with " + l.name;
+      $("offline-start").title = launcher.file;
       $("offline-start").hidden = false;
     }).catch(function(){ /* not there - that is fine */ });
   });
@@ -1926,18 +1936,17 @@ function startPayload(){
 
   b.disabled = true;
   $("offline-spin").hidden = false;
-  $("offline-msg").textContent = "Asking " + l.name + " to start the payload…";
+  $("offline-msg").textContent = "Asking " + l.name + " to start " + l.file + "…";
 
-  fetch(launcherUrl(l, l.start)).then(function(r){
+  fetch(l.url).then(function(r){
     b.disabled = false;
     if(r.ok){
       /* the status poll notices it on its own and takes the banner away */
-      $("offline-msg").textContent = "Started - waiting for it to come up…";
+      $("offline-msg").textContent = "Started " + l.file + " - waiting for it to come up…";
       return;
     }
     $("offline-spin").hidden = true;
-    $("offline-msg").textContent = r.status === 400 ? l.missing
-      : l.name + " could not start it (HTTP " + r.status + ").";
+    $("offline-msg").textContent = l.name + " could not start it (HTTP " + r.status + ").";
   }).catch(function(e){
     b.disabled = false;
     $("offline-spin").hidden = true;

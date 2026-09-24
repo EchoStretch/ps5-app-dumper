@@ -39,7 +39,7 @@ Click the DISC/PKG badge of a queued title to correct it before starting, and us
 
 Before a dump starts, single or queued, its size is compared with the free space on the drive; a dump that would not fit is refused instead of filling the drive.
 
-**When the payload is not running:** the PS5 browser keeps a copy of the page (HTML5 application cache), so the home-screen shortcut opens it even then. The page says that the dumper is not running and reconnects by itself once it is. If Payload Manager (pldmgr) is running on the console and has `ps5-app-dumper.elf` in its payload list, the page offers a button that asks it to start the dumper. Nothing depends on this: without pldmgr the button simply is not there. After updating the payload the cached page refreshes itself on the next visit.
+**When the payload is not running:** the PS5 browser keeps a copy of the page (HTML5 application cache), so the home-screen shortcut opens it even then. The page says that the dumper is not running and reconnects by itself once it is. If Payload Manager (pldmgr) is running on the console and has a ps5-app-dumper ELF in its payload list (any file name starting with `ps5-app-dumper`), the page offers a button that asks it to start the dumper. Nothing depends on this: without pldmgr the button simply is not there. After updating the payload the cached page refreshes itself on the next visit.
 
 **Port:** the first port tried is `8081`, because the homebrew launcher normally holds `8080`. If it is busy the payload walks up to nine ports further and announces the one it settled on. Set `web_port` in `config.ini` to pick another.
 
