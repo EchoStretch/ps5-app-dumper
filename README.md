@@ -205,6 +205,15 @@ Contributions are welcome. When opening issues or PRs, please include:
 
 ---
 
+## Builds for testers
+
+A build that should not travel: copy `test-build.mk.example` to
+`test-build.mk`, fill in the last day, the firmware and the console ids, and
+run `make test-build`. The ELF lands in `dist/` under a name that says what it
+is, and on any other console or day it ends with a toast (webhb's
+`webhb/testgate.c`). A tester learns their console id from `test-probe.elf`
+or from the toast of a build that let them in.
+
 ## Credits / Links
 
 * Project reference (This Project is base off pfsmnt): [https://github.com/logic-68/pfsmnt-dumper](https://github.com/logic-68/pfsmnt-dumper)

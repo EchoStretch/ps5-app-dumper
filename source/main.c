@@ -18,6 +18,7 @@ along with this program; see the file COPYING. If not, see
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
 #include <pthread.h>
 
 #include "app_launch.h"

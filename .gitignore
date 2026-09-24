@@ -8,3 +8,4 @@ dist/
 .claude/worktrees/
 harness/out/
 examples/*/build/
+test-build.mk
