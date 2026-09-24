@@ -27,7 +27,17 @@ if [ -n "${WEBHB_TARBALL:-}" ]; then
 else
     [ -n "$URL" ] || { echo "get-webhb: $LOCK has no url= - set one, or WEBHB_TARBALL=<file>, or build with WEBHB_DIR=<checkout>" >&2; exit 1; }
     echo "get-webhb: fetching $URL"
-    curl -fsSL -o "$TMP/webhb.tar.gz" "$URL"
+    if ! curl -fsSL -o "$TMP/webhb.tar.gz" "$URL"; then
+        # a private repository: the GitHub CLI can, when it is logged in
+        REPO="$(echo "$URL" | sed -nE 's#https://github.com/([^/]+/[^/]+)/releases/download/(v[^/]+)/.*#\1#p')"
+        TAG="$(echo "$URL" | sed -nE 's#https://github.com/[^/]+/[^/]+/releases/download/(v[^/]+)/.*#\1#p')"
+        if [ -n "$REPO" ] && command -v gh >/dev/null 2>&1; then
+            echo "get-webhb: not public - asking the GitHub CLI for $REPO $TAG"
+            gh release download "$TAG" -R "$REPO" -p "$(basename "$URL")" -O "$TMP/webhb.tar.gz" || { echo "get-webhb: download failed" >&2; exit 1; }
+        else
+            echo "get-webhb: download failed - is the repository private? log in with gh, or set WEBHB_TARBALL" >&2; exit 1
+        fi
+    fi
 fi
 
 if command -v sha256sum >/dev/null 2>&1; then GOT="$(sha256sum "$TMP/webhb.tar.gz" | cut -d' ' -f1)"
