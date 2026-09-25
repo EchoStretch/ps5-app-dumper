@@ -361,6 +361,7 @@ int app_scan(app_entry_t *out, int max)
 
         app_find_patch(&out[count]);
         app_read_metadata(&out[count]);
+        app_find_dlc(&out[count]);
         count++;
     }
 
