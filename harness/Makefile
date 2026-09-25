@@ -22,7 +22,7 @@ GEN  := $(OUT)/web_assets.c $(OUT)/icon_assets.c
 
 # short timeouts keep a queue run watchable; the stored-file check is pointed
 # at a folder the fake Payload Manager really writes to
-CFLAGS := -O1 -Wall -pthread -Icompat -I$(ROOT)/include -I$(WEBHB)/webhb/include \
+CFLAGS := -O1 -Wall -pthread -Icompat -I$(ROOT)/include -I$(WEBHB)/webhb/include -DWHB_HOST \
           -DMOUNT_TIMEOUT=15 -DINTERNAL_ROOT='"data"' -DSTORE_ROOT='"$(abspath $(RUN))/pstore/"'
 
 .PHONY: sim run pldmgr snapshot render styles clean

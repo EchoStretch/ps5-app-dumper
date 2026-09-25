@@ -21,6 +21,8 @@ along with this program; see the file COPYING. If not, see
 #include <dirent.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/param.h>
+#include <sys/mount.h>
 #include <pthread.h>
 #include <time.h>
 
@@ -298,27 +300,49 @@ static void app_find_patch(app_entry_t *app)
 
 /* A running title's DLC are mounted next to it under pfsmnt, one folder per
    content id: <region>-<TITLEID>_00-<LABEL>-ac, with a -nest twin that is
-   the same package seen another way. Seen on FW 12.00 (Horizon Forbidden
-   West, Burning Shores). Listing pfsmnt is not allowed on every console;
-   then there are none to find. */
+   the same package seen another way. Seen on FW 12.00 and 10.60 (Horizon
+   Forbidden West, Burning Shores). Two places tell: the directory listing,
+   and the mount table - a console that shows the mounts but not the
+   listing (a report from FW 10.60 read that way) still has the table. */
+static int dlc_name_fits(const char *name, const char *mark)
+{
+    size_t len = strlen(name);
+    if (len < 20 || len >= 96) return 0;
+    if (!strstr(name, mark)) return 0;
+    return strcmp(name + len - 3, "-ac") == 0;
+}
+
+static void dlc_add(app_entry_t *app, const char *name)
+{
+    for (int i = 0; i < app->dlc_count; i++)
+        if (strcmp(app->dlc[i], name) == 0) return;
+    if (app->dlc_count >= (int)(sizeof(app->dlc) / sizeof(app->dlc[0]))) return;
+    snprintf(app->dlc[app->dlc_count++], sizeof(app->dlc[0]), "%s", name);
+}
+
 static void app_find_dlc(app_entry_t *app)
 {
     app->dlc_count = 0;
-    DIR *d = opendir(SANDBOX_PATH);
-    if (!d) return;
 
     char mark[24];
     snprintf(mark, sizeof(mark), "-%s_00-", app->title_id);
 
-    struct dirent *ent;
-    while ((ent = readdir(d)) && app->dlc_count < (int)(sizeof(app->dlc) / sizeof(app->dlc[0]))) {
-        size_t len = strlen(ent->d_name);
-        if (len < 20 || len >= sizeof(app->dlc[0])) continue;
-        if (!strstr(ent->d_name, mark)) continue;
-        if (strcmp(ent->d_name + len - 3, "-ac") != 0) continue;
-        snprintf(app->dlc[app->dlc_count++], sizeof(app->dlc[0]), "%s", ent->d_name);
+    DIR *d = opendir(SANDBOX_PATH);
+    if (d) {
+        struct dirent *ent;
+        while ((ent = readdir(d)))
+            if (dlc_name_fits(ent->d_name, mark)) dlc_add(app, ent->d_name);
+        closedir(d);
     }
-    closedir(d);
+
+    struct statfs *mnt;
+    int n = getmntinfo(&mnt, MNT_NOWAIT);
+    const size_t plen = strlen(SANDBOX_PATH "/");
+    for (int i = 0; i < n; i++) {
+        const char *on = mnt[i].f_mntonname;
+        if (strncmp(on, SANDBOX_PATH "/", plen) != 0 || strchr(on + plen, '/')) continue;
+        if (dlc_name_fits(on + plen, mark)) dlc_add(app, on + plen);
+    }
 }
 
 int app_scan(app_entry_t *out, int max)
