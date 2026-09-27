@@ -309,7 +309,7 @@ int dump_dlc_folder(const char *s, const char *name, const char *title_id, const
     snprintf(p, sizeof(p), "%s/%s/localcacheps5", dest, name); mkdirs(p);
     snprintf(p, sizeof(p), "%s/%s/localcacheps5/data.bin", dest, name); FILE *f = fopen(p, "w"); if (f) { fputs("dlc", f); fclose(f); }
     snprintf(p, sizeof(p), "%s/%s.dump-info.json", dest, name); f = fopen(p, "w");
-    if (f) { fprintf(f, "{\n  \"kind\": \"dlc\",\n  \"titleId\": \"%s\",\n  \"title\": \"MILESDLC01\",\n  \"state\": \"done\"\n}\n", title_id); fclose(f); }
+    if (f) { fprintf(f, "{\n  \"kind\": \"dlc\",\n  \"titleId\": \"%s\",\n  \"title\": \"MILESDLC01\",\n  \"state\": \"done\",\n  \"bytes\": 3\n}\n", title_id); fclose(f); }
     return 0;
 }
 

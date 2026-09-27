@@ -38,6 +38,9 @@ static pthread_mutex_t g_start_mtx = PTHREAD_MUTEX_INITIALIZER;
 static job_status_t    g_status;
 static pthread_t       g_worker;
 static int             g_worker_valid = 0;
+/* the mounted DLC that go along with the dump; the copy routines only
+   measure the app itself, so this is added to their total */
+static uint64_t        g_dlc_bytes = 0;
 
 /* Snapshot of the job request, owned by the worker thread. */
 typedef struct {
@@ -143,8 +146,19 @@ static void *worker(void *arg)
     set_stage("Measuring");
     uint64_t estimate = app_size(&req->app);
 
+    uint64_t dlc_bytes = 0;
+    for (int i = 0; req->cfg.dump_dlc && i < req->app.dlc_count; i++) {
+        char path[320];
+        size_t n = 0;
+        snprintf(path, sizeof(path), "%s/%s", SANDBOX_PATH, req->app.dlc[i]);
+        size_walker(path, &n);
+        dlc_bytes += n;
+    }
+    estimate += dlc_bytes;
+
     pthread_mutex_lock(&g_mtx);
     g_status.total_bytes = estimate;
+    g_dlc_bytes = dlc_bytes;
     g_status.state = JOB_RUNNING;
     pthread_mutex_unlock(&g_mtx);
 
@@ -191,6 +205,9 @@ static void *worker(void *arg)
                                req->cfg.enable_elf2fself, req->cfg.enable_backport);
     }
 
+    /* the app's info file counts the app alone, each DLC gets its own */
+    uint64_t app_bytes = (uint64_t)total_bytes_copied;
+
     /* the DLC mounted with the title go next to it, each as a folder of its own */
     if (!req->cfg.dump_dlc && req->app.dlc_count)
         write_log(g_log_path, "DLC: %d mounted, left out (dump_dlc = 0)", req->app.dlc_count);
@@ -212,7 +229,7 @@ static void *worker(void *arg)
     }
 
     info.finished = time(NULL);
-    info.bytes = (uint64_t)total_bytes_copied;
+    info.bytes = app_bytes;
     dump_info_write(req->dest, req->app.is_ps4, req->cfg.split, &info);
 
     log_use_general();
@@ -326,6 +343,7 @@ int job_start(const char *app_dir, const char *mount,
 
     pthread_mutex_lock(&g_mtx);
     memset(&g_status, 0, sizeof(g_status));
+    g_dlc_bytes = 0;
     g_status.state = JOB_PREPARING;
     g_status.started = time(NULL);
     strncpy(g_status.app_dir,  app.dir,      sizeof(g_status.app_dir) - 1);
@@ -363,12 +381,13 @@ void job_get_status(job_status_t *out)
 
     pthread_mutex_lock(&g_mtx);
     *out = g_status;
+    uint64_t dlc_bytes = g_dlc_bytes;
     pthread_mutex_unlock(&g_mtx);
 
     if (out->state == JOB_RUNNING || out->state == JOB_PREPARING) {
         /* live figures kept by the copy routines */
         if (folder_size_current > 0)
-            out->total_bytes = (uint64_t)folder_size_current;
+            out->total_bytes = (uint64_t)folder_size_current + dlc_bytes;
         out->copied_bytes = (uint64_t)total_bytes_copied;
         out->copy_started = copy_start_time;
 
