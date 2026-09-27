@@ -41,9 +41,10 @@
 .dumpcard .name{display:block;font-size:14px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dumpcard .tags{display:block;margin-top:6px}
 .dumpcard .where{display:block;font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);margin-top:6px;word-break:break-all;line-height:1.35}
-.dumpcard .foot{display:flex;align-items:center;margin-top:9px}
-.dumpcard .size{font-family:var(--mono);font-size:11px;color:var(--ink-dim)}
-.dumpcard .mini{margin-left:auto}
+.dumpcard .size{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-dim);margin-top:6px;white-space:nowrap}
+/* buttons wrap and share the row; margins, the console's WebKit has no flex gap */
+.dumpcard .acts{display:flex;flex-wrap:wrap;margin:3px -6px 0 0}
+.dumpcard .acts .mini{flex:1 1 auto;margin:6px 6px 0 0}
 .move-what{font-size:13.5px;margin-bottom:10px;word-break:break-all}
 .move-foot{display:flex;align-items:center;margin-top:10px}
 .move-foot .spacer{margin-left:auto}
@@ -2134,12 +2135,12 @@ function renderDumps(){
                 '<span class="txt"><span class="name" title="' + esc(d.title) + '">' + esc(d.title) + '</span>' +
                 '<span class="tags">' + dumpTags(d) + '</span>' +
                 '<span class="where">' + esc(dumpPath(d)) + '</span>' +
-                '<span class="foot"><span class="size">' + (d.bytes ? bytes(d.bytes) : "") + '</span>' +
-                (d.inUse ? '<button type="button" class="mini" data-unlink="' + at + '" style="margin-left:auto">Unlink</button>' : "") +
-                '<button type="button" class="mini" data-move="' + at + '"' + (d.inUse ? ' style="margin-left:6px"' : "") + '>Move</button></span>' +
-                '<span class="foot" style="margin-top:6px">' +
-                (canFself(d) ? '<button type="button" class="mini" data-fself="' + at + '" title="Turn the decrypted executables into FSELF files, as the FSELF option does while dumping; plain copies stay in decrypted/" style="margin-right:6px">FSELF</button>' : "") +
-                (canUnfself(d) ? '<button type="button" class="mini" data-unfself="' + at + '" title="Put the plain executables from decrypted/ back" style="margin-right:6px">Undo FSELF</button>' : "") +
+                '<span class="size">' + (d.bytes ? bytes(d.bytes) : "size not known") + '</span>' +
+                '<span class="acts">' +
+                (d.inUse ? '<button type="button" class="mini" data-unlink="' + at + '">Unlink</button>' : "") +
+                '<button type="button" class="mini" data-move="' + at + '">Move</button>' +
+                (canFself(d) ? '<button type="button" class="mini" data-fself="' + at + '" title="Turn the decrypted executables into FSELF files, as the FSELF option does while dumping; plain copies stay in decrypted/">FSELF</button>' : "") +
+                (canUnfself(d) ? '<button type="button" class="mini" data-unfself="' + at + '" title="Put the plain executables from decrypted/ back">Undo FSELF</button>' : "") +
                 '<button type="button" class="mini del" data-del="' + at + '">Delete</button></span></span></div>';
       } else {
         html += '<div class="dumprow"><span class="meta"><span class="name">' + esc(d.title) + '</span>' +
