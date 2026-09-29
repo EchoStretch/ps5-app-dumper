@@ -19,6 +19,6 @@ along with this program; see the file COPYING. If not, see
 
 /* Also ends up in the name a copy of this payload is stored under, see
    whb_elf_name(). */
-#define DUMPER_VERSION "1.12"
+#define DUMPER_VERSION "2.00"
 
 #endif /* VERSION_H */
