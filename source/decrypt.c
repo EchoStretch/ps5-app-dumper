@@ -112,6 +112,7 @@ static int count_files_recursive(const char *dir_path)
     char full[PATH_MAX];
 
     while ((ent = readdir(dir)) != NULL) {
+        if (abort_requested()) break;
         if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0)
             continue;
 
@@ -232,6 +233,7 @@ static int decrypt_and_process_all(const char *input_dir, const char *output_dir
     char out_path[PATH_MAX];
 
     while ((ent = readdir(dir)) != NULL) {
+        if (abort_requested()) break;
         const char *name = ent->d_name;
         if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) continue;
 

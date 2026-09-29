@@ -1,4 +1,5 @@
 /* Copyright (C) 2025 EchoStretch
+   Copyright (C) 2026 slopmaster33
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the
@@ -14,20 +15,18 @@ You should have received a copy of the GNU General Public License
 along with this program; see the file COPYING. If not, see
 <http://www.gnu.org/licenses/>.  */
 
-#ifndef PS5_DUMPER_H
-#define PS5_DUMPER_H
+#ifndef SHADOWMOUNT_H
+#define SHADOWMOUNT_H
 
-/* Copies one mounted DLC (a pfsmnt -ac folder) next to the app's dump,
-   under its content id, and leaves an info file with it. Returns 0. */
-int dump_dlc_folder(const char *sandbox, const char *name, const char *title_id, const char *dest);
+/* ShadowMount links every dump it finds to the installed title of the same
+   id, and does so again after each scan. A dump that was moved out of its
+   reach stays free; one that is still within it is linked anew - unless
+   ShadowMount is not running. Stopping it is the user's call, never ours. */
 
-int dump_ps5_ppsa_app(
-    const char *sandbox,
-    const char *app_folder,
-    const char *usb_path,
-    int do_decrypt,
-    int do_elf2fself,
-    int do_backport
-);
+/* The pid of a running ShadowMount, 0 when there is none. */
+int shadowmount_pid(void);
 
-#endif
+/* Ends it. Returns 0 when it is gone afterwards, -1 when it would not go. */
+int shadowmount_stop(void);
+
+#endif /* SHADOWMOUNT_H */

@@ -14,20 +14,11 @@ You should have received a copy of the GNU General Public License
 along with this program; see the file COPYING. If not, see
 <http://www.gnu.org/licenses/>.  */
 
-#ifndef PS5_DUMPER_H
-#define PS5_DUMPER_H
+#ifndef VERSION_H
+#define VERSION_H
 
-/* Copies one mounted DLC (a pfsmnt -ac folder) next to the app's dump,
-   under its content id, and leaves an info file with it. Returns 0. */
-int dump_dlc_folder(const char *sandbox, const char *name, const char *title_id, const char *dest);
+/* Also ends up in the name a copy of this payload is stored under, see
+   whb_elf_name(). */
+#define DUMPER_VERSION "1.12"
 
-int dump_ps5_ppsa_app(
-    const char *sandbox,
-    const char *app_folder,
-    const char *usb_path,
-    int do_decrypt,
-    int do_elf2fself,
-    int do_backport
-);
-
-#endif
+#endif /* VERSION_H */

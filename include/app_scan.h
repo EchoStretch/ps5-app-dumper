@@ -1,4 +1,5 @@
 /* Copyright (C) 2025 EchoStretch
+   Copyright (C) 2026 slopmaster33
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the
@@ -20,29 +21,28 @@ along with this program; see the file COPYING. If not, see
 #include <stddef.h>
 #include <stdint.h>
 
+/* target_scan() and its target_entry_t live in the core now */
+#include "webhb.h"
+
 #define SANDBOX_PATH    "/mnt/sandbox/pfsmnt"
 #define APP_SCAN_MAX    24
-#define TARGET_SCAN_MAX 16
 
 /* One mounted application, as exposed by pfsmnt while the title runs. */
 typedef struct {
     char dir[128];        /* mount folder, e.g. "PPSA01234-app0"        */
     char patch_dir[128];  /* "CUSA01234-patch0", empty when there is none */
+    /* the additional content mounted with it, as pfsmnt names it:
+       "EP9000-PPSA01521_00-BURNINGSHORESPS5-ac" (the -nest twin is not a copy) */
+    int  dlc_count;
+    char dlc[8][96];
     char title_id[16];    /* "PPSA01234"                                */
     char title[128];      /* human readable name, empty when unknown    */
     char version[24];     /* content/app version, empty when unknown    */
     int  is_ps4;          /* 1 for CUSA titles                          */
     int  has_icon;
+    int  on_disc;         /* served by the disc in the drive            */
+    int  is_disc;         /* a disc game, inserted or not               */
 } app_entry_t;
-
-/* A mount point the dump can be written to. */
-typedef struct {
-    char     mount[64];   /* "/mnt/usb0"                */
-    char     fs[24];      /* "exfatfs", "ufs", ...      */
-    int      writable;
-    uint64_t total_bytes;
-    uint64_t free_bytes;
-} target_entry_t;
 
 /* Fills out with up to max entries, returns the number found. */
 int app_scan(app_entry_t *out, int max);
@@ -56,6 +56,13 @@ int app_icon_path(const app_entry_t *app, char *out, size_t out_size);
 /* Total size of the app payload in pfsmnt, patch folder included. */
 uint64_t app_size(const app_entry_t *app);
 
+/* What the shell's PlayGo status says about a title's chunks: how many the
+   package has, how many this console wants, how many of those are here. All
+   zero when there is no such status. */
+typedef struct {
+    int chunks, wanted, here;
+} playgo_status_t;
+
 /* One installed title, whether or not it is currently running. */
 typedef struct {
     char title_id[16];
@@ -64,21 +71,66 @@ typedef struct {
     char source[24];      /* "internal", "ext0", ...            */
     int  is_ps4;
     int  has_icon;
+    int  has_pic;         /* wide key art is available          */
     int  is_running;      /* already mounted under pfsmnt       */
+    int  on_disc;         /* served by the disc in the drive    */
+    int  is_disc;         /* a disc game, inserted or not       */
+    /* Set when the title is redirected to a folder instead of its package
+       (ShadowMount's mount.lnk next to app.pkg): the folder it runs from.
+       Such a title has nothing to dump while the redirect is in place. */
+    char mounted_from[160];
+    /* How much of the package is on the console, 0-100; 100 only when all
+       of it is. -1 when that cannot be told. A title can be started long
+       before it is complete - a dump of it would have holes. */
+    int  installed_pct;
+    int  install_pending; /* 1 while chunks this console wants are still missing */
+    playgo_status_t playgo;
 } library_entry_t;
 
 #define LIBRARY_SCAN_MAX 128
 
+/* 1 when the disc in the drive carries this title. */
+int title_on_disc(const char *title_id);
+
+/* 1 when the title is a disc game, whether or not its disc is in the drive.
+   With the disc out that is known from having seen it before (remembered
+   next to config.ini) or from the disc-copy bitmap the install leaves
+   behind - a best guess, which the queue lets the user overrule. */
+int title_is_disc_game(const char *title_id);
+
+/* Records a title as a disc game, e.g. because the user said so. */
+void title_remember_disc(const char *title_id);
+
 /* Lists the titles installed on the console. */
 int library_scan(library_entry_t *out, int max);
+
+/* Looks up a single installed title by its id. Returns 0 on success. */
+int library_find(const char *title_id, library_entry_t *out);
 
 /* Resolves the icon of an installed title. Returns 0 on success. */
 int library_icon_path(const char *title_id, char *out, size_t out_size);
 
-/* Fills out with up to max mount points, returns the number found. */
-int target_scan(target_entry_t *out, int max);
+/* Resolves the wide key art of an installed title (pic0/pic1). Returns 0 on
+   success; many titles ship none. */
+int library_pic_path(const char *title_id, char *out, size_t out_size);
 
-/* Returns 0 when mount is one of the mount points target_scan() reports. */
-int target_is_known(const char *mount);
+/* A title can run without its package: ShadowMount redirects a title to a
+   dump it found (seen: a mount.lnk next to app.pkg, /system_ex/app/<id>
+   null-mounted from <usb>/homebrew/<id>-app0). The game then gets its
+   /mnt/sandbox/<id>_000/app0 but nothing under pfsmnt - so there is nothing
+   to dump, and waiting for a mount would never end. 1 when that is the case. */
+int title_runs_from_folder(const char *title_id);
+
+/* Removes a title's mount.lnk when it still points at target - the folder a
+   dump has just been moved away from. The title then starts from its package
+   again; ShadowMount writes a new link if it finds the dump elsewhere.
+   Returns 1 when a link was removed. */
+int title_drop_mount_link(const char *title_id, const char *target);
+
+/* See library_entry_t.installed_pct. */
+int title_installed_percent(const char *title_id);
+/* See library_entry_t.install_pending and .playgo. */
+int title_install_pending(const char *title_id);
+int title_playgo_status(const char *title_id, playgo_status_t *st);
 
 #endif /* APP_SCAN_H */

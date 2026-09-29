@@ -1,4 +1,5 @@
 /* Copyright (C) 2025 EchoStretch
+   Copyright (C) 2026 slopmaster33
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the
@@ -18,20 +19,15 @@ along with this program; see the file COPYING. If not, see
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
+#include <unistd.h>
+#include <sys/stat.h>
 #include <sys/param.h>
 #include <sys/mount.h>
-#include <sys/stat.h>
+#include <pthread.h>
+#include <time.h>
 
 #include "app_scan.h"
 #include "utils.h"
-
-/* Mount points that may hold a dump, probed in this order. */
-static const char *g_candidate_mounts[] = {
-    "/mnt/usb0", "/mnt/usb1", "/mnt/usb2", "/mnt/usb3",
-    "/mnt/usb4", "/mnt/usb5", "/mnt/usb6", "/mnt/usb7",
-    "/mnt/ext0", "/mnt/ext1",
-    NULL
-};
 
 /* ------------------------------------------------------------------ */
 /*  param.sfo (PS4 titles)                                             */
@@ -153,6 +149,50 @@ static void meta_dirs(const app_entry_t *app, char dirs[3][256])
     snprintf(dirs[2], 256, "/user/appmeta/%s", app->title_id);
 }
 
+/* The title's name in the language param.json calls its default, else in
+   en-US, else the first one in the file. The localized entries are listed
+   alphabetically, so the first "titleName" is usually the Arabic one. */
+static int json_read_title(const char *path, char *out, size_t out_size)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+    char buf[16384];
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    if (n == 0) return -1;
+    buf[n] = '\0';
+
+    char lang[24] = {0};
+    const char *p = strstr(buf, "\"defaultLanguage\"");
+    if (p && (p = strchr(p + 17, '"')) != NULL) {
+        size_t i = 0;
+        for (p++; *p && *p != '"' && i + 1 < sizeof(lang); p++) lang[i++] = *p;
+        lang[i] = '\0';
+    }
+
+    const char *tries[] = { lang[0] ? lang : NULL, "en-US" };
+    for (int t = 0; t < 2; t++) {
+        if (!tries[t]) continue;
+        char needle[40];
+        snprintf(needle, sizeof(needle), "\"%s\"", tries[t]);
+        const char *block = strstr(buf, needle);
+        if (!block) continue;
+        const char *end = strchr(block, '}');
+        const char *name = strstr(block, "\"titleName\"");
+        if (!name || (end && name > end)) continue;
+        name = strchr(name + 11, '"');
+        if (!name) continue;
+        size_t i = 0;
+        for (name++; *name && *name != '"' && i + 1 < out_size; name++) {
+            if (*name == '\\' && name[1]) name++;
+            out[i++] = *name;
+        }
+        out[i] = '\0';
+        if (out[0]) return 0;
+    }
+    return json_read_string(path, "titleName", out, out_size);
+}
+
 /* Reads title and version out of the first directory that carries them. */
 static void read_metadata(char dirs[][256], int dir_count, int is_ps4,
                           char *title, size_t title_size,
@@ -171,7 +211,7 @@ static void read_metadata(char dirs[][256], int dir_count, int is_ps4,
             snprintf(path, sizeof(path), "%s/param.json", dirs[i]);
             if (!file_exists(path)) continue;
 
-            if (!title[0])   json_read_string(path, "titleName", title, title_size);
+            if (!title[0])   json_read_title(path, title, title_size);
             if (!version[0]) json_read_string(path, "contentVersion", version, version_size);
         }
 
@@ -197,6 +237,8 @@ static void app_read_metadata(app_entry_t *app)
 
     char icon[512];
     app->has_icon = (app_icon_path(app, icon, sizeof(icon)) == 0);
+    app->on_disc = title_on_disc(app->title_id);
+    app->is_disc = app->on_disc || title_is_disc_game(app->title_id);
 }
 
 int app_icon_path(const app_entry_t *app, char *out, size_t out_size)
@@ -256,6 +298,53 @@ static void app_find_patch(app_entry_t *app)
         strncpy(app->patch_dir, patch, sizeof(app->patch_dir) - 1);
 }
 
+/* A running title's DLC are mounted next to it under pfsmnt, one folder per
+   content id: <region>-<TITLEID>_00-<LABEL>-ac, with a -nest twin that is
+   the same package seen another way. Seen on FW 12.00 and 10.60 (Horizon
+   Forbidden West, Burning Shores). Two places tell: the directory listing,
+   and the mount table - a console that shows the mounts but not the
+   listing (a report from FW 10.60 read that way) still has the table. */
+static int dlc_name_fits(const char *name, const char *mark)
+{
+    size_t len = strlen(name);
+    if (len < 20 || len >= 96) return 0;
+    if (!strstr(name, mark)) return 0;
+    return strcmp(name + len - 3, "-ac") == 0;
+}
+
+static void dlc_add(app_entry_t *app, const char *name)
+{
+    for (int i = 0; i < app->dlc_count; i++)
+        if (strcmp(app->dlc[i], name) == 0) return;
+    if (app->dlc_count >= (int)(sizeof(app->dlc) / sizeof(app->dlc[0]))) return;
+    snprintf(app->dlc[app->dlc_count++], sizeof(app->dlc[0]), "%s", name);
+}
+
+static void app_find_dlc(app_entry_t *app)
+{
+    app->dlc_count = 0;
+
+    char mark[24];
+    snprintf(mark, sizeof(mark), "-%s_00-", app->title_id);
+
+    DIR *d = opendir(SANDBOX_PATH);
+    if (d) {
+        struct dirent *ent;
+        while ((ent = readdir(d)))
+            if (dlc_name_fits(ent->d_name, mark)) dlc_add(app, ent->d_name);
+        closedir(d);
+    }
+
+    struct statfs *mnt;
+    int n = getmntinfo(&mnt, MNT_NOWAIT);
+    const size_t plen = strlen(SANDBOX_PATH "/");
+    for (int i = 0; i < n; i++) {
+        const char *on = mnt[i].f_mntonname;
+        if (strncmp(on, SANDBOX_PATH "/", plen) != 0 || strchr(on + plen, '/')) continue;
+        if (dlc_name_fits(on + plen, mark)) dlc_add(app, on + plen);
+    }
+}
+
 int app_scan(app_entry_t *out, int max)
 {
     if (!out || max <= 0) return 0;
@@ -272,6 +361,7 @@ int app_scan(app_entry_t *out, int max)
 
         app_find_patch(&out[count]);
         app_read_metadata(&out[count]);
+        app_find_dlc(&out[count]);
         count++;
     }
 
@@ -289,6 +379,8 @@ int app_find(const char *dir, app_entry_t *out)
     if (!dir_exists(path)) return -1;
 
     app_find_patch(out);
+
+    app_find_dlc(out);
     app_read_metadata(out);
     return 0;
 }
@@ -311,67 +403,18 @@ uint64_t app_size(const app_entry_t *app)
     return (uint64_t)total;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Storage targets                                                    */
-/* ------------------------------------------------------------------ */
+static int is_title_id(const char *name);
 
-int target_scan(target_entry_t *out, int max)
+int title_runs_from_folder(const char *title_id)
 {
-    if (!out || max <= 0) return 0;
+    if (!is_title_id(title_id)) return 0;
 
-    int count = 0;
+    char path[160];
+    snprintf(path, sizeof(path), "%s/%s-app0", SANDBOX_PATH, title_id);
+    if (dir_exists(path)) return 0;
 
-    for (int i = 0; g_candidate_mounts[i] && count < max; i++) {
-        const char *mount = g_candidate_mounts[i];
-        if (!dir_exists(mount)) continue;
-
-        target_entry_t *t = &out[count];
-        memset(t, 0, sizeof(*t));
-        strncpy(t->mount, mount, sizeof(t->mount) - 1);
-
-        struct statfs sf;
-        if (statfs(mount, &sf) == 0) {
-            /* Unused mount points exist as empty directories on the root
-               file system, so they answer statfs with the root's own type
-               and a couple of megabytes - not somewhere a dump can go. */
-            if (strcmp(sf.f_fstypename, "exfatfs") != 0 &&
-                strcmp(sf.f_fstypename, "msdosfs") != 0 &&
-                strcmp(sf.f_fstypename, "ntfs")    != 0 &&
-                strcmp(sf.f_fstypename, "ufs")     != 0 &&
-                strcmp(sf.f_fstypename, "fusefs")  != 0)
-                continue;
-
-            uint64_t total = (uint64_t)sf.f_blocks * sf.f_bsize;
-            if (total < 64ull * 1024 * 1024) continue;
-
-            strncpy(t->fs, sf.f_fstypename, sizeof(t->fs) - 1);
-            t->total_bytes = total;
-            t->free_bytes  = (uint64_t)sf.f_bavail * sf.f_bsize;
-            t->writable    = (sf.f_flags & MNT_RDONLY) ? 0 : 1;
-        } else {
-            /* statfs is unavailable for this mount - assume it is usable
-               and let the dump report the real error. */
-            t->writable = 1;
-        }
-
-        count++;
-    }
-
-    return count;
-}
-
-int target_is_known(const char *mount)
-{
-    if (!mount || !mount[0]) return -1;
-
-    /* checked against the scan so a placeholder mount cannot be selected */
-    target_entry_t list[TARGET_SCAN_MAX];
-    int count = target_scan(list, TARGET_SCAN_MAX);
-
-    for (int i = 0; i < count; i++)
-        if (strcmp(mount, list[i].mount) == 0) return 0;
-
-    return -1;
+    snprintf(path, sizeof(path), "/mnt/sandbox/%s_000/app0", title_id);
+    return dir_exists(path);
 }
 
 /* ------------------------------------------------------------------ */
@@ -399,6 +442,116 @@ static int is_title_id(const char *name)
     return 1;
 }
 
+/* An inserted disc is mounted here, one folder per title it carries - for
+   PS4 and PS5 discs alike. */
+#define DISC_APP_ROOT "/mnt/disc/app"
+
+/* ---- disc games seen so far ---------------------------------------- */
+
+#define DISC_MEMORY_MAX  128
+#define DISC_MEMORY_FILE "disc_titles.txt"
+
+static pthread_mutex_t g_disc_mtx = PTHREAD_MUTEX_INITIALIZER;
+static char            g_disc_known[DISC_MEMORY_MAX][16];
+static int             g_disc_known_count = 0;
+static int             g_disc_file_read = 0;
+
+static int disc_known_locked(const char *title_id)
+{
+    for (int i = 0; i < g_disc_known_count; i++)
+        if (strcmp(g_disc_known[i], title_id) == 0) return 1;
+    return 0;
+}
+
+static int disc_memory_path(char *out, size_t out_size)
+{
+    const char *hb = get_app_data_path();
+    if (!hb || !hb[0]) return -1;
+    snprintf(out, out_size, "%s/%s", hb, DISC_MEMORY_FILE);
+    return 0;
+}
+
+/* The list lives on the drive, which may turn up after the payload started,
+   so reading it is retried until it worked once. */
+static void disc_memory_load_locked(void)
+{
+    if (g_disc_file_read) return;
+
+    char path[256];
+    if (disc_memory_path(path, sizeof(path)) != 0) return;
+    g_disc_file_read = 1;
+
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+
+    char line[64];
+    while (fgets(line, sizeof(line), f) && g_disc_known_count < DISC_MEMORY_MAX) {
+        line[strcspn(line, "\r\n")] = '\0';
+        if (is_title_id(line) && !disc_known_locked(line))
+            strcpy(g_disc_known[g_disc_known_count++], line);
+    }
+    fclose(f);
+}
+
+void title_remember_disc(const char *title_id)
+{
+    if (!is_title_id(title_id)) return;
+
+    pthread_mutex_lock(&g_disc_mtx);
+    disc_memory_load_locked();
+
+    if (!disc_known_locked(title_id) && g_disc_known_count < DISC_MEMORY_MAX) {
+        strcpy(g_disc_known[g_disc_known_count++], title_id);
+
+        /* rewritten whole: what was learned before a drive showed up has
+           to reach the file as well */
+        char path[256];
+        FILE *f = disc_memory_path(path, sizeof(path)) == 0 ? fopen(path, "w") : NULL;
+        if (f) {
+            for (int i = 0; i < g_disc_known_count; i++)
+                fprintf(f, "%s\n", g_disc_known[i]);
+            fclose(f);
+        }
+    }
+    pthread_mutex_unlock(&g_disc_mtx);
+}
+
+int title_on_disc(const char *title_id)
+{
+    if (!is_title_id(title_id)) return 0;
+
+    char path[64];
+    snprintf(path, sizeof(path), "%s/%s", DISC_APP_ROOT, title_id);
+    if (!dir_exists(path)) return 0;
+
+    title_remember_disc(title_id);
+    return 1;
+}
+
+int title_is_disc_game(const char *title_id)
+{
+    if (!is_title_id(title_id)) return 0;
+    if (title_on_disc(title_id)) return 1;
+
+    pthread_mutex_lock(&g_disc_mtx);
+    disc_memory_load_locked();
+    int known = disc_known_locked(title_id);
+    pthread_mutex_unlock(&g_disc_mtx);
+    if (known) return 1;
+
+    /* The console keeps a disc_info.dat with the metadata of every title that
+       was installed from a disc, and of no other. Checked on FW 12.00 with
+       two disc installs (one with its disc out) against two package titles. */
+    char path[96];
+    snprintf(path, sizeof(path), "/system_data/priv/appmeta/%s/disc_info.dat", title_id);
+    if (file_exists(path)) return 1;
+
+    /* What was assumed before that was known; seen in PS4 kernel logs, never
+       on this PS5. Costs nothing to keep. */
+    snprintf(path, sizeof(path), "/system_data/playgo/%s/bdcopy.pbm", title_id);
+    return file_exists(path) ? 1 : 0;
+}
+
 int library_icon_path(const char *title_id, char *out, size_t out_size)
 {
     if (!title_id || !out || out_size == 0) return -1;
@@ -415,11 +568,238 @@ int library_icon_path(const char *title_id, char *out, size_t out_size)
     return -1;
 }
 
+int library_pic_path(const char *title_id, char *out, size_t out_size)
+{
+    if (!out || out_size == 0 || !is_title_id(title_id)) return -1;
+
+    static const char *names[] = { "pic0.png", "pic1.png", NULL };
+    char dirs[2][256];
+    appmeta_dirs(title_id, dirs);
+
+    for (int n = 0; names[n]; n++) {
+        for (int i = 0; i < 2; i++) {
+            snprintf(out, out_size, "%s/%s", dirs[i], names[n]);
+            if (file_exists(out)) return 0;
+        }
+    }
+
+    out[0] = '\0';
+    return -1;
+}
+
 static int library_seen(const library_entry_t *list, int count, const char *title_id)
 {
     for (int i = 0; i < count; i++)
         if (strcmp(list[i].title_id, title_id) == 0) return 1;
     return 0;
+}
+
+/* Fills an entry for a title found below one of the app roots. */
+/* ------------------------------------------------------------------ */
+/*  How much of a package has arrived                                  */
+/* ------------------------------------------------------------------ */
+
+/* <root>/<id>/app.pbm, as found on FW 12.00 for PS4 and PS5 titles alike:
+     0x000  "pdbm", the title id, a version string
+     0x022  number of 64 KiB blocks in app.pkg, little endian
+     0x100  one bit per block, highest bit of a byte first, set once the
+            block is on the console
+     ...    a 32-byte digest
+   Every file looked at was exactly 256 + ceil(blocks / 8) + 32 bytes. A
+   title installing from disc had 63 % of its bits set, finished ones all. */
+#define PBM_HEADER 256
+#define PBM_DIGEST 32
+
+static int pbm_percent(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+
+    unsigned char head[PBM_HEADER];
+    int pct = -1;
+
+    if (fread(head, 1, sizeof(head), f) == sizeof(head) && memcmp(head, "pdbm", 4) == 0) {
+        uint32_t blocks = (uint32_t)head[0x22] | ((uint32_t)head[0x23] << 8) |
+                          ((uint32_t)head[0x24] << 16) | ((uint32_t)head[0x25] << 24);
+        uint64_t set = 0, seen = 0;
+        unsigned char buf[8192];
+        size_t n;
+
+        while (blocks && seen < blocks && (n = fread(buf, 1, sizeof(buf), f)) > 0) {
+            for (size_t i = 0; i < n && seen < blocks; i++)
+                for (int bit = 0; bit < 8 && seen < blocks; bit++, seen++)
+                    if (buf[i] & (0x80u >> bit)) set++;
+        }
+
+        /* a file that does not hold what its header promises tells nothing */
+        if (blocks && seen == blocks) {
+            pct = (int)(set * 100 / blocks);
+            if (pct == 100 && set != blocks) pct = 99;
+        }
+    }
+
+    fclose(f);
+    return pct;
+}
+
+/* The listing is polled; the bitmap is only read again when it changed. */
+static struct { char id[16]; time_t mtime; off_t size; int pct; } g_pbm_cache[64];
+static pthread_mutex_t g_pbm_mtx = PTHREAD_MUTEX_INITIALIZER;
+
+static int installed_percent_at(const char *root, const char *title_id)
+{
+    char path[320];
+    snprintf(path, sizeof(path), "%s/%s/app.pbm", root, title_id);
+
+    struct stat st;
+    if (stat(path, &st) != 0) return -1;
+
+    pthread_mutex_lock(&g_pbm_mtx);
+    int slot = -1, spare = -1;
+    for (int i = 0; i < 64; i++) {
+        if (!strcmp(g_pbm_cache[i].id, title_id)) { slot = i; break; }
+        if (spare < 0 && !g_pbm_cache[i].id[0]) spare = i;
+    }
+    if (slot >= 0 && g_pbm_cache[slot].mtime == st.st_mtime && g_pbm_cache[slot].size == st.st_size) {
+        int pct = g_pbm_cache[slot].pct;
+        pthread_mutex_unlock(&g_pbm_mtx);
+        return pct;
+    }
+    pthread_mutex_unlock(&g_pbm_mtx);
+
+    int pct = pbm_percent(path);
+
+    pthread_mutex_lock(&g_pbm_mtx);
+    if (slot < 0) slot = spare;
+    if (slot >= 0) {
+        snprintf(g_pbm_cache[slot].id, sizeof(g_pbm_cache[slot].id), "%s", title_id);
+        g_pbm_cache[slot].mtime = st.st_mtime;
+        g_pbm_cache[slot].size  = st.st_size;
+        g_pbm_cache[slot].pct   = pct;
+    }
+    pthread_mutex_unlock(&g_pbm_mtx);
+    return pct;
+}
+
+/* A package comes in PlayGo chunks, and the console fetches only the ones
+   it needs - the languages it is set to, say. So the bitmap can stand below
+   100 % for good. What the shell thinks about it is in <root>/<id>/app.xml
+   ("playgo-status"): one <chunk> per chunk with locus="3" when it is here,
+   and req_locus="3" when this console wants it. The install is over when
+   every wanted chunk is here. Seen on FW 12.00: Hogwarts Legacy at 73 % with
+   7 of 21 chunks wanted, all 7 present, the bitmap untouched for days. */
+static int playgo_status_at(const char *root, const char *title_id, playgo_status_t *st)
+{
+    char path[320];
+    snprintf(path, sizeof(path), "%s/%s/app.xml", root, title_id);
+
+    FILE *f = fopen(path, "r");
+    if (!f) return -1;
+    char *xml = calloc(1, 65536);
+    if (!xml) { fclose(f); return -1; }
+    size_t n = fread(xml, 1, 65535, f);
+    fclose(f);
+    xml[n] = '\0';
+
+    memset(st, 0, sizeof(*st));
+    if (!strstr(xml, "playgo-status")) { free(xml); return -1; }
+
+    for (const char *p = strstr(xml, "<chunk "); p; p = strstr(p + 1, "<chunk ")) {
+        const char *end = strchr(p, '>');
+        if (!end) break;
+        const char *l = strstr(p, "locus=\"");
+        const char *r = strstr(p, "req_locus=\"");
+        /* "locus" also matches inside "req_locus": take the one that is not */
+        while (l && l < end && l > p && l[-1] == '_') l = strstr(l + 1, "locus=\"");
+        int locus = (l && l < end) ? atoi(l + 7) : 0;
+        int want  = (r && r < end) ? atoi(r + 11) : -1;
+        st->chunks++;
+        if (want >= 0) {
+            st->wanted++;
+            if (locus == want) st->here++;
+        }
+    }
+    free(xml);
+    return st->chunks ? 0 : -1;
+}
+
+int title_playgo_status(const char *title_id, playgo_status_t *st)
+{
+    if (!is_title_id(title_id)) return -1;
+    for (int r = 0; g_app_roots[r].path; r++)
+        if (playgo_status_at(g_app_roots[r].path, title_id, st) == 0) return 0;
+    return -1;
+}
+
+/* Without a PlayGo status (PS4 titles, older layouts) the bitmap has to do:
+   blocks still arrive while it keeps changing. */
+#define INSTALL_QUIET_SECONDS (10 * 60)
+
+int title_install_pending(const char *title_id)
+{
+    int pct = title_installed_percent(title_id);
+    if (pct < 0 || pct >= 100) return 0;
+
+    playgo_status_t st;
+    if (title_playgo_status(title_id, &st) == 0) return st.here < st.wanted;
+
+    for (int r = 0; g_app_roots[r].path; r++) {
+        char path[320];
+        snprintf(path, sizeof(path), "%s/%s/app.pbm", g_app_roots[r].path, title_id);
+        struct stat s;
+        if (stat(path, &s) == 0) return (time(NULL) - s.st_mtime) < INSTALL_QUIET_SECONDS;
+    }
+    return 0;
+}
+
+/* The folder a title is redirected to, read from <root>/<id>/mount.lnk - a
+   single line, the path. Empty when there is no such file. */
+static void read_mount_link(const char *root, const char *title_id, char *out, size_t out_size)
+{
+    out[0] = '\0';
+
+    char path[320];
+    snprintf(path, sizeof(path), "%s/%s/mount.lnk", root, title_id);
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+
+    size_t n = fread(out, 1, out_size - 1, f);
+    fclose(f);
+    out[n] = '\0';
+    out[strcspn(out, "\r\n")] = '\0';
+
+    /* something is there but unreadable as a path: still a redirect */
+    if (!out[0] || out[0] != '/') snprintf(out, out_size, "%s", "(unknown folder)");
+}
+
+static void library_fill(library_entry_t *e, const char *title_id, const char *root, const char *label)
+{
+    memset(e, 0, sizeof(*e));
+    read_mount_link(root, title_id, e->mounted_from, sizeof(e->mounted_from));
+    e->installed_pct = installed_percent_at(root, title_id);
+    e->install_pending = title_install_pending(title_id);
+    if (title_playgo_status(title_id, &e->playgo) != 0) memset(&e->playgo, 0, sizeof(e->playgo));
+    strncpy(e->title_id, title_id, sizeof(e->title_id) - 1);
+    strncpy(e->source, label, sizeof(e->source) - 1);
+    e->is_ps4 = (strncmp(title_id, "CUSA", 4) == 0);
+
+    char dirs[2][256];
+    appmeta_dirs(e->title_id, dirs);
+    read_metadata(dirs, 2, e->is_ps4,
+                  e->title, sizeof(e->title),
+                  e->version, sizeof(e->version));
+
+    char icon[512];
+    e->has_icon = (library_icon_path(e->title_id, icon, sizeof(icon)) == 0);
+    e->has_pic  = (library_pic_path(e->title_id, icon, sizeof(icon)) == 0);
+
+    char mounted[320];
+    snprintf(mounted, sizeof(mounted), "%s/%s-app0", SANDBOX_PATH, e->title_id);
+    e->is_running = dir_exists(mounted) || title_runs_from_folder(e->title_id);
+    e->on_disc = title_on_disc(e->title_id);
+    e->is_disc = e->on_disc || title_is_disc_game(e->title_id);
+    /* a title ShadowMount serves from a dump folder does not need its disc */
+    if (e->mounted_from[0] && !e->on_disc) e->is_disc = 0;
 }
 
 int library_scan(library_entry_t *out, int max)
@@ -437,29 +817,56 @@ int library_scan(library_entry_t *out, int max)
             if (!is_title_id(dp->d_name)) continue;
             if (library_seen(out, count, dp->d_name)) continue;
 
-            library_entry_t *e = &out[count];
-            memset(e, 0, sizeof(*e));
-            strncpy(e->title_id, dp->d_name, sizeof(e->title_id) - 1);
-            strncpy(e->source, g_app_roots[r].label, sizeof(e->source) - 1);
-            e->is_ps4 = (strncmp(dp->d_name, "CUSA", 4) == 0);
-
-            char dirs[2][256];
-            appmeta_dirs(e->title_id, dirs);
-            read_metadata(dirs, 2, e->is_ps4,
-                          e->title, sizeof(e->title),
-                          e->version, sizeof(e->version));
-
-            char icon[512];
-            e->has_icon = (library_icon_path(e->title_id, icon, sizeof(icon)) == 0);
-
-            char mounted[320];
-            snprintf(mounted, sizeof(mounted), "%s/%s-app0", SANDBOX_PATH, e->title_id);
-            e->is_running = dir_exists(mounted);
-
+            library_fill(&out[count], dp->d_name, g_app_roots[r].path, g_app_roots[r].label);
             count++;
         }
         closedir(d);
     }
 
     return count;
+}
+
+int title_drop_mount_link(const char *title_id, const char *target)
+{
+    if (!is_title_id(title_id) || !target || !target[0]) return 0;
+
+    for (int r = 0; g_app_roots[r].path; r++) {
+        char now[160], path[320];
+        read_mount_link(g_app_roots[r].path, title_id, now, sizeof(now));
+        if (strcmp(now, target) != 0) continue;
+
+        snprintf(path, sizeof(path), "%s/%s/mount.lnk", g_app_roots[r].path, title_id);
+        if (unlink(path) == 0) {
+            write_log(g_log_path, "Removed %s - it pointed at %s, which has been moved", path, target);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int title_installed_percent(const char *title_id)
+{
+    if (!is_title_id(title_id)) return -1;
+
+    for (int r = 0; g_app_roots[r].path; r++) {
+        int pct = installed_percent_at(g_app_roots[r].path, title_id);
+        if (pct >= 0) return pct;
+    }
+    return -1;
+}
+
+int library_find(const char *title_id, library_entry_t *out)
+{
+    if (!out || !is_title_id(title_id)) return -1;
+
+    for (int r = 0; g_app_roots[r].path; r++) {
+        char path[320];
+        snprintf(path, sizeof(path), "%s/%s", g_app_roots[r].path, title_id);
+        if (!dir_exists(path)) continue;
+
+        library_fill(out, title_id, g_app_roots[r].path, g_app_roots[r].label);
+        return 0;
+    }
+
+    return -1;
 }

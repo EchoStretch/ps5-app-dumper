@@ -22,31 +22,8 @@ along with this program; see the file COPYING. If not, see
 #include <time.h>
 #include <sys/types.h>
 
-/* Full PS5 notification struct */
-typedef struct {
-    int type;                //0x00
-    int req_id;              //0x04
-    int priority;            //0x08
-    int msg_id;              //0x0C
-    int target_id;           //0x10
-    int user_id;             //0x14
-    int unk1;                //0x18
-    int unk2;                //0x1C
-    int app_id;              //0x20
-    int error_num;           //0x24
-    int unk3;                //0x28
-    char use_icon_image_uri; //0x2C
-    char message[1024];      //0x2D
-    char uri[1024];          //0x42D
-    char unkstr[1024];       //0x82D
-} SceNotificationRequest;   //Size = 0xC30
-
-int dir_exists(const char *path);
-int file_exists(const char *path);
-void mkdirs(const char *path);
-int write_log(const char *log_file_path, const char *fmt, ...);
-void printf_notification(const char *fmt, ...);
-int sceKernelSendNotificationRequest(int device, SceNotificationRequest *req, size_t size, int blocking);
+/* log, notifications, storage and the file basics live in the core now */
+#include "webhb.h"
 
 int read_npwr_id(const char *npbind_path, char *npwr_out, size_t out_size);
 int fs_copy_file(const char *src, const char *dst);
@@ -63,33 +40,20 @@ extern time_t copy_start_time;
 extern int copy_directory(const char *src, const char *dst);
 extern pthread_t progress_thread;
 
-int  find_usb_and_setup(void);
 int  read_decrypter_config(void);
 int  read_logging_config(void); 
 int  read_elf2fself_config(void);
 int  read_backport_config(void);
 int  read_split_config(void);          // NEW: 0-3 split mode
-const char* get_usb_homebrew_path(void);
-
 const char* detect_fs_type(const char *mountpoint);
 void debug_list_usbs(void);
 
 /* ------------------------------------------------------------------ */
-/*  In-memory log ring (feeds the live console of the web UI)          */
-/* ------------------------------------------------------------------ */
-
-#define LOG_RING_CAPACITY 400
-#define LOG_LINE_MAX      320
-
-typedef void (*log_line_cb)(void *ctx, unsigned seq, const char *line);
-
-void     log_ring_push(const char *line);
-void     log_ring_walk(unsigned since, log_line_cb cb, void *ctx);
-unsigned log_ring_seq(void);
-
-/* ------------------------------------------------------------------ */
 /*  Configuration                                                      */
 /* ------------------------------------------------------------------ */
+
+/* What a dump is told. The values live in the core's config store
+   (source/dumper_config.c registers them); this is a copy of them. */
 
 typedef struct {
     int  enable_decrypter;
@@ -102,13 +66,11 @@ typedef struct {
     int  enable_webui;         /* 1 -> serve the web UI instead of dumping right away */
     int  web_port;
     int  auto_start;           /* 1 -> legacy behaviour: dump the running app and exit */
-    char dump_subdir[64];      /* folder below the mount point, e.g. "homebrew" */
+    char dump_subdir[64];      /* dump folder below a drive's mount point */
+    char dump_subdir_console[64]; /* the same below /data, the console's own storage */
+    int  queue_delay;          /* seconds a queued title gets to load before its dump */
+    int  dump_dlc;             /* 1 -> the DLC mounted with a title go along with it   */
 } dumper_config_t;
-
-void config_defaults(dumper_config_t *cfg);
-void config_load(dumper_config_t *cfg);
-int  config_save(const dumper_config_t *cfg);
-int  config_path(char *out, size_t out_size);
 
 /* ------------------------------------------------------------------ */
 /*  Cooperative abort, honoured by the copy routines                   */
@@ -118,8 +80,11 @@ void request_abort(void);
 void clear_abort(void);
 int  abort_requested(void);
 
-extern int g_enable_logging;
-extern char g_log_path[512];
 extern int g_split_mode;               // 0-3: split mode
+/* Backport targets of the dump in progress. 0 leaves the choice to
+   config.ini; the web UI sets them per job so a queue can dump each title
+   with its own settings, and so they hold without a drive to save them on. */
+extern int g_ps4_backport_level;
+extern int g_ps5_backport_level;
 
 #endif /* UTILS_H */

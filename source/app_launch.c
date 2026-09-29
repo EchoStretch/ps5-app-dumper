@@ -1,4 +1,5 @@
 /* Copyright (C) 2025 EchoStretch
+   Copyright (C) 2026 slopmaster33
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the
@@ -23,6 +24,7 @@ along with this program; see the file COPYING. If not, see
 #include <ps5/kernel.h>
 
 #include "app_launch.h"
+#include "app_scan.h"
 #include "utils.h"
 
 /* Launch approach and this struct layout follow the ps5-payload-dev
@@ -135,8 +137,23 @@ static const char *launch_error_text(int rc)
             return "the console does not know this title";
         case 0x80020060u:
             return "the console rejected this title - it will not start from the home screen either";
+        /* SCE_PROCESS_STARTER_ERROR_NO_DISC_INSERT / _OTHER_DISC_INSERTED / _IN_DISC_LOAD */
+        case 0x80a40009u:
+            return "this game needs its disc - insert it and try again";
+        case 0x80a40027u:
+            return "this game needs its own disc, and another one is in the drive - swap it and try again";
+        case 0x80a40028u:
+            return "the console is still reading the disc - try again in a moment";
     }
     return NULL;
+}
+
+/* The console asking for a disc is the one sure sign that a title is a disc
+   game. Nothing on the file system told us so for J-STARS Victory VS+, which
+   was installed from a disc this payload had never seen in the drive. */
+static int asks_for_disc(int rc)
+{
+    return (unsigned)rc == 0x80a40009u || (unsigned)rc == 0x80a40027u;
 }
 
 /* Guards the system call against anything that is not a title id. */
@@ -157,25 +174,36 @@ int app_running_id(void)
     return p_get_running_bigapp();
 }
 
+#define FAIL(...) do { if (err && err_size) snprintf(err, err_size, __VA_ARGS__); \
+                       return -1; } while (0)
+
+int app_close_running(char *err, size_t err_size)
+{
+    if (!app_launch_available()) FAIL("this console build cannot close titles");
+
+    int app_id = p_get_running_bigapp();
+    if (app_id <= 0) return 0;
+
+    if (!p_kill_app) FAIL("cannot close the running game");
+
+    write_log(g_log_path, "Web UI: closing running app %d", app_id);
+    int rc = p_kill_app(app_id, -1, 0, 0);
+    if (rc) FAIL("could not close the running game (0x%x)", rc);
+
+    return 0;
+}
+
 int app_launch_title(const char *title_id, int close_running,
                      char *err, size_t err_size)
 {
-    #define FAIL(...) do { if (err && err_size) snprintf(err, err_size, __VA_ARGS__); \
-                           return -1; } while (0)
-
     if (!app_launch_available()) FAIL("this console build cannot start titles");
     if (!valid_title_id(title_id)) FAIL("not a title id");
 
-    int app_id = p_get_running_bigapp();
-    if (app_id > 0) {
+    if (p_get_running_bigapp() > 0) {
         if (!close_running)
             FAIL("another game is running");
 
-        if (!p_kill_app) FAIL("cannot close the running game");
-
-        write_log(g_log_path, "Web UI: closing running app %d", app_id);
-        int rc = p_kill_app(app_id, -1, 0, 0);
-        if (rc) FAIL("could not close the running game (0x%x)", rc);
+        if (app_close_running(err, err_size) != 0) return -1;
     }
 
     /* Launch on behalf of the signed-in player; without a user the system
@@ -222,6 +250,11 @@ int app_launch_title(const char *title_id, int close_running,
     }
 
     if (rc < 0) {
+        if (asks_for_disc(lnc_rc) || asks_for_disc(rc)) {
+            title_remember_disc(title_id);
+            write_log(g_log_path, "Web UI: %s is a disc game - remembered, it now shows as DISC OUT", title_id);
+        }
+
         const char *known = launch_error_text(lnc_rc ? lnc_rc : rc);
         if (known) FAIL("%s (0x%x)", known, lnc_rc ? lnc_rc : rc);
 
@@ -232,6 +265,6 @@ int app_launch_title(const char *title_id, int close_running,
     write_log(g_log_path, "Web UI: launched %s", title_id);
     printf_notification("Starting %s...", title_id);
     return 0;
-
-    #undef FAIL
 }
+
+#undef FAIL

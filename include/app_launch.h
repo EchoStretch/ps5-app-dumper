@@ -1,4 +1,5 @@
 /* Copyright (C) 2025 EchoStretch
+   Copyright (C) 2026 slopmaster33
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the
@@ -36,6 +37,11 @@ int app_launch_probably_available(void);
 /* Application id of the title currently in the foreground, or <= 0 when the
    console sits on the dashboard. */
 int app_running_id(void);
+
+/* Closes the title in the foreground, ending the player's session. Returns
+   0 when nothing is running or the console accepted the request - the mount
+   under pfsmnt goes away a moment later, not before this returns. */
+int app_close_running(char *err, size_t err_size);
 
 /* Starts a title so its files appear under pfsmnt.
 

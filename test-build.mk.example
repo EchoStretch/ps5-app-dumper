@@ -1,0 +1,11 @@
+# A build for testers: copy this file to test-build.mk (it stays out of git),
+# fill in what applies, and run `make test-build`. Every line is optional -
+# webhb checks only what is set. The ELF lands in dist/ named after these.
+#
+# The last day the build runs (UTC), inclusive.
+TEST_EXPIRES  := 2026-09-27
+# The firmwares it runs on, as the console prints them, separated by commas.
+TEST_FIRMWARE := 5.10,12.00
+# The consoles it runs on: ids as test-probe.elf or an accepted test build
+# show them, separated by commas, no spaces.
+TEST_CONSOLES := 1ffc2e73,b81e0c44

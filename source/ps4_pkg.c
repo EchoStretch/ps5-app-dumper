@@ -179,6 +179,7 @@ int unpkg_ps4(const char *pkgfn, const char *tidpath) {
     int extracted = 0;
 
     for (int i = 0; i < n_entries; i++) {
+        if (abort_requested()) break;
         uint32_t type = entries[i].type;
         uint32_t off  = entries[i].offset;
         uint32_t sz   = entries[i].size;

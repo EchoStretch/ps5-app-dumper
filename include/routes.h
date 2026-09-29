@@ -1,4 +1,5 @@
 /* Copyright (C) 2025 EchoStretch
+   Copyright (C) 2026 slopmaster33
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the
@@ -14,18 +15,26 @@ You should have received a copy of the GNU General Public License
 along with this program; see the file COPYING. If not, see
 <http://www.gnu.org/licenses/>.  */
 
-#ifndef HTTP_SERVER_H
-#define HTTP_SERVER_H
+#ifndef ROUTES_H
+#define ROUTES_H
 
-/* Serves the web UI on the given TCP port. Blocks until the server is
-   asked to shut down. Returns 0 on a clean shutdown, -1 when the socket
-   could not be opened. */
-int http_server_run(int port);
+#include "webhb.h"
+#include "utils.h"
 
-/* Asks the accept loop to return. Safe to call from a request handler. */
-void http_server_stop(void);
+/* What the web-homebrew core is told about this payload. */
+const whb_app_t *dumper_app(void);
 
-/* The port the server actually bound to, 0 before it is listening. */
-int http_server_port(void);
+/* 1 while a dump, a queue or the move of a dump is running. */
+int dumper_busy(void);
 
-#endif /* HTTP_SERVER_H */
+/* Registers the dumper's routes. Call before whb_serve(). */
+void routes_dumper_init(void);
+
+/* Registers the dumper's settings with the core's config store. Call before
+   whb_start(). */
+void dumper_config_init(void);
+
+/* The settings live in the core's store; everyone here gets a copy. */
+void cfg_snapshot(dumper_config_t *out);
+
+#endif /* ROUTES_H */

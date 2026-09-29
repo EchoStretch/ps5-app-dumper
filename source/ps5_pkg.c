@@ -345,6 +345,7 @@ int unpkg_ps5(const char *pkgfn, const char *tidpath)
 
     for (int i = 0; i < n_entries; i++)
     {
+        if (abort_requested()) break;
         uint32_t type = entries[i].type;
         uint32_t off  = entries[i].offset;
         uint32_t sz   = entries[i].size;

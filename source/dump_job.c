@@ -1,4 +1,5 @@
 /* Copyright (C) 2025 EchoStretch
+   Copyright (C) 2026 slopmaster33
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the
@@ -20,9 +21,13 @@ along with this program; see the file COPYING. If not, see
 #include <stdarg.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <sys/param.h>
+#include <sys/mount.h>
 
 #include "dump_job.h"
+#include "dump_library.h"
 #include "app_scan.h"
+#include "dump_store.h"
 #include "ps4_dumper.h"
 #include "ps5_dumper.h"
 #include "utils.h"
@@ -33,12 +38,17 @@ static pthread_mutex_t g_start_mtx = PTHREAD_MUTEX_INITIALIZER;
 static job_status_t    g_status;
 static pthread_t       g_worker;
 static int             g_worker_valid = 0;
+/* the mounted DLC that go along with the dump; the copy routines only
+   measure the app itself, so this is added to their total */
+static uint64_t        g_dlc_bytes = 0;
 
 /* Snapshot of the job request, owned by the worker thread. */
 typedef struct {
     app_entry_t     app;
     char            dest[384];
     dumper_config_t cfg;
+    int             remove_first;   /* something of this title is in the way */
+    time_t          started;
 } job_request_t;
 
 const char *job_state_name(job_state_t state)
@@ -81,6 +91,22 @@ static void finish(job_state_t state, const char *fmt, ...)
     pthread_mutex_unlock(&g_mtx);
 }
 
+/* Space left for the dump. Returns -1 when the drive will not say, which is
+   no reason to refuse - the copy reports the real error then. */
+/* what a dump to the console's own storage has to leave free */
+#ifndef INTERNAL_RESERVE       /* the host harness makes this small */
+#define INTERNAL_RESERVE (10ull << 30)
+#endif
+
+static int free_bytes(const char *path, uint64_t *out)
+{
+    struct statfs sf;
+    if (statfs(path, &sf) != 0) return -1;
+
+    *out = (uint64_t)sf.f_bavail * sf.f_bsize;
+    return 0;
+}
+
 static void *worker(void *arg)
 {
     job_request_t *req = (job_request_t *)arg;
@@ -90,19 +116,84 @@ static void *worker(void *arg)
        the only global left to propagate is the PS4 split mode. */
     g_split_mode = req->cfg.split;
     g_enable_logging = req->cfg.enable_logging;
+    g_ps4_backport_level = req->cfg.ps4_backport_level;
+    g_ps5_backport_level = req->cfg.ps5_backport_level;
 
-    snprintf(g_log_path, sizeof(g_log_path), "%s/log.txt", req->dest);
+    /* every dump writes a log of its own; without a drive for our folder
+       it falls back to one next to the dump */
+    log_use_job(req->app.title_id);
+    if (!get_app_data_path()[0])
+        snprintf(g_log_path, sizeof(g_log_path), "%s/log.txt", req->dest);
+
+    dump_info_t info = {
+        .title_id = req->app.title_id,
+        .title    = req->app.title[0] ? req->app.title : req->app.title_id,
+        .state    = "running",
+        .cfg      = &req->cfg,
+        .started  = req->started,
+    };
+
+    if (req->remove_first) {
+        set_stage("Removing old dump");
+        write_log(g_log_path, "Removing the existing dump of %s in %s", req->app.title_id, req->dest);
+        if (dump_remove_title(req->dest, req->app.title_id, req->app.is_ps4, req->cfg.split) != 0)
+            write_log(g_log_path, "Warning: the old dump could not be removed completely");
+    }
+
+    /* from here on the drive says that a dump of this title is under way */
+    dump_info_write(req->dest, req->app.is_ps4, req->cfg.split, &info);
 
     set_stage("Measuring");
     uint64_t estimate = app_size(&req->app);
 
+    uint64_t dlc_bytes = 0;
+    for (int i = 0; req->cfg.dump_dlc && i < req->app.dlc_count; i++) {
+        char path[320];
+        size_t n = 0;
+        snprintf(path, sizeof(path), "%s/%s", SANDBOX_PATH, req->app.dlc[i]);
+        size_walker(path, &n);
+        dlc_bytes += n;
+    }
+    estimate += dlc_bytes;
+
     pthread_mutex_lock(&g_mtx);
     g_status.total_bytes = estimate;
+    g_dlc_bytes = dlc_bytes;
     g_status.state = JOB_RUNNING;
     pthread_mutex_unlock(&g_mtx);
 
+    /* Found out now rather than hours in: a dump that runs the drive full
+       leaves nothing usable behind. */
+    uint64_t avail = 0;
+    /* The console's storage is shared with its games and the system; it is
+       never filled to the brim. */
+    int on_console = strncmp(req->dest, storage_internal_root(), strlen(storage_internal_root())) == 0;
+    uint64_t reserve = on_console ? INTERNAL_RESERVE : 0;
+
+    if (estimate && free_bytes(req->dest, &avail) == 0 && estimate + reserve > avail) {
+        write_log(g_log_path, "Web UI: %s needs %llu MB, %s has %llu MB free",
+                  req->app.dir, (unsigned long long)(estimate >> 20),
+                  req->dest, (unsigned long long)(avail >> 20));
+        if (on_console)
+            finish(JOB_FAILED, "Not enough space on the console: the dump needs %.1f GB and %d GB have to "
+                               "stay free, but only %.1f GB are left", estimate / 1073741824.0,
+                   (int)(INTERNAL_RESERVE >> 30), avail / 1073741824.0);
+        else
+            finish(JOB_FAILED, "Not enough space: the dump needs %.1f GB, the drive has %.1f GB free",
+                   estimate / 1073741824.0, avail / 1073741824.0);
+        info.state = "failed";
+        info.finished = time(NULL);
+        dump_info_write(req->dest, req->app.is_ps4, req->cfg.split, &info);
+        log_use_general();
+        free(req);
+        return NULL;
+    }
+
     set_stage("Dumping");
     write_log(g_log_path, "Web UI: dumping %s to %s", req->app.dir, req->dest);
+    write_log(g_log_path, "Settings: decrypt=%d fself=%d backport=%d (ps4 level %d, ps5 level %d) split=%d",
+              req->cfg.enable_decrypter, req->cfg.enable_elf2fself, req->cfg.enable_backport,
+              req->cfg.ps4_backport_level, req->cfg.ps5_backport_level, req->cfg.split);
 
     if (req->app.is_ps4) {
         rc = dump_ps4_cusa_app(SANDBOX_PATH, req->app.dir, req->app.patch_dir,
@@ -114,15 +205,34 @@ static void *worker(void *arg)
                                req->cfg.enable_elf2fself, req->cfg.enable_backport);
     }
 
+    /* the app's info file counts the app alone, each DLC gets its own */
+    uint64_t app_bytes = (uint64_t)total_bytes_copied;
+
+    /* the DLC mounted with the title go next to it, each as a folder of its own */
+    if (!req->cfg.dump_dlc && req->app.dlc_count)
+        write_log(g_log_path, "DLC: %d mounted, left out (dump_dlc = 0)", req->app.dlc_count);
+    for (int i = 0; req->cfg.dump_dlc && rc == 0 && !abort_requested() && i < req->app.dlc_count; i++) {
+        set_stage("Dumping DLC");
+        rc = dump_dlc_folder(SANDBOX_PATH, req->app.dlc[i], req->app.title_id, req->dest);
+    }
+
     if (abort_requested()) {
+        info.state = "aborted";
         finish(JOB_ABORTED, "Dump stopped, %s is incomplete", req->dest);
         printf_notification("Dump stopped by user");
     } else if (rc != 0) {
+        info.state = "failed";
         finish(JOB_FAILED, "Dump failed with code %d", rc);
     } else {
+        info.state = "done";
         finish(JOB_DONE, "Dump complete: %s", req->dest);
     }
 
+    info.finished = time(NULL);
+    info.bytes = app_bytes;
+    dump_info_write(req->dest, req->app.is_ps4, req->cfg.split, &info);
+
+    log_use_general();
     free(req);
     return NULL;
 }
@@ -135,8 +245,18 @@ int job_is_active(void)
     return active;
 }
 
+void job_dest_path(const char *mount, const dumper_config_t *cfg, char *out, size_t out_size)
+{
+    /* each kind of destination remembers a folder of its own */
+    const char *subdir = strcmp(mount, storage_internal_root()) == 0
+                       ? cfg->dump_subdir_console : cfg->dump_subdir;
+    if (subdir[0]) snprintf(out, out_size, "%s/%s", mount, subdir);
+    else           snprintf(out, out_size, "%s", mount);
+}
+
 int job_start(const char *app_dir, const char *mount,
-              const dumper_config_t *cfg, char *err, size_t err_size)
+              const dumper_config_t *cfg, int overwrite,
+              char *err, size_t err_size)
 {
     #define FAIL(msg) do { if (err && err_size) snprintf(err, err_size, "%s", msg); \
                            pthread_mutex_unlock(&g_start_mtx); return -1; } while (0)
@@ -145,7 +265,36 @@ int job_start(const char *app_dir, const char *mount,
 
     if (!app_dir || !mount || !cfg) FAIL("missing parameters");
     if (job_is_active())            FAIL("a dump is already running");
+    if (dumplib_move_active())      FAIL("a dump is being moved - wait for that to finish");
     if (target_is_known(mount) != 0) FAIL("unknown destination");
+
+    /* A title can be played long before all of it is on the console; a dump
+       made while blocks still arrive would have holes nobody sees until the
+       game is rebuilt from it. Refused for the web UI, the queue and
+       auto_start alike. A title that stands below 100 % for good - PlayGo
+       chunks the console never fetches - is dumped as it is, and the log
+       says so. */
+    {
+        char id[16] = {0};
+        snprintf(id, sizeof(id), "%.9s", app_dir);
+        int installed = title_installed_percent(id);
+        if (installed >= 0 && installed < 100) {
+            if (title_install_pending(id)) {
+                char why[160];
+                snprintf(why, sizeof(why), "%s is still installing (%d %%) - the dump would be "
+                                           "incomplete, wait until it is done", id, installed);
+                FAIL(why);
+            }
+            playgo_status_t pg;
+            if (title_playgo_status(id, &pg) == 0)
+                write_log(g_log_path, "%s: %d of %d chunks are wanted on this console and all are here; "
+                                      "the other %d (other languages or regions) were never fetched - dumping what is there",
+                          id, pg.wanted, pg.chunks, pg.chunks - pg.wanted);
+            else
+                write_log(g_log_path, "%s has %d %% of its package on the console and the rest never arrived "
+                                      "(content the console did not fetch) - dumping what is there", id, installed);
+        }
+    }
 
     app_entry_t app;
     if (app_find(app_dir, &app) != 0)
@@ -158,11 +307,18 @@ int job_start(const char *app_dir, const char *mount,
 
     req->app = app;
     req->cfg = *cfg;
+    req->started = time(NULL);
+    job_dest_path(mount, cfg, req->dest, sizeof(req->dest));
 
-    if (cfg->dump_subdir[0])
-        snprintf(req->dest, sizeof(req->dest), "%s/%s", mount, cfg->dump_subdir);
-    else
-        snprintf(req->dest, sizeof(req->dest), "%s", mount);
+    dump_presence_t there = dump_presence(req->dest, app.title_id, app.is_ps4, cfg->split);
+    if (there == DUMP_PRESENT && !overwrite) {
+        if (err && err_size)
+            snprintf(err, err_size, "%s is already dumped in %s", app.title_id, req->dest);
+        free(req);
+        pthread_mutex_unlock(&g_start_mtx);
+        return JOB_ERR_EXISTS;
+    }
+    req->remove_first = (there != DUMP_ABSENT);
 
     mkdirs(req->dest);
     if (!dir_exists(req->dest)) {
@@ -187,6 +343,7 @@ int job_start(const char *app_dir, const char *mount,
 
     pthread_mutex_lock(&g_mtx);
     memset(&g_status, 0, sizeof(g_status));
+    g_dlc_bytes = 0;
     g_status.state = JOB_PREPARING;
     g_status.started = time(NULL);
     strncpy(g_status.app_dir,  app.dir,      sizeof(g_status.app_dir) - 1);
@@ -224,13 +381,15 @@ void job_get_status(job_status_t *out)
 
     pthread_mutex_lock(&g_mtx);
     *out = g_status;
+    uint64_t dlc_bytes = g_dlc_bytes;
     pthread_mutex_unlock(&g_mtx);
 
     if (out->state == JOB_RUNNING || out->state == JOB_PREPARING) {
         /* live figures kept by the copy routines */
         if (folder_size_current > 0)
-            out->total_bytes = (uint64_t)folder_size_current;
+            out->total_bytes = (uint64_t)folder_size_current + dlc_bytes;
         out->copied_bytes = (uint64_t)total_bytes_copied;
+        out->copy_started = copy_start_time;
 
         strncpy(out->current_file, current_copied, sizeof(out->current_file) - 1);
         out->current_file[sizeof(out->current_file) - 1] = '\0';

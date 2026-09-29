@@ -15,20 +15,22 @@ along with this program; see the file COPYING. If not, see
 <http://www.gnu.org/licenses/>.  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/param.h>
-#include <sys/sysctl.h>
-#include <sys/user.h>
+#include <time.h>
+#include <pthread.h>
 
 #include "app_launch.h"
 #include "app_scan.h"
-#include "http_server.h"
+#include "dump_job.h"
+#include "routes.h"
 #include "ps4_dumper.h"
 #include "ps5_dumper.h"
+#include "version.h"
 #include "utils.h"
 
-#define VERSION "1.11"
+#define VERSION DUMPER_VERSION
 
 /* ------------------------------------------------------------------ */
 /*  Headless mode - dump the running title and exit                    */
@@ -36,7 +38,10 @@ along with this program; see the file COPYING. If not, see
 
 static int run_headless(const dumper_config_t *cfg)
 {
-    while (find_usb_and_setup() == -1) {
+    /* looks again where our files live each time: that is what finds the drive */
+    for (;;) {
+        whb_config_init();
+        if (storage_first_usb() != -1) break;
         printf_notification("Please insert USB (exFAT) into any port...");
         sleep(7);
     }
@@ -44,9 +49,9 @@ static int run_headless(const dumper_config_t *cfg)
     const char *usb = get_usb_homebrew_path();
     if (!usb || !usb[0]) return 1;
 
-    char logpath[512];
-    snprintf(logpath, sizeof(logpath), "%s/log.txt", usb);
-    strncpy(g_log_path, logpath, sizeof(g_log_path) - 1);
+    /* the dump still goes to <drive>/homebrew; its log joins the others */
+    log_use_general();
+    const char *logpath = g_log_path;
 
     write_log(logpath, "=== PS5 App Dumper v%s ===", VERSION);
 
@@ -81,44 +86,101 @@ static int run_headless(const dumper_config_t *cfg)
 }
 
 /* ------------------------------------------------------------------ */
+/*  auto_start with the web UI up                                      */
+/* ------------------------------------------------------------------ */
 
-/* Names the process the payload was loaded into. A payload lives only as
-   long as its host, so when the web UI vanishes the moment a game starts,
-   this line says which process took it down. */
-static void log_host_process(void)
+/* How long the web server gets to come up before the dump is started. */
+#define AUTO_DUMP_DELAY 2
+
+/* Dumps the running title the way the web UI's button would. The job runs
+   inside the web UI's machinery on purpose: the dump shows up in the
+   browser, can be stopped there, and marks this instance as busy so that
+   sending the payload again does not end it. Above all the switch that
+   caused it stays within reach - with a blind dump it could only be turned
+   off by editing config.ini on the drive. */
+static void *auto_dump_thread(void *arg)
 {
-    struct kinfo_proc kp;
-    size_t len = sizeof(kp);
-    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, (int)getpid() };
+    dumper_config_t *cfg = (dumper_config_t *)arg;
 
-    if (sysctl(mib, 4, &kp, &len, NULL, 0) == 0 && kp.ki_comm[0])
-        write_log(g_log_path, "Running as pid %d inside \"%s\"", (int)getpid(), kp.ki_comm);
-    else
-        write_log(g_log_path, "Running as pid %d (host unknown)", (int)getpid());
+    sleep(AUTO_DUMP_DELAY);
+
+    app_entry_t *apps = calloc(APP_SCAN_MAX, sizeof(*apps));
+    target_entry_t *targets = calloc(TARGET_SCAN_MAX, sizeof(*targets));
+    const char *problem = NULL;
+    char err[160] = {0};
+
+    if (!apps || !targets) {
+        problem = "out of memory";
+    } else if (app_scan(apps, APP_SCAN_MAX) <= 0) {
+        problem = "no game is running";
+    } else {
+        /* the writable drive with the most room, as the web UI picks it;
+           the console's own storage only when there is no drive at all */
+        int count = target_scan(targets, TARGET_SCAN_MAX), best = -1;
+        for (int i = 0; i < count; i++) {
+            if (!targets[i].writable) continue;
+            if (best < 0 || (targets[best].internal && !targets[i].internal) ||
+                (targets[best].internal == targets[i].internal &&
+                 targets[i].free_bytes > targets[best].free_bytes))
+                best = i;
+        }
+
+        if (best < 0)
+            problem = "no drive to dump to";
+        /* never overwrites: nobody is there to be asked */
+        else if (job_start(apps[0].dir, targets[best].mount, cfg, 0, err, sizeof(err)) != 0)
+            problem = err[0] ? err : "the dump could not be started";
+        else
+            printf_notification("Auto dump: %s\nWatch or stop it in the web UI",
+                                apps[0].title[0] ? apps[0].title : apps[0].dir);
+    }
+
+    if (problem) {
+        write_log(g_log_path, "Auto dump skipped: %s", problem);
+        printf_notification("Auto dump skipped: %s\nUse the web UI instead", problem);
+    }
+
+    free(apps);
+    free(targets);
+    free(cfg);
+    return NULL;
 }
+
+static void schedule_auto_dump(const dumper_config_t *cfg)
+{
+    dumper_config_t *copy = malloc(sizeof(*copy));
+    if (!copy) return;
+    *copy = *cfg;
+
+    pthread_t tid;
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
+    if (pthread_create(&tid, &attr, auto_dump_thread, copy) != 0) free(copy);
+    pthread_attr_destroy(&attr);
+}
+
+/* ------------------------------------------------------------------ */
 
 int main(void)
 {
-    /* before anything talks to the system services */
-    app_launch_init();
-
-    printf_notification("PS5 App Dumper v%s", VERSION);
-    log_host_process();
+    dumper_config_init();
+    if (whb_start(dumper_app()) != 0) return 0;
 
     dumper_config_t cfg;
+    cfg_snapshot(&cfg);
 
-    /* One pass over the mount points so config.ini can be read; the web UI
-       rescans on its own once a drive shows up later. */
-    find_usb_and_setup();
-    config_load(&cfg);
-
-    g_enable_logging = cfg.enable_logging;
-    g_split_mode = cfg.split;
-
-    if (!cfg.enable_webui || cfg.auto_start)
+    /* headless is what enable_webui = 0 asks for - auto_start alone is not */
+    if (!cfg.enable_webui)
         return run_headless(&cfg);
 
-    if (http_server_run(cfg.web_port) != 0) {
+    if (cfg.auto_start)
+        schedule_auto_dump(&cfg);
+
+    routes_dumper_init();
+
+    if (whb_serve(0) != 0) {
         printf_notification("Web UI failed to start, dumping directly instead");
         return run_headless(&cfg);
     }

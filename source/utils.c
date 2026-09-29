@@ -29,6 +29,7 @@ along with this program; see the file COPYING. If not, see
 #include <errno.h>
 
 #include "utils.h"
+#include "webhb.h"
 
 size_t folder_size_current = 0;
 size_t total_bytes_copied = 0;
@@ -37,15 +38,6 @@ int progress_thread_run = 1;
 time_t copy_start_time = 0;
 pthread_t progress_thread = 0;
 
-static char g_usb_homebrew[128] = {0};
-
-/* ------------------------------------------------------------------ */
-/*  In-memory log ring                                                 */
-/* ------------------------------------------------------------------ */
-
-static char     g_log_ring[LOG_RING_CAPACITY][LOG_LINE_MAX];
-static unsigned g_log_ring_seq = 0;   /* sequence number of the newest line */
-static pthread_mutex_t g_log_ring_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 /* ------------------------------------------------------------------ */
 /*  Cooperative abort                                                  */
@@ -53,127 +45,13 @@ static pthread_mutex_t g_log_ring_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 static volatile int g_abort_requested = 0;
 
-int g_enable_logging = 1;
-char g_log_path[512] = {0};
 int g_split_mode = 3;  // default: split both
-
-void log_ring_push(const char *line)
-{
-    if (!line || !*line) return;
-
-    pthread_mutex_lock(&g_log_ring_mtx);
-    g_log_ring_seq++;
-    char *slot = g_log_ring[g_log_ring_seq % LOG_RING_CAPACITY];
-    strncpy(slot, line, LOG_LINE_MAX - 1);
-    slot[LOG_LINE_MAX - 1] = '\0';
-
-    /* newlines would break the one-line-per-entry contract of the UI */
-    for (char *p = slot; *p; p++)
-        if (*p == '\n' || *p == '\r') *p = ' ';
-
-    pthread_mutex_unlock(&g_log_ring_mtx);
-}
-
-unsigned log_ring_seq(void)
-{
-    pthread_mutex_lock(&g_log_ring_mtx);
-    unsigned seq = g_log_ring_seq;
-    pthread_mutex_unlock(&g_log_ring_mtx);
-    return seq;
-}
-
-void log_ring_walk(unsigned since, log_line_cb cb, void *ctx)
-{
-    if (!cb) return;
-
-    pthread_mutex_lock(&g_log_ring_mtx);
-    unsigned newest = g_log_ring_seq;
-    unsigned oldest = (newest > LOG_RING_CAPACITY) ? newest - LOG_RING_CAPACITY + 1 : 1;
-    if (since + 1 > oldest) oldest = since + 1;
-
-    for (unsigned seq = oldest; seq <= newest; seq++) {
-        char copy[LOG_LINE_MAX];
-        strncpy(copy, g_log_ring[seq % LOG_RING_CAPACITY], sizeof(copy) - 1);
-        copy[sizeof(copy) - 1] = '\0';
-
-        pthread_mutex_unlock(&g_log_ring_mtx);
-        cb(ctx, seq, copy);
-        pthread_mutex_lock(&g_log_ring_mtx);
-    }
-    pthread_mutex_unlock(&g_log_ring_mtx);
-}
+int g_ps4_backport_level = 0;
+int g_ps5_backport_level = 0;
 
 void request_abort(void) { g_abort_requested = 1; }
 void clear_abort(void)   { g_abort_requested = 0; }
 int  abort_requested(void) { return g_abort_requested; }
-
-int find_usb_and_setup(void) {
-    const char *possible_mounts[] = {
-        "/mnt/usb0", "/mnt/usb1", "/mnt/usb2", "/mnt/usb3",
-        "/mnt/usb4", "/mnt/usb5", "/mnt/usb6", "/mnt/usb7"
-    };
-    const int num_mounts = sizeof(possible_mounts) / sizeof(possible_mounts[0]);
-
-    for (int i = 0; i < num_mounts; ++i) {
-        const char *root = possible_mounts[i];
-        char homebrew[128], testfile[256], config[256];
-
-        snprintf(homebrew, sizeof(homebrew), "%s/homebrew", root);
-        snprintf(testfile, sizeof(testfile), "%s/.probe_usb", homebrew);
-        snprintf(config,   sizeof(config),   "%s/config.ini", homebrew);
-
-        g_enable_logging = read_logging_config();
-
-        if (!dir_exists(root)) continue;
-
-        mkdirs(homebrew);
-
-        int fd = open(testfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-        if (fd != -1) {
-            if (write(fd, "PROBE", 5) == 5) {
-                close(fd);
-                unlink(testfile);
-
-                strncpy(g_usb_homebrew, homebrew, sizeof(g_usb_homebrew) - 1);
-                g_usb_homebrew[sizeof(g_usb_homebrew) - 1] = '\0';
-
-                if (!file_exists(config)) {
-                    dumper_config_t defaults;
-                    config_defaults(&defaults);
-                    config_save(&defaults);
-                }
-
-                snprintf(g_log_path, sizeof(g_log_path), "%s/log.txt", homebrew);
-
-                if (g_enable_logging && g_log_path[0]) {
-                    write_log(g_log_path,
-                              "USB detected (writable) at %s – %s",
-                              root, detect_fs_type(root));
-                }
-
-                return i;
-            }
-            close(fd);
-            unlink(testfile);
-        }
-
-        if (file_exists(config)) {
-            printf_notification("USB (read-only fallback): %s", root);
-            strncpy(g_usb_homebrew, homebrew, sizeof(g_usb_homebrew) - 1);
-            g_usb_homebrew[sizeof(g_usb_homebrew) - 1] = '\0';
-            snprintf(g_log_path, sizeof(g_log_path), "%s/log.txt", homebrew);
-
-            if (g_enable_logging && g_log_path[0]) {
-                write_log(g_log_path,
-                          "USB detected (read-only) at %s – %s",
-                          root, detect_fs_type(root));
-            }
-            return i;
-        }
-    }
-
-    return -1;
-}
 
 const char* detect_fs_type(const char *mountpoint) {
     char cmd[256], line[256];
@@ -200,15 +78,11 @@ void debug_list_usbs(void) {
     pclose(fp);
 }
 
-const char* get_usb_homebrew_path(void) {
-    return g_usb_homebrew;
-}
-
 int read_decrypter_config(void) {
-    if (g_usb_homebrew[0] == '\0') return 1;
+    if (get_app_data_path()[0] == '\0') return 1;
 
     char config_path[256];
-    snprintf(config_path, sizeof(config_path), "%s/config.ini", g_usb_homebrew);
+    snprintf(config_path, sizeof(config_path), "%s/config.ini", get_app_data_path());
 
     FILE *f = fopen(config_path, "r");
     if (!f) return 1;
@@ -229,10 +103,10 @@ int read_decrypter_config(void) {
 }
 
 int read_logging_config(void) {
-    if (g_usb_homebrew[0] == '\0') return 1;
+    if (get_app_data_path()[0] == '\0') return 1;
 
     char config_path[256];
-    snprintf(config_path, sizeof(config_path), "%s/config.ini", g_usb_homebrew);
+    snprintf(config_path, sizeof(config_path), "%s/config.ini", get_app_data_path());
 
     FILE *f = fopen(config_path, "r");
     if (!f) return 1;
@@ -255,10 +129,10 @@ int read_logging_config(void) {
 
 int read_backport_config(void)
 {
-    if (g_usb_homebrew[0] == '\0') return 1; 
+    if (get_app_data_path()[0] == '\0') return 1; 
 
     char cfg_path[512];
-    snprintf(cfg_path, sizeof(cfg_path), "%s/config.ini", g_usb_homebrew);
+    snprintf(cfg_path, sizeof(cfg_path), "%s/config.ini", get_app_data_path());
 
     FILE *f = fopen(cfg_path, "r");
     if (!f) return 1;
@@ -281,10 +155,10 @@ int read_backport_config(void)
 
 int read_elf2fself_config(void)
 {
-    if (g_usb_homebrew[0] == '\0') return 1;
+    if (get_app_data_path()[0] == '\0') return 1;
 
     char config_path[256];
-    snprintf(config_path, sizeof(config_path), "%s/config.ini", g_usb_homebrew);
+    snprintf(config_path, sizeof(config_path), "%s/config.ini", get_app_data_path());
 
     FILE *f = fopen(config_path, "r");
     if (!f) return 1;
@@ -307,10 +181,10 @@ int read_elf2fself_config(void)
 
 int read_split_config(void)
 {
-    if (g_usb_homebrew[0] == '\0') return 3;
+    if (get_app_data_path()[0] == '\0') return 3;
 
     char config_path[256];
-    snprintf(config_path, sizeof(config_path), "%s/config.ini", g_usb_homebrew);
+    snprintf(config_path, sizeof(config_path), "%s/config.ini", get_app_data_path());
 
     FILE *f = fopen(config_path, "r");
     if (!f) return 3;
@@ -331,258 +205,6 @@ int read_split_config(void)
     }
     fclose(f);
     return 3;
-}
-
-/* ------------------------------------------------------------------ */
-/*  Configuration                                                      */
-/* ------------------------------------------------------------------ */
-
-void config_defaults(dumper_config_t *cfg)
-{
-    if (!cfg) return;
-    memset(cfg, 0, sizeof(*cfg));
-    cfg->enable_decrypter   = 1;
-    cfg->enable_backport    = 0;
-    cfg->ps4_backport_level = 4;
-    cfg->ps5_backport_level = 1;
-    cfg->enable_elf2fself   = 0;
-    cfg->enable_logging     = 1;
-    cfg->split              = 3;
-    cfg->enable_webui       = 1;
-    cfg->web_port           = 8081;   /* 8080 usually belongs to websrv */
-    cfg->auto_start         = 0;
-    strncpy(cfg->dump_subdir, "homebrew", sizeof(cfg->dump_subdir) - 1);
-}
-
-int config_path(char *out, size_t out_size)
-{
-    if (!out || out_size == 0) return -1;
-    if (g_usb_homebrew[0] == '\0') { out[0] = '\0'; return -1; }
-    snprintf(out, out_size, "%s/config.ini", g_usb_homebrew);
-    return 0;
-}
-
-/* Splits "  key = value  ; comment" into key/value, both trimmed.
-   Returns 0 when the line carries a setting. */
-static int config_split_line(char *line, char **key, char **value)
-{
-    char *p = line;
-    while (*p == ' ' || *p == '\t') p++;
-    if (*p == ';' || *p == '#' || *p == '\n' || *p == '\r' || *p == '\0') return -1;
-
-    char *eq = strchr(p, '=');
-    if (!eq) return -1;
-    *eq = '\0';
-
-    char *k_end = eq - 1;
-    while (k_end >= p && (*k_end == ' ' || *k_end == '\t')) *k_end-- = '\0';
-
-    char *v = eq + 1;
-    while (*v == ' ' || *v == '\t') v++;
-
-    char *v_end = v + strlen(v) - 1;
-    while (v_end >= v && (*v_end == '\n' || *v_end == '\r' ||
-                          *v_end == ' '  || *v_end == '\t')) *v_end-- = '\0';
-
-    /* strip a trailing inline comment */
-    char *c = strpbrk(v, ";#");
-    if (c) {
-        *c = '\0';
-        char *e = c - 1;
-        while (e >= v && (*e == ' ' || *e == '\t')) *e-- = '\0';
-    }
-
-    *key = p;
-    *value = v;
-    return 0;
-}
-
-static int clamp_int(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
-
-void config_load(dumper_config_t *cfg)
-{
-    if (!cfg) return;
-    config_defaults(cfg);
-
-    char path[512];
-    if (config_path(path, sizeof(path)) != 0) return;
-
-    FILE *f = fopen(path, "r");
-    if (!f) return;
-
-    char line[256], *key, *val;
-    while (fgets(line, sizeof(line), f)) {
-        if (config_split_line(line, &key, &val) != 0) continue;
-
-        if      (!strcmp(key, "enable_decrypter"))   cfg->enable_decrypter   = atoi(val) ? 1 : 0;
-        else if (!strcmp(key, "enable_backport"))    cfg->enable_backport    = atoi(val) ? 1 : 0;
-        else if (!strcmp(key, "ps4_backport_level")) cfg->ps4_backport_level = clamp_int(atoi(val), 1, 6);
-        else if (!strcmp(key, "ps5_backport_level")) cfg->ps5_backport_level = clamp_int(atoi(val), 1, 10);
-        else if (!strcmp(key, "enable_elf2fself"))   cfg->enable_elf2fself   = atoi(val) ? 1 : 0;
-        else if (!strcmp(key, "enable_logging"))     cfg->enable_logging     = atoi(val) ? 1 : 0;
-        else if (!strcmp(key, "split"))              cfg->split              = clamp_int(atoi(val), 0, 3);
-        else if (!strcmp(key, "enable_webui"))       cfg->enable_webui       = atoi(val) ? 1 : 0;
-        else if (!strcmp(key, "web_port"))           cfg->web_port           = clamp_int(atoi(val), 1024, 65535);
-        else if (!strcmp(key, "auto_start"))         cfg->auto_start         = atoi(val) ? 1 : 0;
-        else if (!strcmp(key, "dump_subdir")) {
-            strncpy(cfg->dump_subdir, val, sizeof(cfg->dump_subdir) - 1);
-            cfg->dump_subdir[sizeof(cfg->dump_subdir) - 1] = '\0';
-        }
-    }
-    fclose(f);
-}
-
-int config_save(const dumper_config_t *cfg)
-{
-    if (!cfg) return -1;
-
-    char path[512];
-    if (config_path(path, sizeof(path)) != 0) return -1;
-
-    FILE *f = fopen(path, "w");
-    if (!f) return -1;
-
-    fprintf(f,
-        "; PS5 App Dumper Config\n"
-        "; Managed by the web UI - hand edits are picked up on the next start.\n"
-        "\n"
-        "; === Web UI ===\n"
-        "; enable_webui = 1 -> serve the web interface (default)\n"
-        "; enable_webui = 0 -> headless, dump the running app right away\n"
-        "; auto_start   = 1 -> dump immediately even when the web UI is enabled\n"
-        "; web_port          -> first TCP port tried for the web interface (default 8081)\n"
-        "enable_webui = %d\n"
-        "auto_start = %d\n"
-        "web_port = %d\n"
-        "\n"
-        "; === Destination ===\n"
-        "; dump_subdir -> folder below the mount point that receives the dump\n"
-        "dump_subdir = %s\n"
-        "\n"
-        "; === Decrypt App ===\n"
-        "; enable_decrypter = 1  -> decrypt ELF files (default)\n"
-        "; enable_decrypter = 0  -> disable decryption\n"
-        "enable_decrypter = %d\n"
-        "\n"
-        "; === Backport Options PS4/PS5 ===\n"
-        "; enable_backport = 1 -> enable SDK patching\n"
-        "; enable_backport = 0 -> disable SDK patching (default)\n"
-        "; ps4_backport_level = 1-6 -> predefined SDK pair (default: 4 (PS4 9.00) )\n"
-        "; ps5_backport_level = 1-10 -> predefined SDK pair (default: 1 (PS5 1.00) )\n"
-        "; >>>> BACKPORTING IS FOR ADVANCED USERS MAY NOT WORK <<<<\n"
-        "enable_backport = %d\n"
-        "ps4_backport_level = %d\n"
-        "ps5_backport_level = %d\n"
-        "\n"
-        "; === FSELF Files ===\n"
-        "; enable_elf2fself = 1 -> enable fself ELF files\n"
-        "; enable_elf2fself = 0 -> disable fself (default)\n"
-        "enable_elf2fself = %d\n"
-        "\n"
-        "; === Logging ===\n"
-        "; enable_logging = 1 -> write log.txt (default)\n"
-        "; enable_logging = 0 -> disable logging\n"
-        "enable_logging = %d\n"
-        "\n"
-        "; === PS4 Split Mode ===\n"
-        "; 0 = no split (CUSAxxxxx/)\n"
-        "; 1 = app only (CUSAxxxxx-app/)\n"
-        "; 2 = patch only (CUSAxxxxx-patch/)\n"
-        "; 3 = both split (CUSAxxxxx-app/ + CUSAxxxxx-patch/)\n"
-        "split = %d\n",
-        cfg->enable_webui, cfg->auto_start, cfg->web_port,
-        cfg->dump_subdir[0] ? cfg->dump_subdir : "homebrew",
-        cfg->enable_decrypter,
-        cfg->enable_backport, cfg->ps4_backport_level, cfg->ps5_backport_level,
-        cfg->enable_elf2fself,
-        cfg->enable_logging,
-        cfg->split);
-
-    fflush(f);
-    fsync(fileno(f));
-    fclose(f);
-    return 0;
-}
-
-int dir_exists(const char *path)
-{
-    struct stat st;
-    return (stat(path, &st) == 0 && S_ISDIR(st.st_mode));
-}
-
-int file_exists(const char *path)
-{
-    struct stat st;
-    return (stat(path, &st) == 0 && S_ISREG(st.st_mode));
-}
-
-void mkdirs(const char *path)
-{
-    if (!path || !*path) return;
-
-    char tmp[512];
-    strncpy(tmp, path, sizeof(tmp)-1);
-    tmp[sizeof(tmp)-1] = '\0';
-
-    for (char *p = tmp + 1; *p; p++)
-    {
-        if (*p == '/')
-        {
-            *p = '\0';
-            mkdir(tmp, 0777);
-            *p = '/';
-        }
-    }
-    mkdir(tmp, 0777);
-}
-
-int write_log(const char *log_file_path, const char *fmt, ...)
-{
-    char msg[LOG_LINE_MAX];
-    va_list ap;
-
-    va_start(ap, fmt);
-    vsnprintf(msg, sizeof(msg), fmt, ap);
-    va_end(ap);
-
-    /* the ring backs the live console of the web UI and stays alive even
-       when file logging is turned off */
-    log_ring_push(msg);
-
-    if (!g_enable_logging || !log_file_path || !log_file_path[0]) return 0;
-
-    FILE *f = fopen(log_file_path, "a");
-    if (!f) return -1;
-
-    char timestamp[64];
-    time_t t = time(NULL);
-    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&t));
-
-    fprintf(f, "[%s] %s\n", timestamp, msg);
-    fflush(f);
-    fsync(fileno(f));
-    fclose(f);
-    return 0;
-}
-
-void printf_notification(const char *fmt, ...)
-{
-    SceNotificationRequest noti;
-    memset(&noti, 0, sizeof(noti));
-
-    va_list ap;
-    va_start(ap, fmt);
-    vsnprintf(noti.message, sizeof(noti.message), fmt, ap);
-    va_end(ap);
-
-    noti.type = 0;
-    noti.use_icon_image_uri = 1;
-    noti.target_id = -1;
-    strncpy(noti.uri, "cxml://psnotification/tex_icon_system", sizeof(noti.uri)-1);
-
-    sceKernelSendNotificationRequest(0, &noti, sizeof(noti), 0);
-    printf("%s\n", noti.message);
-    log_ring_push(noti.message);
 }
 
 int read_npwr_id(const char *npbind_path, char *npwr_out, size_t out_size)
@@ -856,18 +478,19 @@ void *progress_status_func(void *arg)
         int est_m = (int)((est_sec - est_h*3600)/60);
         int est_s = (int)(est_sec - est_h*3600 - est_m*60);
 
-        printf_notification(
+        /* The toast goes to the screen only: the log line below says the
+           same, and the web console would otherwise show every tick twice. */
+        printf_notification_quiet(
             "Copying: %s\nProgress: %d%%\n%.2fGB of %.2fGB\nAverage speed: %.2f MB/s\nETA: %02d:%02d:%02d",
             current_copied, pct, copied_gb, total_gb, avg_speed_mb_s, est_h, est_m, est_s
         );
 
-        if (g_enable_logging && g_log_path[0]) {
-            write_log(g_log_path,
-                      "Progress: %d%% Copied: %.2f/%.2f GB Remaining: %.2f GB "
-                      "Average speed: %.2f MB/s ETA: %02d:%02d:%02d",
-                      pct, copied_gb, total_gb, (double)remaining_bytes/(1024.0*1024.0*1024.0),
-                      avg_speed_mb_s, est_h, est_m, est_s);
-        }
+        /* write_log feeds the web console even with file logging off */
+        write_log(g_log_path,
+                  "Progress: %d%% Copied: %.2f/%.2f GB Remaining: %.2f GB "
+                  "Average speed: %.2f MB/s ETA: %02d:%02d:%02d",
+                  pct, copied_gb, total_gb, (double)remaining_bytes/(1024.0*1024.0*1024.0),
+                  avg_speed_mb_s, est_h, est_m, est_s);
     }
     return NULL;
 }

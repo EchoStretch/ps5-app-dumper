@@ -1,0 +1,8 @@
+# The webhb release the web console is built on. tools/get-webhb.sh installs
+# it into ext/webhb on the first make and checks it against the sha256; a
+# newer webhb is a change of these three lines. While the URL does not answer
+# (the release is not public yet), a checkout next to this repository
+# (../webhb) is used, or: WEBHB_TARBALL=<file> tools/get-webhb.sh
+version=0.4.1
+url=https://github.com/slopmaster33/webhb/releases/download/v0.4.1/webhb-0.4.1.tar.gz
+sha256=9f61d4bda85acdba0670ba77659c356eea51241c5b3f53afef11d6349583e760

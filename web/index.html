@@ -1,102 +1,58 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" manifest="/cache.appcache">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#07090d">
 <title>PS5 App Dumper</title>
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/app.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="App Dumper">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%230d1726'/><rect x='2' y='2' width='60' height='60' rx='12' fill='none' stroke='%232f9dff' stroke-opacity='.55' stroke-width='2'/><g fill='none' stroke='%232f9dff' stroke-width='4.4' stroke-linecap='round' stroke-linejoin='round'><path d='M32 14v22'/><path d='M23.5 28.5 32 37l8.5-8.5'/><path d='M15 40v6.5a3.5 3.5 0 0 0 3.5 3.5h27a3.5 3.5 0 0 0 3.5-3.5V40'/></g></svg>">
+<!-- @WHB:head@ -->
 <style>
 /* ------------------------------------------------------------------ *
  *  PS5 App Dumper - console operator console
- *  No webfonts, no CDN: the payload serves this file on its own.
+ *  What is about dumping; the rest comes with the kit (webhb/web/whb.css).
  * ------------------------------------------------------------------ */
-:root{
-  --bg:#07090d;
-  --bg-lift:#0d1117;
-  --panel:#111721;
-  --panel-2:#161d29;
-  --line:rgba(140,170,210,.14);
-  --line-soft:rgba(140,170,210,.07);
-  --ink:#e8eef7;
-  --ink-dim:#8b97ab;
-  --ink-faint:#5d6878;
-  --accent:#2f9dff;
-  --accent-deep:#0a63c4;
-  --amber:#ffb020;
-  --green:#33d17f;
-  --red:#ff4d5e;
-  --display:"Bahnschrift","DIN Alternate","Avenir Next Condensed","Roboto Condensed","Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
-  --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Mono","Roboto Mono",Menlo,Consolas,monospace;
-  --shadow:0 18px 40px -24px rgba(0,0,0,.9);
-}
+/* @WHB_CSS@ */
 
-*{box-sizing:border-box}
-[hidden]{display:none!important}
-html,body{margin:0;padding:0}
-body{
-  background:var(--bg);
-  color:var(--ink);
-  font-family:var(--display);
-  font-size:16px;
-  line-height:1.45;
-  -webkit-font-smoothing:antialiased;
-  -webkit-text-size-adjust:100%;
-  padding-bottom:calc(96px + env(safe-area-inset-bottom));
-  min-height:100vh;
-  position:relative;
-  overflow-x:hidden;
-}
-/* atmosphere: a cold glow over a faint technical grid */
-body::before{
-  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
-  background:
-    radial-gradient(120% 70% at 50% -10%,rgba(47,157,255,.16),transparent 60%),
-    radial-gradient(80% 50% at 100% 0%,rgba(10,99,196,.10),transparent 70%);
-}
-body::after{
-  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.5;
-  background-image:
-    linear-gradient(var(--line-soft) 1px,transparent 1px),
-    linear-gradient(90deg,var(--line-soft) 1px,transparent 1px);
-  background-size:44px 44px;
-  mask-image:linear-gradient(180deg,rgba(0,0,0,.9),transparent 70%);
-  -webkit-mask-image:linear-gradient(180deg,rgba(0,0,0,.9),transparent 70%);
-}
-.wrap{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:0 18px}
-
-/* ---------------- header ---------------- */
-header{padding:26px 0 18px}
-.brand{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-.mark{
-  width:42px;height:42px;flex:none;border:1px solid var(--line);
-  border-radius:9px;display:grid;place-items:center;
-  background:linear-gradient(160deg,rgba(47,157,255,.22),rgba(47,157,255,.02));
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.10),0 0 22px -6px rgba(47,157,255,.55);
-}
-.mark svg{width:22px;height:22px;display:block}
-h1{
-  font-size:26px;margin:0;letter-spacing:.14em;text-transform:uppercase;
-  font-weight:600;line-height:1;
-}
-h1 span{color:var(--accent)}
-.sub{
-  font-family:var(--mono);font-size:11px;color:var(--ink-faint);
-  letter-spacing:.10em;text-transform:uppercase;margin-top:5px
-}
-.link{margin-left:auto;display:flex;align-items:center;gap:9px}
-
-/* live indicator */
-.live{
-  display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);
-  font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
-  border:1px solid var(--line);border-radius:999px;padding:5px 11px;
-  color:var(--ink-dim);background:rgba(13,17,23,.7);white-space:nowrap
-}
-.dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex:none}
-.live.on .dot{animation:pulse 2s ease-in-out infinite}
-.live.off{color:var(--red);border-color:rgba(255,77,94,.35)}
-.live.off .dot{background:var(--red);animation:none}
-@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(51,209,127,.5)}50%{opacity:.55;box-shadow:0 0 0 5px rgba(51,209,127,0)}}
+#view-dumps{max-width:1080px}
+.dumpgroup{margin:0 0 8px;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
+.dumprow{display:flex;align-items:center;padding:11px 0;border-top:1px solid var(--line-soft)}
+.dumprow:first-child{border-top:0}
+.dumprow .meta{flex:1;min-width:0}
+.dumprow .name{display:block;font-size:14.5px}
+.dumprow .where{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-faint);margin-top:3px;word-break:break-all}
+.dumprow .size{font-family:var(--mono);font-size:11.5px;color:var(--ink-dim);margin:0 12px;white-space:nowrap;flex:none}
+.dumprow .mini{flex:none}
+/* dumps as cards: a grid, whose gap the console's browser does honour */
+.dumpgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));grid-gap:12px;gap:12px}
+.dumpcard{border:1px solid var(--line-soft);border-radius:10px;background:var(--panel-2);overflow:hidden;min-width:0}
+.dumpcard .pic{display:block;width:100%;padding-top:100%;position:relative;background:#0a0e14}
+.dumpcard .pic img,.dumpcard .pic .noimg{position:absolute;top:0;left:0;width:100%;height:100%}
+.dumpcard .pic img{object-fit:cover}
+.dumpcard .pic .noimg{display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:13px;
+  letter-spacing:.12em;color:var(--ink-faint)}
+.dumpcard .txt{display:block;padding:10px 11px 11px}
+.dumpcard .name{display:block;font-size:14px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dumpcard .tags{display:block;margin-top:6px}
+.dumpcard .where{display:block;font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);margin-top:6px;word-break:break-all;line-height:1.35}
+.dumpcard .size{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-dim);margin-top:6px;white-space:nowrap}
+/* buttons wrap and share the row; margins, the console's WebKit has no flex gap */
+.dumpcard .acts{display:flex;flex-wrap:wrap;margin:3px -6px 0 0}
+.dumpcard .acts .mini{flex:1 1 auto;margin:6px 6px 0 0}
+.move-what{font-size:13.5px;margin-bottom:10px;word-break:break-all}
+.move-foot{display:flex;align-items:center;margin-top:10px}
+.move-foot .spacer{margin-left:auto}
+.move-foot .mini{margin-left:8px}
+#smbanner{margin:0 0 18px;background:rgba(52,211,153,.08);border-color:rgba(52,211,153,.35)}
+.smbanner .sm-txt{display:block;font-size:12.5px;line-height:1.5;color:var(--ink-dim)}
+.smbanner .mini{margin-top:10px}
+.smbanner .mini.arm{border-color:var(--red);color:var(--red)}
 
 /* ---------------- layout ---------------- */
 main{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:18px;align-items:start}
@@ -106,87 +62,28 @@ main{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:18px;a
 @media(max-width:900px){
   main{display:flex;flex-direction:column;align-items:stretch}
   .col{display:contents}
-  #sec-apps{order:1}#sec-drives{order:2}#progress{order:3}#sec-options{order:4}#sec-console{order:5}
-}
-
-section.card{
-  background:linear-gradient(180deg,var(--panel),var(--bg-lift));
-  border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);
-  overflow:hidden;
-  animation:rise .5s cubic-bezier(.2,.7,.3,1) backwards;
+  #sec-apps{order:1}#sec-queue{order:2}#sec-drives{order:3}#progress{order:4}#sec-options{order:5}#sec-console{order:6}
 }
 #sec-apps{animation-delay:.04s}
 #sec-drives{animation-delay:.08s}
+#sec-queue{animation-delay:.10s}
 #progress{animation-delay:.12s}
 #sec-options{animation-delay:.12s}
 #sec-console{animation-delay:.16s}
-@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
-
-.head{
-  display:flex;align-items:center;gap:10px;padding:13px 16px;
-  border-bottom:1px solid var(--line-soft);background:rgba(255,255,255,.012)
-}
-.head h2{
-  margin:0;font-size:12px;letter-spacing:.18em;text-transform:uppercase;
-  font-weight:600;color:var(--ink-dim)
-}
-.head .num{
-  font-family:var(--mono);font-size:10px;color:var(--accent);
-  border:1px solid rgba(47,157,255,.35);border-radius:4px;padding:1px 6px;letter-spacing:.06em
-}
-.head .spacer{margin-left:auto}
 .opt-plat{display:flex;gap:5px;align-items:center}
 .subdir-ctl{display:flex;gap:6px;align-items:center}
-.subdir-ctl input{max-width:120px}
-
-/* folder picker modal */
-.picker{position:fixed;inset:0;top:0;left:0;right:0;bottom:0;z-index:50;
-  display:flex;align-items:center;justify-content:center;
-  padding:16px;background:rgba(4,6,10,.82);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
-.picker-box{width:min(520px,100%);max-height:min(80vh,640px);display:flex;flex-direction:column;
-  background:linear-gradient(180deg,var(--panel),var(--bg-lift));border:1px solid var(--line);
-  border-radius:12px;box-shadow:var(--shadow);overflow:hidden}
-.picker-head{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line-soft);
-  font-size:12px;letter-spacing:.18em;text-transform:uppercase;font-weight:600;color:var(--ink-dim)}
-.picker-head .spacer{margin-left:auto}
-.picker-path{padding:9px 16px;border-bottom:1px solid var(--line-soft);font-family:var(--mono);font-size:12px;
-  color:var(--ink-dim);white-space:nowrap;overflow-x:auto}
-.picker-path #pk-drive{color:var(--accent)}
-.picker-list{flex:1;overflow-y:auto;padding:8px;min-height:120px;
-  scrollbar-width:thin;scrollbar-color:rgba(47,157,255,.35) transparent}
-.picker-list::-webkit-scrollbar{width:8px}
-.picker-list::-webkit-scrollbar-thumb{background:rgba(47,157,255,.3);border-radius:4px}
-.pk-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;font:inherit;color:inherit;
-  cursor:pointer;padding:9px 11px;border:1px solid transparent;border-radius:8px;background:none}
-.pk-row:hover{background:var(--panel-2);border-color:var(--line-soft)}
-.pk-row:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-.pk-row .ic{width:16px;height:16px;flex:none;opacity:.8}
-.pk-row.up{color:var(--ink-dim)}
-.pk-empty{padding:22px 12px;text-align:center;color:var(--ink-faint);font-size:13px}
-.picker-new{display:flex;gap:6px;padding:10px 16px;border-top:1px solid var(--line-soft)}
-.picker-new input{flex:1;max-width:none;font-family:var(--display);font-size:13px}
-.picker-foot{display:flex;align-items:center;gap:9px;padding:12px 16px;border-top:1px solid var(--line-soft)}
-.picker-dest{font-family:var(--mono);font-size:11px;color:var(--ink-dim);flex:1;min-width:0;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:rtl;text-align:left}
-.picker-foot .spacer{margin-left:auto}
-.picker-foot .act{padding:9px 16px;font-size:12px}
-@media(max-width:560px){.picker-box{max-height:88vh}.subdir-ctl input{max-width:96px}}
-
-
-/* running / installed switch */
-.tabs{display:flex;gap:2px;background:#0c121a;border:1px solid var(--line);border-radius:7px;padding:3px}
-.tabs button{
-  font:inherit;font-size:11px;letter-spacing:.16em;text-transform:uppercase;font-weight:600;
-  color:var(--ink-faint);background:none;border:0;padding:5px 11px;border-radius:5px;cursor:pointer;
-  display:flex;align-items:center;gap:6px;transition:background .15s,color .15s
-}
-.tabs button[aria-selected="true"]{background:rgba(47,157,255,.2);color:var(--ink)}
-.tabs button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-.tabs .num{font-size:9.5px;padding:0 4px}
+.row.stack .subdir-ctl{margin-top:8px}
+.row.stack .subdir-ctl input{flex:1;max-width:none;width:100%;min-width:0}
+.inuse{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);
+  border:1px solid rgba(47,157,255,.45);border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:middle;white-space:nowrap}
 
 /* library rows are not selectable, they carry their own start button */
-.lib-list{display:flex;flex-direction:column;gap:8px;max-height:min(54vh,470px);overflow-y:auto;
+.lib-list{display:flex;flex-direction:column;gap:8px;max-height:54vh;max-height:min(54vh,470px);overflow-y:auto;
   scrollbar-width:thin;scrollbar-color:rgba(47,157,255,.35) transparent}
+/* A scrolling column must not shrink its rows: the console's WebKit squeezes
+   flex children below their content instead of letting the box scroll - the
+   pictures then stick out of their rows as soon as the list outgrows it. */
+.lib-list > *,.q-list > *{flex:none}
 .lib-list::-webkit-scrollbar{width:8px}
 .lib-list::-webkit-scrollbar-thumb{background:rgba(47,157,255,.3);border-radius:4px}
 .tile.lib{cursor:default}
@@ -196,40 +93,10 @@ section.card{
   font-family:var(--display);letter-spacing:.02em
 }
 .libsearch::placeholder{color:var(--ink-faint)}
-.mini{
-  font:inherit;font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:600;
-  padding:7px 13px;border-radius:6px;cursor:pointer;flex:none;
-  background:rgba(47,157,255,.14);border:1px solid rgba(47,157,255,.45);color:#9ccdff;
-  transition:background .15s,color .15s
-}
-.mini:hover{background:rgba(47,157,255,.26);color:#fff}
-.mini:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.mini.warn{background:var(--amber);border-color:var(--amber);color:#20160a}
-.mini[disabled]{opacity:.4;cursor:not-allowed}
 .running-badge{
   font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
   color:var(--green);border:1px solid rgba(51,209,127,.45);border-radius:4px;padding:3px 7px;flex:none
 }
-
-.banner{
-  display:flex;align-items:center;gap:10px;margin:10px 10px 0;padding:10px 12px;border-radius:8px;
-  background:rgba(47,157,255,.1);border:1px solid rgba(47,157,255,.4);font-size:13.5px
-}
-.banner .spin{
-  width:13px;height:13px;flex:none;border-radius:50%;
-  border:2px solid rgba(47,157,255,.3);border-top-color:var(--accent);
-  animation:spin .8s linear infinite
-}
-@keyframes spin{to{transform:rotate(360deg)}}
-.banner button{margin-left:auto}
-.body{padding:14px 16px}
-.body.tight{padding:10px}
-
-/* panels that must not be touched while a dump runs */
-.card.locked{opacity:.5;filter:saturate(.5)}
-.card.locked .body,.card.locked .head button{pointer-events:none}
-.card.locked::after{content:"";position:absolute;inset:0;cursor:not-allowed}
-section.card{position:relative}
 
 /* ---------------- app grid ---------------- */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(238px,1fr));gap:10px}
@@ -270,6 +137,105 @@ section.card{position:relative}
 }
 .tag.ps5{color:var(--accent)}
 .tag.ps4{color:var(--amber)}
+.tag.disc{color:var(--violet)}
+.tag.pkg{color:var(--ink-faint)}
+.tag.disc.out{opacity:.6;border-style:dashed}
+.tag.mount{color:var(--green)}
+.tag.inst{color:var(--amber);border-style:dashed}
+.tag.part{color:var(--ink-dim);border-style:dashed}
+.tag.all{color:var(--ink-faint);margin-right:0}
+.tag.all.on{color:var(--ink);background:rgba(47,157,255,.22);border-color:var(--accent)}
+button.tag{font:inherit;font-family:var(--mono);font-size:9px;letter-spacing:.1em;background:none;cursor:pointer;line-height:inherit}
+button.tag:hover{background:rgba(255,255,255,.07)}
+button.tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.q-state.disc{color:var(--violet);border-color:rgba(183,156,255,.55)}
+.q-row.waiting_disc{border-color:rgba(183,156,255,.6);background:linear-gradient(180deg,rgba(183,156,255,.13),rgba(183,156,255,.04))}
+
+/* ---------------- running title ---------------- */
+#apps{padding-bottom:0}
+.hero{
+  border:1px solid var(--line);border-radius:11px;overflow:hidden;cursor:pointer;
+  background:var(--panel-2);margin-bottom:10px;transition:border-color .16s,box-shadow .16s
+}
+.hero:last-child{margin-bottom:0}
+.hero:hover{border-color:rgba(47,157,255,.55)}
+.hero:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.hero[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 1px rgba(47,157,255,.45),0 10px 30px -18px rgba(47,157,255,.9)}
+.hero-art{
+  position:relative;display:flex;align-items:center;gap:14px;min-height:118px;padding:14px;
+  background:#0a0e14 center/cover no-repeat
+}
+/* keeps the title readable on any key art */
+.hero-art::before{
+  content:"";position:absolute;top:0;right:0;bottom:0;left:0;
+  background:linear-gradient(90deg,rgba(7,9,13,.94) 0%,rgba(7,9,13,.8) 50%,rgba(7,9,13,.35) 100%)
+}
+.hero-art > *{position:relative}
+.hero .ico{width:84px;height:84px;border-radius:10px;box-shadow:0 8px 22px -10px #000}
+.hero .meta .name{font-size:19px;white-space:normal;line-height:1.2;text-shadow:0 1px 8px rgba(0,0,0,.8)}
+.hero .meta .id{margin-top:6px}
+.hero-state{
+  display:inline-flex;align-items:center;font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--green);margin-bottom:5px
+}
+.hero-state .dot{margin-right:7px;animation:pulse 2s ease-in-out infinite}
+/* controls sit on a plain strip below the art: whatever picture a game
+   brings, the button never has to compete with it */
+.hero-bar{
+  display:flex;align-items:center;padding:9px 14px;border-top:1px solid var(--line-soft);
+  background:var(--panel-2)
+}
+.hero-pick{flex:1;font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
+.hero[aria-pressed="true"] .hero-pick{color:var(--accent)}
+/* ---------------- queue ---------------- */
+.lib-acts{display:flex;gap:6px;align-items:center;flex:none}
+.q-list{display:flex;flex-direction:column;gap:7px;max-height:46vh;max-height:min(46vh,380px);overflow-y:auto;
+  scrollbar-width:thin;scrollbar-color:rgba(47,157,255,.35) transparent}
+.q-row{
+  display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--line-soft);
+  border-radius:9px;background:var(--panel-2)
+}
+.q-row.cur{border-color:rgba(47,157,255,.6);background:linear-gradient(180deg,rgba(47,157,255,.13),rgba(47,157,255,.04))}
+.q-pos{
+  font-family:var(--mono);font-size:11px;color:var(--accent);width:20px;height:20px;flex:none;
+  border:1px solid rgba(47,157,255,.35);border-radius:50%;display:grid;place-items:center
+}
+.q-row .meta .name{font-size:14px}
+.q-msg{display:block;font-size:11.5px;color:var(--ink-faint);line-height:1.35;margin-top:2px;white-space:normal}
+.q-row.failed .q-msg{color:#ff9aa4}
+.q-state{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;flex:none;
+  border:1px solid var(--line);border-radius:4px;padding:3px 7px;color:var(--ink-dim);white-space:nowrap
+}
+.q-state.live{color:var(--accent);border-color:rgba(47,157,255,.5)}
+.q-state.done{color:var(--green);border-color:rgba(51,209,127,.45)}
+.q-state.failed{color:var(--red);border-color:rgba(255,77,94,.5)}
+.q-btn{
+  font:inherit;font-family:var(--mono);font-size:13px;line-height:1;width:26px;height:26px;flex:none;
+  border-radius:6px;cursor:pointer;background:none;border:1px solid var(--line);color:var(--ink-dim);
+  display:grid;place-items:center;padding:0;transition:border-color .15s,color .15s
+}
+.q-btn:hover:not(:disabled){border-color:var(--accent);color:var(--ink)}
+.q-btn.rm:hover{border-color:var(--red);color:var(--red)}
+.q-btn:disabled{opacity:.3;cursor:not-allowed}
+.q-btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.q-item{border:1px solid var(--line-soft);border-radius:9px;background:var(--panel-2)}
+.q-item > .q-row{border:0;background:none}
+.q-item.open{border-color:rgba(47,157,255,.45)}
+.q-set{border-top:1px solid var(--line-soft);padding:2px 12px 10px}
+.q-set .row{padding:8px 0}
+.q-set .label{font-size:13.5px}
+.q-set-foot{display:flex;align-items:center;padding-top:8px}
+.q-set-foot .hint{font-size:11.5px;color:var(--ink-faint);flex:1;line-height:1.35;padding-right:10px}
+.q-btn.on{border-color:var(--accent);color:var(--accent)}
+.tag.own{color:var(--accent)}
+.tag.there{color:var(--green)}
+.tag.cut{color:var(--amber)}
+.q-foot{border-top:1px solid var(--line-soft);padding:4px 16px 14px}
+.q-foot input{text-align:right}
+.q-foot .unit{font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
+.q-go{display:flex;gap:9px;align-items:center;margin-top:10px}
+.q-go .act{flex:1;padding:11px 16px;font-size:13px}
 
 /* ---------------- drives ---------------- */
 .drive{
@@ -295,52 +261,14 @@ section.card{position:relative}
 .bar i{display:block;height:100%;border-radius:2px;background:linear-gradient(90deg,var(--accent-deep),var(--accent));transition:width .4s}
 .bar i.low{background:linear-gradient(90deg,#c4740a,var(--amber))}
 
-/* ---------------- settings ---------------- */
-.row{
-  display:flex;align-items:center;gap:12px;padding:11px 0;
-  border-bottom:1px solid var(--line-soft)
-}
-.row:last-child{border-bottom:0;padding-bottom:2px}
-.row .txt{min-width:0;flex:1}
-.row .label{font-size:14.5px;letter-spacing:.02em}
-.row .hint{font-size:12px;color:var(--ink-faint);line-height:1.35;margin-top:1px}
-
-.sw{position:relative;flex:none;width:44px;height:24px}
-.sw input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer;width:100%;height:100%}
-.sw span{
-  position:absolute;inset:0;border-radius:999px;background:#1d2532;
-  border:1px solid var(--line);transition:background .18s,border-color .18s;pointer-events:none
-}
-.sw span::after{
-  content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;
-  background:var(--ink-faint);transition:transform .18s,background .18s
-}
-.sw input:checked+span{background:rgba(47,157,255,.3);border-color:var(--accent)}
-.sw input:checked+span::after{transform:translateX(20px);background:var(--accent);box-shadow:0 0 10px rgba(47,157,255,.8)}
-.sw input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
-
-.seg{display:flex;gap:4px;flex:none;background:#0d131c;border:1px solid var(--line);border-radius:7px;padding:3px}
-.seg button{
-  font:inherit;font-size:12px;letter-spacing:.04em;color:var(--ink-dim);background:none;border:0;
-  padding:4px 9px;border-radius:5px;cursor:pointer;transition:background .15s,color .15s
-}
-.seg button[aria-pressed="true"]{background:rgba(47,157,255,.22);color:var(--ink)}
-.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-
-select,input[type=text]{
-  font:inherit;font-size:13.5px;font-family:var(--mono);color:var(--ink);
-  background:#0d131c;border:1px solid var(--line);border-radius:7px;padding:6px 9px;
-  max-width:170px
-}
-select:focus,input[type=text]:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
-.adv{border-top:1px solid var(--line-soft);margin-top:6px}
-.adv summary{
-  cursor:pointer;list-style:none;padding:11px 0 4px;font-size:11.5px;letter-spacing:.16em;
-  text-transform:uppercase;color:var(--ink-faint)
-}
-.adv summary::-webkit-details-marker{display:none}
-.adv summary::before{content:"+ ";color:var(--accent)}
-.adv[open] summary::before{content:"- "}
+/* dumps that were cut short */
+.cut{border-top:1px solid var(--line-soft);padding:10px 12px 12px}
+.cut-head{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--amber);margin-bottom:8px}
+.cut-row{display:flex;align-items:center;padding:7px 0;border-top:1px solid var(--line-soft)}
+.cut-row:first-of-type{border-top:0}
+.cut-row .meta{flex:1;min-width:0;padding-right:10px}
+.cut-row .name{font-size:13.5px}
+.cut-row .id{font-size:10px}
 
 /* ---------------- progress ---------------- */
 #progress{display:none}
@@ -358,7 +286,7 @@ select:focus,input[type=text]:focus{outline:2px solid var(--accent);outline-offs
   transition:width .6s cubic-bezier(.3,.8,.4,1);position:relative;overflow:hidden
 }
 .pbar i::after{
-  content:"";position:absolute;inset:0;
+  content:"";position:absolute;top:0;right:0;bottom:0;left:0;
   background:repeating-linear-gradient(115deg,rgba(255,255,255,.16) 0 8px,transparent 8px 20px);
   animation:flow 1.1s linear infinite
 }
@@ -371,107 +299,24 @@ select:focus,input[type=text]:focus{outline:2px solid var(--accent);outline-offs
   font-family:var(--mono);font-size:11.5px;color:var(--ink-dim);margin-top:11px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:rtl;text-align:left
 }
-.verdict{
-  display:flex;gap:10px;align-items:flex-start;border-radius:9px;padding:11px 13px;
-  font-size:14px;line-height:1.4;border:1px solid
-}
-.verdict.ok{background:rgba(51,209,127,.09);border-color:rgba(51,209,127,.4);color:#b6f2d3}
-.verdict.bad{background:rgba(255,77,94,.09);border-color:rgba(255,77,94,.4);color:#ffc2c8}
-.verdict.warn{background:rgba(255,176,32,.09);border-color:rgba(255,176,32,.4);color:#ffe0ad}
-.verdict b{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;opacity:.85;margin-bottom:2px}
-
-/* ---------------- console ---------------- */
-#logbox{
-  font-family:var(--mono);font-size:11.5px;line-height:1.65;
-  height:230px;overflow-y:auto;padding:10px 13px;background:#05070b;
-  border-top:1px solid var(--line-soft);scrollbar-width:thin;
-  scrollbar-color:rgba(47,157,255,.35) transparent
-}
-#logbox::-webkit-scrollbar{width:8px}
-#logbox::-webkit-scrollbar-thumb{background:rgba(47,157,255,.3);border-radius:4px}
-#logbox div{color:var(--ink-dim);word-break:break-word;padding:1px 0}
-#logbox div::before{content:"› ";color:var(--ink-faint)}
-#logbox div.e{color:#ff9aa4}
-#logbox div.g{color:#8ce8b8}
-#logbox div.a{color:#ffd08a}
-#logbox .empty{color:var(--ink-faint);font-style:italic}
-#logbox .empty::before{content:""}
-
-/* ---------------- empty / notice ---------------- */
-.empty-state{
-  text-align:center;padding:26px 14px;color:var(--ink-faint);font-size:14px;line-height:1.5
-}
-.empty-state strong{display:block;color:var(--ink-dim);font-size:15px;margin-bottom:4px;letter-spacing:.04em}
-.skel{height:74px;border-radius:9px;background:linear-gradient(90deg,#131a25,#1a2331,#131a25);
-  background-size:200% 100%;animation:sweep 1.4s linear infinite}
-@keyframes sweep{to{background-position:-200% 0}}
-
-/* ---------------- action bar ---------------- */
-.actions{
-  position:fixed;left:0;right:0;bottom:0;z-index:5;
-  padding:12px 18px calc(12px + env(safe-area-inset-bottom));
-  background:linear-gradient(180deg,rgba(7,9,13,0),rgba(7,9,13,.94) 34%);
-  backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px)
-}
-.actions .inner{
-  max-width:1180px;margin:0 auto;display:flex;gap:11px;align-items:center;flex-wrap:wrap
-}
-.summary{
-  font-family:var(--mono);font-size:11px;color:var(--ink-faint);letter-spacing:.05em;
-  flex:1;min-width:150px;line-height:1.4
-}
-.summary b{color:var(--ink-dim);font-weight:400}
-button.act{
-  font-family:var(--display);font-size:15px;letter-spacing:.14em;text-transform:uppercase;
-  font-weight:600;padding:13px 26px;border-radius:9px;border:1px solid transparent;cursor:pointer;
-  transition:transform .12s,box-shadow .18s,background .18s,opacity .18s;flex:none
-}
-button.act:active{transform:translateY(1px)}
-button.act:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
-.go{
-  background:linear-gradient(180deg,var(--accent),var(--accent-deep));color:#fff;
-  box-shadow:0 10px 30px -12px rgba(47,157,255,.95),inset 0 1px 0 rgba(255,255,255,.28)
-}
-.go:hover:not(:disabled){box-shadow:0 14px 36px -12px rgba(47,157,255,1)}
-.go:disabled{background:#1a212c;color:var(--ink-faint);box-shadow:none;cursor:not-allowed}
-.stop{background:rgba(255,77,94,.12);border-color:rgba(255,77,94,.5);color:#ff8a95}
-.stop:hover{background:rgba(255,77,94,.2)}
-.stop.arm{background:var(--red);color:#fff;border-color:var(--red)}
-.ghost{background:transparent;border-color:var(--line);color:var(--ink-dim);font-size:13px;padding:11px 16px}
-.ghost:hover{border-color:var(--accent);color:var(--ink)}
-
-.toast{
-  position:fixed;left:50%;bottom:96px;transform:translate(-50%,14px);z-index:9;
-  background:#161d29;border:1px solid var(--line);border-radius:9px;padding:10px 16px;
-  font-size:13.5px;box-shadow:var(--shadow);opacity:0;pointer-events:none;
-  transition:opacity .25s,transform .25s;max-width:88vw;text-align:center
-}
-.toast.show{opacity:1;transform:translate(-50%,0)}
-.toast.bad{border-color:rgba(255,77,94,.55);color:#ffc2c8}
-.toast.ok{border-color:rgba(51,209,127,.5);color:#b6f2d3}
-
-footer{
-  padding:22px 0 10px;text-align:center;font-family:var(--mono);font-size:10.5px;
-  color:var(--ink-faint);letter-spacing:.08em
-}
-.linkish{
-  font:inherit;color:var(--ink-faint);background:none;border:0;border-bottom:1px dotted currentColor;
-  padding:0;cursor:pointer;letter-spacing:.08em
-}
-.linkish:hover{color:var(--red)}
-.linkish.arm{color:var(--red);border-bottom-style:solid}
-
 @media(max-width:560px){
-  h1{font-size:21px}
   .pct{font-size:36px}
-  .wrap{padding:0 13px}
   .grid{grid-template-columns:1fr}
-  button.act{flex:1;padding:13px 14px;font-size:14px}
-  .summary{flex-basis:100%;order:-1;margin-bottom:2px}
 }
-@media(prefers-reduced-motion:reduce){
-  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
-}
+/* ---------------- flex gap fallback ---------------- *
+ * For the flex gaps above; what it is about, and the kit's own lines: whb.css. */
+.no-flexgap .col > * + *{margin-top:18px}
+.no-flexgap .opt-plat > * + *:not(.spacer):not(.link):not(.drive-free):not(.banner-btn){margin-left:5px}
+.no-flexgap .subdir-ctl > * + *:not(.spacer):not(.link):not(.drive-free):not(.banner-btn){margin-left:6px}
+.no-flexgap .lib-list > * + *{margin-top:8px}
+.no-flexgap .tile > * + *:not(.spacer):not(.link):not(.drive-free):not(.banner-btn){margin-left:11px}
+.no-flexgap .lib-acts > * + *:not(.spacer):not(.link):not(.drive-free):not(.banner-btn){margin-left:6px}
+.no-flexgap .q-list > * + *{margin-top:7px}
+.no-flexgap .q-row > * + *:not(.spacer):not(.link):not(.drive-free):not(.banner-btn){margin-left:10px}
+.no-flexgap .q-go > * + *:not(.spacer):not(.link):not(.drive-free):not(.banner-btn){margin-left:9px}
+.no-flexgap .drive-top > * + *:not(.spacer):not(.link):not(.drive-free):not(.banner-btn){margin-left:8px}
+.no-flexgap .hero-art > * + *{margin-left:14px}
+@media(max-width:900px){.no-flexgap section.card{margin-bottom:18px}.no-flexgap .col > * + *{margin-top:0}}
 </style>
 </head>
 <body>
@@ -487,34 +332,35 @@ footer{
       </div>
       <div>
         <h1>PS5 App <span>Dumper</span></h1>
-        <div class="sub" id="sub">Web console &middot; v1.11</div>
+        <div class="sub" id="sub">Web console</div>
       </div>
       <div class="link">
-        <span class="live on" id="conn"><i class="dot"></i><span id="conntext">Connected</span></span>
+        <!-- @WHB:chips@ -->
+        <button type="button" class="live menu" id="menubtn" aria-label="Menu" aria-expanded="false"><i class="bars" aria-hidden="true"><b></b><b></b><b></b></i><span>Menu</span></button>
+        <div class="menu-pop" id="menupop" hidden>
+          <button type="button" data-go="">Home</button>
+          <button type="button" data-go="#dumps">Dumps</button>
+          <button type="button" data-go="#settings">Settings</button>
+        </div>
       </div>
     </div>
   </header>
+
+  <!-- @WHB:offline@ -->
+
+  <!-- @WHB:qr-card@ -->
 
   <main>
     <div class="col">
       <section class="card" id="sec-apps">
         <div class="head">
-          <div class="tabs" role="tablist">
-            <button type="button" id="tab-running" role="tab" aria-selected="true">
-              Running <span class="num" id="appcount">0</span>
-            </button>
-            <button type="button" id="tab-library" role="tab" aria-selected="false">
-              Installed <span class="num" id="libcount">–</span>
-            </button>
-          </div>
+          <h2>Titles</h2><span class="num" id="libcount">–</span>
           <span class="spacer"></span>
           <button class="ghost act" id="refresh" style="padding:5px 11px;font-size:11px;letter-spacing:.1em">Rescan</button>
         </div>
         <div id="launchslot"></div>
-        <div class="body tight" id="apps">
-          <div class="skel"></div>
-        </div>
-        <div class="body tight" id="library" hidden>
+        <div class="body tight" id="apps" hidden></div>
+        <div class="body tight" id="library">
           <div class="skel"></div>
         </div>
       </section>
@@ -551,13 +397,48 @@ footer{
       <section class="card" id="sec-drives">
         <div class="head"><h2>Destination</h2><span class="num" id="drivecount">0</span></div>
         <div class="body tight" id="drives"><div class="skel"></div></div>
+        <div class="cut" id="incomplete" hidden></div>
+      </section>
+
+      <section class="card" id="sec-queue">
+        <div class="head"><h2>Queue</h2><span class="num" id="queuecount">0</span>
+          <span class="spacer"></span><span class="num" id="queuestage" hidden></span></div>
+        <div class="body tight" id="queue"></div>
+        <div class="q-foot" id="queue-foot" hidden>
+          <div class="row">
+            <div class="txt">
+              <div class="label">Load time</div>
+              <div class="hint">How long each game gets to load before its dump starts</div>
+            </div>
+            <input type="text" id="c-qdelay" inputmode="numeric" spellcheck="false" autocomplete="off">
+            <span class="unit">sec</span>
+          </div>
+          <div class="row">
+            <div class="txt">
+              <div class="label">Existing dumps</div>
+              <div class="hint" id="q-existing-hint">What to do with a title that is on the drive already</div>
+            </div>
+            <div class="seg" id="q-existing" role="group" aria-label="Existing dumps">
+              <button type="button" data-v="0">Skip</button>
+              <button type="button" data-v="1">Replace</button>
+            </div>
+          </div>
+          <div class="q-go">
+            <button type="button" class="act ghost" id="q-empty">Empty the queue</button>
+          </div>
+        </div>
+        <div class="q-foot" id="queue-done" hidden>
+          <div class="q-go">
+            <button type="button" class="act ghost" id="q-clear">Clear result</button>
+          </div>
+        </div>
       </section>
 
       <section class="card" id="sec-options">
         <div class="head"><h2>Options</h2><span class="spacer"></span><span id="opt-plat" class="opt-plat"></span></div>
         <div class="body">
           <div class="banner" id="nodrive" hidden style="background:rgba(255,176,32,.1);border-color:rgba(255,176,32,.4);margin:0 0 12px">
-            <span>No drive connected. Settings stay active but cannot be saved — plug in a USB drive and they are written automatically.</span>
+            <span>Nowhere to store the settings right now. They stay active and are written as soon as a drive or the console's storage can be used.</span>
           </div>
           <div class="row">
             <div class="txt">
@@ -568,19 +449,29 @@ footer{
           </div>
           <div class="row">
             <div class="txt">
-              <div class="label">Write log.txt</div>
-              <div class="hint">Full log next to the dump</div>
+              <div class="label">Write logs</div>
+              <div class="hint">One log per dump, in homebrew/ps5-app-dumper/logs</div>
             </div>
             <label class="sw"><input type="checkbox" id="c-logging"><span></span></label>
           </div>
-          <div class="row">
+          <div class="row stack" id="row-subdir">
             <div class="txt">
-              <div class="label">Destination folder</div>
-              <div class="hint">Below the selected drive</div>
+              <div class="label">Dump folder on USB drives <span class="inuse" id="inuse-usb" hidden>in use</span></div>
+              <div class="hint" id="subdir-hint">Below the drive's root</div>
             </div>
             <div class="subdir-ctl">
               <input type="text" id="c-subdir" spellcheck="false" autocapitalize="off" autocomplete="off">
               <button type="button" class="mini" id="c-browse">Browse</button>
+            </div>
+          </div>
+          <div class="row stack" id="row-subdir-console" hidden>
+            <div class="txt">
+              <div class="label">Dump folder on the console <span class="inuse" id="inuse-console" hidden>in use</span></div>
+              <div class="hint" id="subdir-console-hint">Below /data</div>
+            </div>
+            <div class="subdir-ctl">
+              <input type="text" id="c-subdir-console" spellcheck="false" autocapitalize="off" autocomplete="off">
+              <button type="button" class="mini" id="c-browse-console">Browse</button>
             </div>
           </div>
           <div class="row" id="row-split">
@@ -607,6 +498,13 @@ footer{
             </div>
             <div class="row">
               <div class="txt">
+                <div class="label">Dump DLC along</div>
+                <div class="hint">The additional content mounted with a game goes with it, each DLC as a folder of its own next to the game's.</div>
+              </div>
+              <label class="sw"><input type="checkbox" id="c-dlc"><span></span></label>
+            </div>
+            <div class="row">
+              <div class="txt">
                 <div class="label">SDK backport</div>
                 <div class="hint">Patch SDK versions down. May break the dump.</div>
               </div>
@@ -620,16 +518,6 @@ footer{
               <div class="txt"><div class="label">PS4 target</div><div class="hint">Backport level 1-6</div></div>
               <select id="c-bp4"></select>
             </div>
-            <div class="row">
-              <div class="txt">
-                <div class="label">Dump without the web UI</div>
-                <div class="hint">Next launch dumps the running app right away</div>
-              </div>
-              <label class="sw"><input type="checkbox" id="c-auto"><span></span></label>
-            </div>
-            <div class="row">
-              <div class="txt"><div class="label">Config file</div><div class="hint" id="cfgpath">not available</div></div>
-            </div>
           </details>
         </div>
       </section>
@@ -637,8 +525,72 @@ footer{
     </div>
   </main>
 
+  <div class="page" id="view-dumps" hidden>
+    <div class="pagehead">
+      <button type="button" class="mini" data-back="1">&larr; Back</button>
+      <h2>Dumps</h2>
+      <span class="spacer"></span>
+      <div class="seg" id="dumps-view" role="group" aria-label="How dumps are shown">
+        <button type="button" data-v="cards">Cards</button>
+        <button type="button" data-v="list">List</button>
+      </div>
+      <button type="button" class="mini" id="dumps-rescan" style="margin-left:8px">Rescan</button>
+    </div>
+
+    <div class="banner smbanner" id="smbanner" hidden>
+      <span class="sm-txt"><b>ShadowMount is running.</b> It links every dump it finds to the installed game of the same id - the game then
+        starts from the dump (MOUNT) and cannot be dumped again, and a dump you move within its reach is linked anew. Stop it to keep
+        what you move unlinked; start it again whenever you like, from wherever you usually do.</span>
+      <button type="button" class="mini" id="sm-stop">Stop ShadowMount</button>
+    </div>
+
+    <section class="card" id="movecard" hidden>
+      <div class="head"><h2>Moving</h2><span class="spacer"></span><span class="num" id="move-pct"></span></div>
+      <div class="body">
+        <div class="move-what" id="move-what"></div>
+        <div class="bar" id="move-bar"><i style="width:0%"></i></div>
+        <div class="move-foot">
+          <span class="hint" id="move-msg"></span>
+          <span class="spacer"></span>
+          <button type="button" class="mini" id="move-stop">Stop</button>
+          <button type="button" class="mini" id="move-ok" hidden>OK</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="dumplist"></div>
+  </div>
+
+  <div class="page" id="view-settings" hidden>
+    <div class="pagehead">
+      <button type="button" class="mini" data-back="1">&larr; Back</button>
+      <h2>Settings</h2>
+    </div>
+
+    <section class="card">
+      <div class="head"><h2>Payload</h2></div>
+      <div class="body">
+            <div class="row">
+              <div class="txt">
+                <div class="label">Dump right at launch</div>
+                <div class="hint">Every start dumps the running game straight away. The web UI still comes up, so you can watch, stop or switch this off.</div>
+              </div>
+              <label class="sw"><input type="checkbox" id="c-auto"><span></span></label>
+            </div>
+            <!-- @WHB:row-tile@ -->
+            <!-- @WHB:row-store@ -->
+            <div class="row">
+              <div class="txt"><div class="label">Config file</div><div class="hint" id="cfgpath">not available</div></div>
+              <button type="button" class="mini" id="c-cfgcopy" hidden>Copy to console</button>
+            </div>
+      </div>
+    </section>
+
+    <!-- @WHB:access@ -->
+  </div>
+
   <footer>PS5 APP DUMPER &middot; EchoStretch &middot; GPL-3.0 &middot;
-    <button type="button" id="quit" class="linkish">shut down payload</button>
+    <!-- @WHB:foot@ -->
   </footer>
 </div>
 
@@ -646,95 +598,94 @@ footer{
   <div class="inner">
     <div class="summary" id="summary">Select an app and a drive.</div>
     <button class="act ghost" id="btn-reload" style="display:none">Reload</button>
+    <button class="act ghost" id="btn-skip" style="display:none">Stop this dump</button>
     <button class="act stop" id="btn-stop" style="display:none">Stop</button>
     <button class="act go" id="btn-go" disabled>Start dump</button>
   </div>
 </div>
 
-<div class="picker" id="picker" hidden>
-  <div class="picker-box" role="dialog" aria-modal="true" aria-label="Choose destination folder">
+<!-- @WHB:picker@ -->
+
+<div class="picker" id="delconfirm" hidden>
+  <div class="picker-box" role="alertdialog" aria-modal="true" aria-label="Delete this dump" style="max-width:460px">
     <div class="picker-head">
-      <span>Choose folder</span>
+      <span>Delete this dump?</span>
       <span class="spacer"></span>
-      <button type="button" class="ghost act" id="pk-close" style="padding:5px 11px;font-size:11px;letter-spacing:.1em">Close</button>
+      <button type="button" class="ghost act" id="del-close" style="padding:5px 11px;font-size:11px;letter-spacing:.1em">Close</button>
     </div>
-    <div class="picker-path"><span id="pk-drive"></span><span id="pk-crumb"></span></div>
-    <div class="picker-list" id="pk-list"></div>
-    <div class="picker-new">
-      <input type="text" id="pk-name" placeholder="New folder name" spellcheck="false" autocapitalize="off" autocomplete="off">
-      <button type="button" class="mini" id="pk-create">Create &amp; use</button>
+    <div class="picker-path" style="white-space:normal;line-height:1.55">
+      <b id="del-title" style="color:var(--ink);font-family:var(--display);font-size:15px"></b><br>
+      <span id="del-path"></span><br>
+      <span id="del-size"></span>
     </div>
+    <div class="picker-note" id="del-note" style="background:rgba(255,77,94,.08)">The folder and everything in it is removed from the drive for good. There is no bin to get it back from.</div>
     <div class="picker-foot">
-      <span class="picker-dest" id="pk-dest"></span>
       <span class="spacer"></span>
-      <button type="button" class="act ghost" id="pk-cancel">Cancel</button>
-      <button type="button" class="act go" id="pk-use">Use this folder</button>
+      <button type="button" class="act ghost" id="del-cancel">Keep it</button>
+      <button type="button" class="act danger" id="del-go">Delete for good</button>
     </div>
   </div>
 </div>
 
-<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<!-- @WHB:unlock@ -->
+
+<!-- @WHB:toast@ -->
 
 <script>
 (function(){
 "use strict";
 
+/* @WHB_JS@ */
+
 /* ---------------- state ---------------- */
 var state = {
   apps: [], targets: [], config: null, configPath: null,
   app: null, target: null,
-  logSeq: 0, job: null, busy: false, sizes: {},
-  tab: "running", library: null, launching: null, canLaunch: true,
-  online: true, failures: 0,
+  job: null, sizes: {},
+  library: null, launching: null, canLaunch: true,
+  queue: [],             /* titles picked in this browser, not started yet */
+  queueOpen: null,       /* title id whose settings panel is open */
+  queueReplace: false,   /* dump again what is on the drive already */
+  presence: {},          /* title id -> "present" | "incomplete" | "absent" */
+  squeue: null,          /* the queue the console is working on, or its result */
   samples: []            /* {t, bytes} for the speed estimate */
 };
 
-var $ = function(id){ return document.getElementById(id); };
-
 /* ---------------- helpers ---------------- */
-function bytes(n){
-  if(!n && n !== 0) return "—";
-  var u = ["B","KB","MB","GB","TB"], i = 0;
-  while(n >= 1024 && i < u.length - 1){ n /= 1024; i++; }
-  return (i >= 3 ? n.toFixed(2) : i >= 2 ? n.toFixed(1) : Math.round(n)) + " " + u[i];
+/* discIn === false marks a disc game whose disc is not in the drive. */
+function mediaTag(media, discIn){
+  if(media === "disc")
+    return discIn === false
+      ? '<span class="tag disc out" title="Disc game - its disc is not in the drive">DISC OUT</span>'
+      : '<span class="tag disc">DISC</span>';
+  return media === "pkg" ? '<span class="tag pkg">PKG</span>' : "";
 }
-function clock(sec){
-  if(!isFinite(sec) || sec < 0) return "—";
-  sec = Math.round(sec);
-  var h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
-  var p = function(v){ return v < 10 ? "0"+v : ""+v; };
-  return (h ? h+":" : "") + p(m) + ":" + p(s);
+/* A title redirected to a folder (ShadowMount's mount.lnk): it starts from a
+   dump, not from its package, so there is nothing to dump. */
+function mountTag(from){
+  return from ? '<span class="tag mount" title="Runs from ' + esc(from) + ' instead of its package - nothing to dump">MOUNT</span>' : "";
 }
-function esc(s){
-  return String(s).replace(/[&<>"]/g, function(c){
-    return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];
-  });
+/* A title can be played before all of it is on the console; a dump of it
+   would have holes. -1 / undefined: not known. */
+function installing(t){ return !!t.installing; }
+/* below 100 with the install over: chunks the console never fetched */
+function partial(t){ return !t.installing && typeof t.installed === "number" && t.installed >= 0 && t.installed < 100; }
+function dlcTag(a){
+  var n = a.dlc ? a.dlc.length : 0;
+  var on = !state.config || state.config.dumpDlc !== 0;
+  return n ? '<span class="tag pkg"' + (on ? "" : ' style="opacity:.5;text-decoration:line-through"') + ' title="' + esc(a.dlc.join(", ")) +
+             (on ? ' - dumped along, each as a folder of its own' : ' - not dumped: DLC are switched off under Settings') + '">+' + n + ' DLC</span>' : "";
 }
-var toastTimer;
-function toast(msg, kind){
-  var t = $("toast");
-  t.textContent = msg;
-  t.className = "toast show" + (kind ? " " + kind : "");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(function(){ t.className = "toast"; }, 3600);
+function partialWhy(t){
+  var c = t.chunks || [];
+  return c[0] ? "The package has " + c[0] + " PlayGo chunks; this console wants " + c[1] + " of them (its languages and region) and has them all. " +
+                "The other " + (c[0] - c[1]) + " were never fetched. A dump has what is here"
+              : t.installed + " % of the package is on the console and the rest never arrived - content the console did not fetch. A dump has what is here";
 }
-function api(path, opts){
-  return fetch(path, opts).then(function(r){
-    return r.json().catch(function(){ return {}; }).then(function(body){
-      if(!r.ok) throw new Error(body.error || ("HTTP " + r.status));
-      return body;
-    });
-  });
-}
-function post(path, data){
-  var body = "";
-  if(data) for(var k in data) if(data.hasOwnProperty(k))
-    body += (body ? "&" : "") + encodeURIComponent(k) + "=" + encodeURIComponent(data[k]);
-  return api(path, {
-    method: "POST",
-    headers: {"Content-Type": "application/x-www-form-urlencoded"},
-    body: body
-  });
+function installTag(t){
+  if(installing(t)) return '<span class="tag inst" title="Only ' + t.installed + ' % of this title is on the console yet - a dump now would be incomplete">INSTALLING ' + t.installed + '%</span>';
+  if(partial(t)) return '<span class="tag part" title="' + partialWhy(t) + '">' + t.installed + '% HERE</span>';
+  return "";
 }
 
 /* ---------------- rendering: apps ---------------- */
@@ -750,51 +701,72 @@ function markPressed(box, attr, value){
 
 function renderApps(){
   var box = $("apps");
-  $("appcount").textContent = state.apps.length;
 
-  var sig = (state.launching ? "launching~" : "") + state.apps.map(function(a){
-    return a.dir + "|" + a.title + "|" + a.version + "|" + a.hasIcon;
+  var sig = state.apps.map(function(a){
+    var known = libraryEntry(a.titleId);
+    return a.dir + "|" + a.title + "|" + a.version + "|" + a.hasIcon + "|" + a.media + a.discIn + "|" + a.installed + a.installing + "|" + (a.dlc || []).join(",") +
+           "|" + !!(known && known.hasPic) + "|" + !!known + "|" + state.canLaunch;
   }).join("~");
 
-  if(sig === appSig){ markPressed(box, "data-dir", state.app); return; }
+  if(sig === appSig){ markPressed(box, "data-dir", state.app); markQueued(); return; }
   appSig = sig;
 
-  if(!state.apps.length){
-    box.innerHTML = state.launching
-      ? '<div class="empty-state"><strong>Waiting for the title to mount</strong>' +
-        'The console is loading the game. Its files appear here as soon as it is running.</div>'
-      : '<div class="empty-state"><strong>No app mounted</strong>' +
-        'Start a title from the Installed tab, or launch it on the console and hit Rescan.</div>';
-    return;
-  }
+  box.hidden = !state.apps.length;
+  if(!state.apps.length){ box.innerHTML = ""; return; }
 
-  var html = '<div class="grid">';
+  var html = "";
   state.apps.forEach(function(a){
+    var known = libraryEntry(a.titleId);
     var sel = state.app === a.dir;
     var tag = a.isPs4 ? '<span class="tag ps4">PS4</span>' : '<span class="tag ps5">PS5</span>';
     var icon = a.hasIcon
-      ? '<img class="ico" alt="" src="/api/icon?app=' + encodeURIComponent(a.dir) + '" onerror="this.replaceWith(Object.assign(document.createElement(\'div\'),{className:\'ico\',textContent:\'' + esc(a.titleId.slice(0,4)) + '\'}))">'
+      ? '<img class="ico" alt="" src="/api/icon?app=' + encodeURIComponent(a.dir) + '">'
       : '<div class="ico">' + esc(a.titleId.slice(0,4)) + '</div>';
-    html += '<button class="tile" type="button" data-dir="' + esc(a.dir) + '" aria-pressed="' + sel + '"' +
-      ' aria-label="' + esc(a.title + " (" + a.titleId + ")") + '">' +
-      icon +
+    /* the console keeps wide key art for most titles - it makes the card */
+    var art = known && known.hasPic
+      ? ' style="background-image:url(/api/libpic?title=' + encodeURIComponent(a.titleId) + ')"' : "";
+    html += '<div class="hero" role="button" tabindex="0" data-dir="' + esc(a.dir) + '" aria-pressed="' + sel + '"' +
+      ' aria-label="' + esc(a.title + " (" + a.titleId + "), running") + '">' +
+      '<div class="hero-art"' + art + '>' + icon +
       '<span class="meta">' +
+        '<span class="hero-state"><i class="dot"></i>Running now</span>' +
         '<span class="name">' + esc(a.title) + '</span>' +
-        '<span class="id">' + tag + esc(a.titleId) + (a.version ? " &middot; " + esc(a.version) : "") + '</span>' +
-      '</span></button>';
+        '<span class="id">' + tag + mediaTag(a.media, a.discIn) + installTag(a) + dlcTag(a) + esc(a.titleId) + (a.version ? " &middot; " + esc(a.version) : "") + '</span>' +
+      '</span></div>' +
+      '<div class="hero-bar">' +
+        '<span class="hero-pick"' + (installing(a) ? ' style="color:var(--amber)"' : "") + '>' +
+          (installing(a) ? "still installing - not ready to dump" : partial(a) ? "ready to dump - " + (a.chunks && a.chunks[0] ? a.chunks[2] + " of " + a.chunks[0] + " chunks, all this console wants" : a.installed + " % of the package is here, the rest never arrived") : state.apps.length > 1 ? "tap to select" : "ready to dump") + '</span>' +
+        (known && state.canLaunch ? '<button class="mini" type="button" data-queue="' + esc(a.titleId) + '"></button>' : "") +
+      '</div></div>';
   });
-  html += '</div>';
   box.innerHTML = html;
 
-  Array.prototype.forEach.call(box.querySelectorAll(".tile"), function(el){
-    el.addEventListener("click", function(){
-      if(state.busy) return;
+  Array.prototype.forEach.call(box.querySelectorAll(".hero"), function(el){
+    var pick = function(){
+      if(whb.busy) return;
       state.app = el.getAttribute("data-dir");
       markPressed(box, "data-dir", state.app);
       fetchSize(state.app);
       updateAction();
+    };
+    el.addEventListener("click", pick);
+    el.addEventListener("keydown", function(e){
+      if(e.target === el && (e.key === "Enter" || e.key === " ")){ e.preventDefault(); pick(); }
+    });
+    var img = el.querySelector("img.ico");
+    if(img) img.addEventListener("error", function(){
+      var d = document.createElement("div");
+      d.className = "ico"; d.textContent = el.getAttribute("data-dir").slice(0,4);
+      img.parentNode.replaceChild(d, img);
     });
   });
+  Array.prototype.forEach.call(box.querySelectorAll("[data-queue]"), function(el){
+    el.addEventListener("click", function(e){
+      e.stopPropagation();
+      toggleQueued(el.getAttribute("data-queue"));
+    });
+  });
+  markQueued();
 }
 
 /* ---------------- rendering: installed titles ---------------- */
@@ -806,28 +778,36 @@ function renderLibrary(){
   if(state.library === null){ return; }
   $("libcount").textContent = state.library.length;
 
-  var sig = (state.canLaunch === false ? "nolaunch~" : "") + state.library.map(function(t){
-    return t.titleId + "|" + t.title + "|" + t.isRunning;
-  }).join("~");
+  /* a title that is up is shown as the card above, not a second time here */
+  var mounted = {};
+  state.apps.forEach(function(a){ mounted[a.titleId] = true; });
+  var list = state.library.filter(function(t){ return !mounted[t.titleId]; });
+
+  var sig = (state.canLaunch === false ? "nolaunch~" : "") + list.map(function(t){
+    return t.titleId + "|" + t.title + "|" + t.isRunning + "|" + t.media + t.discIn + "|" + (t.mountedFrom || "") + "|" + t.installed + t.installing;
+  }).join("~") + "#" + state.library.length;
   if(sig === libSig) return;
   libSig = sig;
 
   if(!state.library.length){
     box.innerHTML = '<div class="empty-state"><strong>Nothing installed found</strong>' +
-      'No titles were found under /user/app. Games on an external drive only show up while that drive is connected.</div>';
+      'No titles were found under /user/app. Games on an external drive only show up while that drive is connected. ' +
+      'A game you start on the console still shows up here.</div>';
     return;
   }
+  if(!list.length){ box.innerHTML = ""; box.hidden = true; return; }
+  box.hidden = false;
 
   var html = state.canLaunch === false
     ? '<div class="banner" style="background:rgba(255,176,32,.1);border-color:rgba(255,176,32,.4);margin:0 0 10px">' +
-      '<span>This console build cannot start titles from here — launch the game yourself, then use the Running tab.</span></div>'
+      '<span>This console build cannot start titles from here — launch the game on the console, it then shows up at the top.</span></div>'
     : '';
-  html += state.library.length > 8
+  html += list.length > 8
     ? '<input type="text" class="libsearch" id="libfilter" placeholder="Filter by name or title id" spellcheck="false" autocapitalize="off" autocomplete="off">'
     : '';
   html += '<div class="lib-list">';
 
-  state.library.forEach(function(t){
+  list.forEach(function(t){
     var tag = t.isPs4 ? '<span class="tag ps4">PS4</span>' : '<span class="tag ps5">PS5</span>';
     var icon = t.hasIcon
       ? '<img class="ico" alt="" src="/api/libicon?title=' + encodeURIComponent(t.titleId) + '">'
@@ -835,22 +815,30 @@ function renderLibrary(){
     html += '<div class="tile lib" data-search="' + esc((t.title + " " + t.titleId).toLowerCase()) + '">' + icon +
       '<span class="meta">' +
         '<span class="name">' + esc(t.title) + '</span>' +
-        '<span class="id">' + tag + esc(t.titleId) +
+        '<span class="id">' + tag + mediaTag(t.media, t.discIn) + mountTag(t.mountedFrom) + installTag(t) + esc(t.titleId) +
           (t.source && t.source !== "internal" ? " &middot; " + esc(t.source) : "") + '</span>' +
       '</span>' +
+      '<span class="lib-acts">' +
+      (state.canLaunch
+        ? '<button class="mini" type="button" data-queue="' + esc(t.titleId) + '"></button>'
+        : '') +
       (t.isRunning
         ? '<span class="running-badge">running</span>'
         : state.canLaunch
           ? '<button class="mini" type="button" data-title="' + esc(t.titleId) + '">Start</button>'
           : '') +
-      '</div>';
+      '</span></div>';
   });
   html += '</div>';
   box.innerHTML = html;
 
-  Array.prototype.forEach.call(box.querySelectorAll(".mini"), function(el){
+  Array.prototype.forEach.call(box.querySelectorAll("[data-title]"), function(el){
     el.addEventListener("click", function(){ launch(el, el.getAttribute("data-title")); });
   });
+  Array.prototype.forEach.call(box.querySelectorAll("[data-queue]"), function(el){
+    el.addEventListener("click", function(){ toggleQueued(el.getAttribute("data-queue")); });
+  });
+  markQueued();
 
   var filter = document.getElementById("libfilter");
   if(filter){
@@ -867,7 +855,7 @@ function loadLibrary(){
   return api("/api/library").then(function(d){
     state.library = d.titles || [];
     state.canLaunch = d.canLaunch !== false;
-    renderLibrary();
+    renderLibrary(); renderApps();
   }).catch(function(e){
     state.library = [];
     $("library").innerHTML = '<div class="empty-state"><strong>Could not read the library</strong>' + esc(e.message) + '</div>';
@@ -884,7 +872,7 @@ function titleName(id){
 /* Starting a game closes whatever is running, so the button asks first. */
 var launchArm;
 function launch(button, titleId, force){
-  if(state.busy){ toast("A dump is running.", "bad"); return; }
+  if(whb.busy){ toast("A dump is running.", "bad"); return; }
 
   button.disabled = true;
   post("/api/launch", force ? {title: titleId, force: 1} : {title: titleId}).then(function(){
@@ -916,7 +904,7 @@ function launch(button, titleId, force){
 var launchTimer;
 function beginLaunchWait(titleId){
   state.launching = {titleId: titleId, title: titleName(titleId), since: Date.now()};
-  showTab("running");
+  window.scrollTo(0, 0);
   renderLaunchBanner();
 
   clearInterval(launchTimer);
@@ -939,7 +927,11 @@ function endLaunchWait(found){
   renderLaunchBanner();
 
   if(!pending) return;
-  if(found) toast(pending.title + " is running", "ok");
+  if(found === "folder"){
+    toast(pending.title + " is running, but from a folder instead of its package - a dump is mounted over it (ShadowMount?), so there is nothing to dump.", "bad");
+    loadLibrary();
+  }
+  else if(found) toast(pending.title + " is running", "ok");
   else toast(pending.title + " did not come up - start it from the console.", "bad");
 }
 
@@ -965,14 +957,363 @@ function renderLaunchBanner(){
   existing.appendChild(cancel);
 }
 
-function showTab(which){
-  state.tab = which;
-  $("tab-running").setAttribute("aria-selected", String(which === "running"));
-  $("tab-library").setAttribute("aria-selected", String(which === "library"));
-  $("apps").hidden = which !== "running";
-  $("library").hidden = which !== "library";
+/* ---------------- queue ---------------- */
+/* The queue is put together in the browser and handed to the console in one
+   go; from then on the console owns it and this page only mirrors it. */
+var QUEUE_MAX = 16, QUEUE_KEY = "ps5-app-dumper.queue";
 
-  if(which === "library" && state.library === null) loadLibrary();
+function storeQueue(){
+  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(state.queue)); } catch(e){}
+}
+function restoreQueue(){
+  try {
+    var saved = JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]");
+    if(Array.isArray(saved)) state.queue = saved.filter(function(q){
+      return q && /^(PPSA|CUSA)\d{5}$/.test(q.titleId);
+    }).slice(0, QUEUE_MAX);
+  } catch(e){}
+}
+
+function queueIndex(titleId){
+  for(var i = 0; i < state.queue.length; i++)
+    if(state.queue[i].titleId === titleId) return i;
+  return -1;
+}
+
+function queueOnConsole(){ return !!(state.squeue && state.squeue.items.length); }
+function queueActive(){ return !!(state.squeue && state.squeue.active); }
+
+function toggleQueued(titleId){
+  if(queueOnConsole()){ toast(queueActive() ? "A queue is running." : "Clear the last queue result first.", "bad"); return; }
+
+  var at = queueIndex(titleId);
+  if(at >= 0) state.queue.splice(at, 1);
+  else {
+    if(state.queue.length >= QUEUE_MAX){ toast("A queue holds at most " + QUEUE_MAX + " titles.", "bad"); return; }
+    var t = null;
+    (state.library || []).forEach(function(l){ if(l.titleId === titleId) t = l; });
+    if(t && installing(t)){
+      toast(t.title + " is still installing (" + t.installed + " %) - it can be queued once it is done.", "bad");
+      return;
+    }
+    if(t && t.mountedFrom){
+      toast(t.title + " is a mount: it runs from " + t.mountedFrom + " instead of its package, so there is nothing to dump.", "bad");
+      return;
+    }
+    if(!t) return;
+    state.queue.push({titleId: t.titleId, title: t.title, isPs4: t.isPs4, media: t.media});
+  }
+  storeQueue(); markQueued(); renderQueue(); updateAction();
+}
+
+/* Reflects queue membership on the Installed rows without rebuilding them. */
+function markQueued(){
+  Array.prototype.forEach.call(document.querySelectorAll("#apps [data-queue], #library [data-queue]"), function(el){
+    var at = queueIndex(el.getAttribute("data-queue"));
+    el.classList.toggle("on", at >= 0);
+    el.textContent = at >= 0 ? "Queued " + (at + 1) : "+ Queue";
+    el.setAttribute("aria-pressed", String(at >= 0));
+  });
+}
+
+var STATE_LABEL = {
+  pending: "waiting", waiting_disc: "insert disc", launching: "starting", settling: "loading",
+  dumping: "dumping", done: "done", failed: "failed", skipped: "skipped"
+};
+
+function libraryEntry(titleId){
+  var known = null;
+  (state.library || []).forEach(function(l){ if(l.titleId === titleId) known = l; });
+  return known;
+}
+
+/* editAt: index in the local queue, which makes the media tag a switch - the
+   console can only guess whether a title is a disc game while its disc is
+   out, and a queue that waits for the wrong thing helps nobody. */
+function queueRowHead(pos, q, cls, editAt){
+  var known = libraryEntry(q.titleId);
+  var media = q.isDisc !== undefined ? (q.isDisc ? "disc" : "pkg") : (q.media || (known && known.media));
+  var discIn = q.discIn !== undefined ? q.discIn : (known ? known.discIn : undefined);
+  var tag = q.titleId.indexOf("CUSA") === 0 ? '<span class="tag ps4">PS4</span>' : '<span class="tag ps5">PS5</span>';
+  var mtag = editAt === undefined ? mediaTag(media, discIn)
+    : '<button type="button" class="tag ' + (media === "disc" ? "disc" + (discIn === false ? " out" : "") : "pkg") +
+      '" data-media="' + editAt + '" title="Disc game? The queue waits for its disc. Click to change.">' +
+      (media === "disc" ? (discIn === false ? "DISC OUT" : "DISC") : "PKG") + '</button>';
+  return '<div class="q-row' + (cls ? " " + cls : "") + '"><span class="q-pos">' + pos + '</span>' +
+    '<span class="meta"><span class="name">' + esc(q.title || q.titleId) + '</span>' +
+    '<span class="id">' + tag + mtag +
+      (q.own || q.custom ? '<span class="tag own" title="Dumped with settings of its own">CUSTOM</span>' : "") +
+      (editAt === undefined ? "" : presenceTag(q.titleId)) +
+      esc(q.titleId) + '</span>';
+}
+
+/* ---- settings of a single queued title ----
+   own = {d, f, b, l, s}: decrypt, fself, backport, backport level of the
+   title's platform, PS4 split mode. Absent means "as in Options". */
+var SLIDERS_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>';
+
+function isPs4Id(id){ return id.indexOf("CUSA") === 0; }
+
+function generalFor(q){
+  var c = state.config || {};
+  return {
+    d: c.enableDecrypter ? 1 : 0, f: c.enableElf2fself ? 1 : 0, b: c.enableBackport ? 1 : 0,
+    l: (isPs4Id(q.titleId) ? c.ps4BackportLevel : c.ps5BackportLevel) || 1,
+    s: c.split === undefined ? 3 : c.split
+  };
+}
+
+function ownSpec(q){
+  var o = q.own;
+  return "d" + o.d + "f" + o.f + "b" + o.b + (isPs4Id(q.titleId) ? "p" + o.l + "s" + o.s : "q" + o.l);
+}
+
+function ownPanel(q, i){
+  var o = q.own || generalFor(q), ps4 = isPs4Id(q.titleId);
+  var levels = ps4 ? PS4_LEVELS : PS5_LEVELS;
+  var sw = function(key, label, hint){
+    return '<div class="row"><div class="txt"><div class="label">' + label + '</div><div class="hint">' + hint + '</div></div>' +
+      '<label class="sw"><input type="checkbox" data-own="' + key + '"' + (o[key] ? " checked" : "") + '><span></span></label></div>';
+  };
+  var html = '<div class="q-set" data-panel="' + i + '">' +
+    sw("d", "Decrypt executables", "Decrypt SELF/SPRX while dumping") +
+    sw("f", "Create FSELF files", "Re-sign decrypted executables") +
+    sw("b", "SDK backport", "Patch SDK versions down. May break the dump.") +
+    '<div class="row"' + (o.b ? "" : ' style="opacity:.45"') + '><div class="txt"><div class="label">' + (ps4 ? "PS4" : "PS5") + ' target</div></div>' +
+      '<select data-own="l"' + (o.b ? "" : " disabled") + '>' + levels.map(function(v, n){
+        return '<option value="' + (n + 1) + '"' + (o.l === n + 1 ? " selected" : "") + '>' + (ps4 ? "PS4 " : "PS5 ") + v + '</option>';
+      }).join("") + '</select></div>';
+  if(ps4)
+    html += '<div class="row"><div class="txt"><div class="label">Split mode</div></div><div class="seg" role="group" aria-label="Split mode">' +
+      ["None","App","Patch","Both"].map(function(name, v){
+        return '<button type="button" data-own-split="' + v + '" aria-pressed="' + (o.s === v) + '">' + name + '</button>';
+      }).join("") + '</div></div>';
+  return html + '<div class="q-set-foot"><span class="hint">' +
+    (q.own ? "This title is dumped with these settings." : "Same as Options until you change something.") + '</span>' +
+    (q.own ? '<button type="button" class="mini" data-own-reset="1">Use general settings</button>' : "") +
+    '</div></div>';
+}
+
+/* ---- what is on the drive already ----
+   Asked of the console whenever the queue or the destination changes, so the
+   choice between skipping and replacing is not made blind. */
+var PRESENCE_KEY = "ps5-app-dumper.queue-replace";
+var presenceFor = null, presenceTimer;
+
+function presenceTag(titleId){
+  var p = state.presence && state.presence[titleId];
+  return p === "present"    ? '<span class="tag there" title="A finished dump of this title is on the drive">DUMPED</span>'
+       : p === "incomplete" ? '<span class="tag cut" title="An unfinished dump of this title is on the drive - it is removed and done again">UNFINISHED</span>' : "";
+}
+
+function presentCount(){
+  return state.queue.filter(function(q){ return state.presence && state.presence[q.titleId] === "present"; }).length;
+}
+
+function refreshPresence(){
+  var ids = state.queue.map(function(q){ return q.titleId; }).join(",");
+  var key = ids + "@" + state.target + "@" + currentSubdir();
+  if(!ids || !state.target || queueOnConsole()){ presenceFor = null; return; }
+  if(key === presenceFor) return;
+  presenceFor = key;
+
+  clearTimeout(presenceTimer);
+  presenceTimer = setTimeout(function(){
+    api("/api/dumps/presence?target=" + encodeURIComponent(state.target) + "&titles=" + encodeURIComponent(ids)).then(function(d){
+      state.presence = d.titles || {};
+      queueSig = null;
+      renderQueue(); updateAction();
+    }).catch(function(){ presenceFor = null; });
+  }, 250);
+}
+
+function showExistingChoice(){
+  Array.prototype.forEach.call($("q-existing").querySelectorAll("button"), function(b){
+    b.setAttribute("aria-pressed", String((b.getAttribute("data-v") === "1") === !!state.queueReplace));
+  });
+  var n = presentCount();
+  $("q-existing-hint").textContent = !n ? "None of the queued titles is on the drive yet."
+    : state.queueReplace ? n + " of them " + (n === 1 ? "is" : "are") + " on the drive already - deleted and dumped anew."
+                         : n + " of them " + (n === 1 ? "is" : "are") + " on the drive already - passed over.";
+}
+
+var queueSig = null;
+function renderQueue(){
+  refreshPresence();
+  showExistingChoice();
+  var box = $("queue"), remote = queueOnConsole();
+  var items = remote ? state.squeue.items : state.queue;
+
+  $("queuecount").textContent = items.length;
+  $("queue-foot").hidden = remote || !items.length;
+  $("queue-done").hidden = !remote || queueActive();
+
+  var sig = (remote ? "r" + state.squeue.active + state.squeue.current : "l") + "~" + items.map(function(q){
+    return q.titleId + "|" + (q.state || "") + "|" + (q.message || "") + "|" + q.media + q.isDisc + q.discIn +
+           "|" + ((state.presence && state.presence[q.titleId]) || "") +
+           "|" + (q.own ? ownSpec(q) : "") + !!q.custom;
+  }).join("~") + "#" + state.queueOpen;
+
+  if(sig !== queueSig){
+    queueSig = sig;
+
+    if(!items.length){
+      box.innerHTML = '<div class="empty-state"><strong>Queue is empty</strong>' +
+        'Add titles with <b>+ Queue</b>. They are started, dumped and closed one after the other, each with its own settings if you like.</div>';
+    } else if(remote){
+      box.innerHTML = '<div class="q-list">' + items.map(function(q, i){
+        var live = state.squeue.current === i;
+        var kind = q.state === "done" ? "done" : q.state === "failed" ? "failed"
+                 : q.state === "waiting_disc" ? "disc" : live ? "live" : "";
+        return queueRowHead(i + 1, q, (live ? "cur " : "") + q.state) +
+          (q.message && (q.state === "failed" || q.state === "skipped" || live)
+            ? '<span class="q-msg">' + esc(q.message) + '</span>' : "") + '</span>' +
+          '<span class="q-state ' + kind + '"' + (live ? ' id="q-live"' : "") + '>' +
+          esc(STATE_LABEL[q.state] || q.state) + '</span></div>';
+      }).join("") + '</div>';
+
+
+    } else {
+      box.innerHTML = '<div class="q-list">' + items.map(function(q, i){
+        var open = state.queueOpen === q.titleId;
+        return '<div class="q-item' + (open ? " open" : "") + '">' + queueRowHead(i + 1, q, "", i) + '</span>' +
+          '<button class="q-btn' + (open ? " on" : "") + '" type="button" data-set="' + i + '" aria-expanded="' + open +
+            '" aria-label="Settings for this title" title="Settings for this title">' + SLIDERS_SVG + '</button>' +
+          '<button class="q-btn" type="button" data-mv="-1" data-i="' + i + '" aria-label="Move up"' + (i ? "" : " disabled") + '>&uarr;</button>' +
+          '<button class="q-btn" type="button" data-mv="1" data-i="' + i + '" aria-label="Move down"' + (i < items.length - 1 ? "" : " disabled") + '>&darr;</button>' +
+          '<button class="q-btn rm" type="button" data-rm="' + i + '" aria-label="Remove from queue">&times;</button></div>' +
+          (open ? ownPanel(q, i) : "") + '</div>';
+      }).join("") + '</div>';
+
+      Array.prototype.forEach.call(box.querySelectorAll("[data-set]"), function(el){
+        el.addEventListener("click", function(){
+          var q = state.queue[Number(el.getAttribute("data-set"))];
+          state.queueOpen = q && state.queueOpen !== q.titleId ? q.titleId : null;
+          renderQueue();
+        });
+      });
+      var panel = box.querySelector("[data-panel]");
+      if(panel){
+        var pq = state.queue[Number(panel.getAttribute("data-panel"))];
+        var change = function(key, value){
+          if(!pq.own) pq.own = generalFor(pq);
+          pq.own[key] = value;
+          storeQueue(); renderQueue();
+        };
+        Array.prototype.forEach.call(panel.querySelectorAll("input[data-own]"), function(el){
+          el.addEventListener("change", function(){ change(el.getAttribute("data-own"), el.checked ? 1 : 0); });
+        });
+        panel.querySelector("select[data-own]").addEventListener("change", function(e){ change("l", Number(e.target.value)); });
+        Array.prototype.forEach.call(panel.querySelectorAll("[data-own-split]"), function(el){
+          el.addEventListener("click", function(){ change("s", Number(el.getAttribute("data-own-split"))); });
+        });
+        var reset = panel.querySelector("[data-own-reset]");
+        if(reset) reset.addEventListener("click", function(){ delete pq.own; storeQueue(); renderQueue(); });
+      }
+
+      Array.prototype.forEach.call(box.querySelectorAll("[data-mv]"), function(el){
+        el.addEventListener("click", function(){
+          var i = Number(el.getAttribute("data-i")), j = i + Number(el.getAttribute("data-mv"));
+          if(j < 0 || j >= state.queue.length) return;
+          var moved = state.queue.splice(i, 1)[0];
+          state.queue.splice(j, 0, moved);
+          storeQueue(); markQueued(); renderQueue();
+        });
+      });
+      Array.prototype.forEach.call(box.querySelectorAll("[data-media]"), function(el){
+        el.addEventListener("click", function(){
+          var q = state.queue[Number(el.getAttribute("data-media"))];
+          if(!q) return;
+          q.media = q.media === "disc" ? "pkg" : "disc";
+          storeQueue(); renderQueue();
+        });
+      });
+      Array.prototype.forEach.call(box.querySelectorAll("[data-rm]"), function(el){
+        el.addEventListener("click", function(){
+          state.queue.splice(Number(el.getAttribute("data-rm")), 1);
+          storeQueue(); markQueued(); renderQueue(); updateAction();
+        });
+      });
+    }
+  }
+
+  /* the part that changes every second is patched in place */
+  var stage = $("queuestage");
+  stage.hidden = !queueActive();
+  if(queueActive()){
+    var sq = state.squeue, cur = sq.items[sq.current];
+    stage.textContent = (sq.current + 1) + " / " + sq.items.length;
+
+    var live = document.getElementById("q-live");
+    if(live && cur) live.textContent = queuePhase(cur);
+  }
+}
+
+function jobStopping(){ return !!(state.job && state.job.stage === "Stopping"); }
+
+function queuePhase(item){
+  var label = STATE_LABEL[item.state] || item.state, wait = state.squeue.wait;
+
+  /* a stop or skip is under way - the percentage would say the opposite */
+  if(item.state === "dumping" && jobStopping()) return "stopping…";
+
+  if(item.state === "dumping" && state.job && state.job.totalBytes)
+    return label + " " + Math.min(100, Math.floor(state.job.copiedBytes / state.job.totalBytes * 100)) + "%";
+  if((item.state === "launching" || item.state === "settling") && wait > 0)
+    return label + " " + clock(wait);
+  return label;
+}
+
+var queueArm;
+function startQueue(){
+  var b = $("btn-go");
+  if(!state.queue.length || whb.busy) return;
+  if(!state.target){ toast("Select a destination drive first.", "bad"); return; }
+
+  /* what cannot be taken back is asked for once: a game that is up and not
+     first in line gets closed, and replacing deletes finished dumps */
+  var inTheWay = state.apps.some(function(a){ return a.titleId !== state.queue[0].titleId; });
+  var replaces = state.queueReplace ? presentCount() : 0;
+  if((inTheWay || replaces) && !b.classList.contains("arm")){
+    b.classList.add("arm");
+    b.textContent = "Confirm: " + [inTheWay ? "closes the running game" : "",
+                                   replaces ? "deletes " + replaces + " existing dump" + (replaces === 1 ? "" : "s") : ""]
+                                  .filter(Boolean).join(", ");
+    clearTimeout(queueArm);
+    queueArm = setTimeout(function(){ b.classList.remove("arm"); updateAction(); }, 5000);
+    return;
+  }
+  clearTimeout(queueArm);
+  b.classList.remove("arm");
+  b.disabled = true;
+
+  var ids = state.queue.map(function(q){ return q.titleId; });
+  var discs = state.queue.filter(function(q){ return q.media === "disc"; })
+                         .map(function(q){ return q.titleId; });
+  var request = {titles: ids.join(","), discs: discs.join(","), target: state.target,
+                 replace: state.queueReplace ? 1 : 0};
+  state.queue.forEach(function(q){ if(q.own) request["o_" + q.titleId] = ownSpec(q); });
+  post("/api/queue/start", request).then(function(){
+    state.queue = [];
+    state.queueOpen = null;
+    storeQueue(); markQueued();
+    whb.busy = true;
+    $("logbox").innerHTML = "";
+    state.samples = [];
+    toast("Queue started: " + ids.length + " titles" +
+          (discs.length > 1 ? " - it waits whenever a disc has to be swapped" : ""), "ok");
+    pollStatus();
+  }).catch(function(e){
+    toast(e.message, "bad");
+    updateAction();
+  });
+}
+
+function clearQueueResult(){
+  post("/api/queue/clear").then(function(){
+    state.squeue = null;
+    renderQueue(); updateAction();
+  }).catch(function(e){ toast(e.message, "bad"); });
 }
 
 /* ---------------- rendering: drives ---------------- */
@@ -981,7 +1322,7 @@ function renderDrives(){
   $("drivecount").textContent = state.targets.length;
 
   var sig = state.targets.map(function(t){
-    return t.mount + "|" + t.fs + "|" + t.writable + "|" + Math.round(t.freeBytes / 1073741824);
+    return t.mount + "|" + t.fs + "|" + t.writable + "|" + !!t.internal + "|" + Math.round(t.freeBytes / 1073741824);
   }).join("~");
 
   if(sig === driveSig){ markPressed(box, "data-mount", state.target); return; }
@@ -1001,8 +1342,9 @@ function renderDrives(){
     html += '<button class="drive" type="button" data-mount="' + esc(t.mount) + '" aria-pressed="' + sel + '"' +
       (t.writable ? "" : " disabled title=\"read-only\"") + '>' +
       '<span class="drive-top">' +
-        '<span class="drive-name">' + esc(t.mount) + '</span>' +
-        (t.fs ? '<span class="drive-fs">' + esc(t.fs) + '</span>' : "") +
+        '<span class="drive-name">' + (t.internal ? "Console storage" : esc(t.mount)) + '</span>' +
+        (t.internal ? '<span class="drive-fs">' + esc(t.mount) + '</span>'
+                    : t.fs ? '<span class="drive-fs">' + esc(t.fs) + '</span>' : "") +
         '<span class="drive-free">' + (t.totalBytes ? bytes(t.freeBytes) + " free" : (t.writable ? "" : "read-only")) + '</span>' +
       '</span>' +
       (t.totalBytes ? '<span class="bar"><i class="' + (low ? "low" : "") + '" style="width:' + used.toFixed(1) + '%"></i></span>' : "") +
@@ -1012,9 +1354,10 @@ function renderDrives(){
 
   Array.prototype.forEach.call(box.querySelectorAll(".drive"), function(el){
     el.addEventListener("click", function(){
-      if(state.busy || el.disabled) return;
+      if(whb.busy || el.disabled) return;
       state.target = el.getAttribute("data-mount");
       markPressed(box, "data-mount", state.target);
+      markSubdirInUse();
       updateAction();
     });
   });
@@ -1032,16 +1375,45 @@ function fillLevels(){
     s4.add(new Option("PS4 " + PS4_LEVELS[i] + "  (" + (i+1) + ")", i+1));
 }
 
+function targetIsConsole(){
+  var t = selectedTarget();
+  return !!(t && t.internal);
+}
+function consoleTarget(){
+  var found = null;
+  state.targets.forEach(function(t){ if(t.internal) found = t; });
+  return found;
+}
+/* the folder that applies to the destination selected right now */
+function currentSubdir(){
+  return $(targetIsConsole() ? "c-subdir-console" : "c-subdir").value.trim();
+}
+function showSubdir(){
+  if(!state.config) return;
+  /* a poll must not overwrite what is being typed */
+  if(document.activeElement !== $("c-subdir"))         $("c-subdir").value = state.config.dumpSubdir || "";
+  if(document.activeElement !== $("c-subdir-console")) $("c-subdir-console").value = state.config.dumpSubdirConsole || "";
+  markSubdirInUse();
+}
+function markSubdirInUse(){
+  var con = consoleTarget(), onConsole = targetIsConsole();
+  $("row-subdir-console").hidden = !con;
+  $("inuse-usb").hidden = !state.target || onConsole;
+  $("inuse-console").hidden = !onConsole;
+  if(con) $("subdir-console-hint").textContent = "Below " + con.mount + " - for dumps to Console storage";
+}
 function applyConfig(c){
   state.config = c;
   $("c-decrypt").checked  = !!c.enableDecrypter;
   $("c-logging").checked  = !!c.enableLogging;
+  if($("c-dlc")) $("c-dlc").checked = c.dumpDlc !== 0;
   $("c-fself").checked    = !!c.enableElf2fself;
   $("c-backport").checked = !!c.enableBackport;
   $("c-auto").checked     = !!c.autoStart;
-  $("c-subdir").value     = c.dumpSubdir || "";
+  showSubdir();
   $("c-bp5").value        = c.ps5BackportLevel;
   $("c-bp4").value        = c.ps4BackportLevel;
+  if(document.activeElement !== $("c-qdelay")) $("c-qdelay").value = c.queueDelay;
 
   Array.prototype.forEach.call($("c-split").querySelectorAll("button"), function(b){
     b.setAttribute("aria-pressed", String(Number(b.getAttribute("data-v")) === c.split));
@@ -1054,7 +1426,10 @@ function applyConfig(c){
   $("c-bp4").disabled = !on;
 
   var stored = !!state.configPath;
-  $("cfgpath").textContent = stored ? state.configPath : "not stored — no drive connected";
+  $("cfgpath").textContent = !stored ? "not stored — nowhere to write to"
+    : state.configOnConsole ? state.configPath + " — on the console"
+    : state.configPath + " — on the drive, and it wins while the drive is plugged in. A copy on the console is used without it.";
+  $("c-cfgcopy").hidden = !stored || !!state.configOnConsole;
   $("nodrive").hidden = stored;
 
   updatePlatformOptions();
@@ -1068,31 +1443,36 @@ function collectConfig(){
   return {
     enableDecrypter: $("c-decrypt").checked ? 1 : 0,
     enableLogging:   $("c-logging").checked ? 1 : 0,
+    dumpDlc:         $("c-dlc") && $("c-dlc").checked ? 1 : 0,
     enableElf2fself: $("c-fself").checked ? 1 : 0,
     enableBackport:  $("c-backport").checked ? 1 : 0,
     autoStart:       $("c-auto").checked ? 1 : 0,
     ps5BackportLevel:$("c-bp5").value,
     ps4BackportLevel:$("c-bp4").value,
-    dumpSubdir:      $("c-subdir").value.trim(),
+    dumpSubdir:        $("c-subdir").value.trim(),
+    dumpSubdirConsole: $("c-subdir-console").value.trim(),
+    queueDelay:      parseInt($("c-qdelay").value, 10) || 30,
     split:           split
   };
 }
 
 var saveTimer;
+function saveConfigNow(){
+  clearTimeout(saveTimer);
+  post(WHB_API + "/config", collectConfig()).then(function(r){
+    applyConfig(r.config);
+    if(!r.saved) toast(r.note, "bad");
+    else toast("Settings saved", "ok");
+  }).catch(function(e){ toast(e.message, "bad"); });
+}
 function saveConfig(){
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(function(){
-    post("/api/config", collectConfig()).then(function(r){
-      applyConfig(r.config);
-      if(!r.saved) toast(r.note, "bad");
-      else toast("Settings saved", "ok");
-    }).catch(function(e){ toast(e.message, "bad"); });
-  }, 320);
+  saveTimer = setTimeout(saveConfigNow, 320);
   updateAction();
 }
 
 function wireSettings(){
-  ["c-decrypt","c-logging","c-fself","c-backport","c-auto"].forEach(function(id){
+  ["c-decrypt","c-logging","c-fself","c-dlc","c-backport","c-auto"].forEach(function(id){
     $(id).addEventListener("change", function(){
       if(id === "c-backport" && $(id).checked)
         toast("Backporting is experimental and can break the dump.", "bad");
@@ -1102,6 +1482,8 @@ function wireSettings(){
   $("c-bp5").addEventListener("change", saveConfig);
   $("c-bp4").addEventListener("change", saveConfig);
   $("c-subdir").addEventListener("change", saveConfig);
+  $("c-subdir-console").addEventListener("change", saveConfig);
+  $("c-qdelay").addEventListener("change", saveConfig);
   Array.prototype.forEach.call($("c-split").querySelectorAll("button"), function(b){
     b.addEventListener("click", function(){
       Array.prototype.forEach.call($("c-split").querySelectorAll("button"), function(o){
@@ -1136,15 +1518,26 @@ function selectedApp(){
   return null;
 }
 
-/* Which platform(s) the options apply to right now: the selected app if there
-   is one, otherwise every mounted title, otherwise neutral (show everything so
-   nothing is hidden while we don't know). */
+/* Which platform(s) the options apply to right now. A queue is dumped with
+   these same settings, so every title in it counts - the one being put
+   together here as well as the one the console is working on. Without a
+   queue it is the selected app, otherwise every mounted title. With nothing
+   to go by, or when the user asked for it, everything is shown. */
+var SHOWALL_KEY = "ps5-app-dumper.options-all";
+
 function platformsInView(){
-  var app = selectedApp();
-  if(app) return { ps4: !!app.isPs4, ps5: !app.isPs4 };
+  if(state.showAllOptions) return { ps4: true, ps5: true, all: true };
 
   var ps4 = false, ps5 = false;
-  state.apps.forEach(function(a){ if(a.isPs4) ps4 = true; else ps5 = true; });
+  var add = function(isPs4){ if(isPs4) ps4 = true; else ps5 = true; };
+
+  var queued = queueOnConsole() && queueActive() ? state.squeue.items : state.queue;
+  queued.forEach(function(q){ add(q.titleId.indexOf("CUSA") === 0); });
+
+  var app = selectedApp();
+  if(app) add(!!app.isPs4);
+  else if(!queued.length) state.apps.forEach(function(a){ add(!!a.isPs4); });
+
   if(!ps4 && !ps5) return { ps4: true, ps5: true };
   return { ps4: ps4, ps5: ps5 };
 }
@@ -1157,10 +1550,52 @@ function updatePlatformOptions(){
   $("row-bp4").hidden   = !p.ps4;
   $("row-bp5").hidden   = !p.ps5;
 
+  /* rebuilt only on change: the switch in it must survive the status poll */
+  var sig = p.ps4 + "|" + p.ps5 + "|" + !!p.all;
+  if(sig === optPlatSig) return;
+  optPlatSig = sig;
+
   var html = "";
-  if(p.ps4) html += '<span class="tag ps4">PS4</span>';
-  if(p.ps5) html += '<span class="tag ps5">PS5</span>';
+  if(!p.all && p.ps4) html += '<span class="tag ps4">PS4</span>';
+  if(!p.all && p.ps5) html += '<span class="tag ps5">PS5</span>';
+  html += '<button type="button" class="tag all' + (p.all ? " on" : "") + '" id="opt-all" aria-pressed="' + !!p.all +
+          '" title="Show the options of both platforms, whatever is selected or queued">ALL</button>';
   $("opt-plat").innerHTML = html;
+
+  $("opt-all").addEventListener("click", function(){
+    state.showAllOptions = !state.showAllOptions;
+    try { localStorage.setItem(SHOWALL_KEY, state.showAllOptions ? "1" : ""); } catch(e){}
+    updatePlatformOptions();
+  });
+}
+var optPlatSig = null;
+
+/* Titles waiting in the editor turn the big button into "Start queue". */
+function queueMode(){ return state.queue.length > 0 && !queueOnConsole(); }
+
+/* What the queue will do, in the space that otherwise describes the dump:
+   the titles in order, and where they go. */
+function queueSummary(){
+  var q = state.queue, shown = q.slice(0, 3).map(function(t){ return "<b>" + esc(t.title || t.titleId) + "</b>"; });
+  var text = "Queue · " + shown.join(" → ") + (q.length > 3 ? " → +" + (q.length - 3) + " more" : "");
+
+  if(!state.targets.length) return text + ' <span style="color:var(--red)">· plug in a USB drive</span>';
+  if(!state.target)         return text + ' <span style="color:var(--red)">· select a destination drive</span>';
+
+  var sub = currentSubdir();
+  text += " → <b>" + esc(state.target + (sub ? "/" + sub : "")) + "</b>";
+
+  var notes = [];
+  var own = q.filter(function(t){ return t.own; }).length;
+  var discs = q.filter(function(t){ return t.media === "disc"; }).length;
+  if(own) notes.push(own + " with own settings");
+  if(discs > 1) notes.push(discs + " discs - it waits for each swap");
+  var first = q[0], inTheWay = state.apps.some(function(a){ return a.titleId !== first.titleId; });
+  if(inTheWay) notes.push("closes the running game");
+  var there = presentCount();
+  if(there) notes.push(state.queueReplace ? "replaces " + there + " existing dump" + (there === 1 ? "" : "s")
+                                          : "skips " + there + " already dumped");
+  return text + (notes.length ? ' <span style="color:var(--ink-faint)">· ' + esc(notes.join(" · ")) + "</span>" : "");
 }
 
 function updateAction(){
@@ -1170,34 +1605,82 @@ function updateAction(){
   updatePlatformOptions();
 
   ["sec-apps","sec-drives","sec-options"].forEach(function(id){
-    $(id).classList.toggle("locked", state.busy);
+    $(id).classList.toggle("locked", whb.busy);
   });
 
-  if(state.busy){
+  renderQueue();
+
+  if(whb.busy && queueActive()){
+    var sq = state.squeue, cur = sq.items[sq.current];
     go.style.display = "none";
     stop.style.display = "";
     reload.style.display = "none";
-    sum.innerHTML = "Dumping <b>" + esc(state.job && state.job.title ? state.job.title : "") + "</b> → <b>" +
+    if(!stop.classList.contains("arm")) stop.textContent = "Stop queue";
+    /* with more to come, giving up one dump must not cost the rest */
+    /* One control to leave the title at hand and go on with the next. While
+       it waits - for a disc, the launch, the load time - nothing is lost, so
+       it acts at once; once it dumps it asks first. */
+    var skip = $("btn-skip");
+    var phase = !cur || jobStopping() ? null : cur.state === "dumping" ? "dump"
+              : (cur.state === "waiting_disc" || cur.state === "launching" || cur.state === "settling") ? "wait" : null;
+    skip.style.display = phase ? "" : "none";
+    if(skipPhase !== phase){
+      skipPhase = phase;
+      skip.classList.remove("arm");
+      skip.textContent = phase === "dump" ? "Stop this dump" : "Skip this title";
+    }
+    stop.disabled = jobStopping();
+    if(jobStopping() && !stop.classList.contains("arm")) stop.textContent = "Stopping…";
+    sum.innerHTML = "Queue <b>" + (sq.current + 1) + "/" + sq.items.length + "</b>" +
+                    (cur ? " · <b>" + esc(cur.title) + "</b> — " +
+                      (cur.state === "waiting_disc" ? '<span style="color:var(--violet)">insert its disc</span>'
+                                                    : esc(queuePhase(cur))) : "") +
+                    " → <b>" + esc(sq.target) + "</b>";
+    return;
+  }
+
+  $("btn-skip").style.display = "none";
+
+  if(whb.busy){
+    go.style.display = "none";
+    stop.style.display = "";
+    reload.style.display = "none";
+    stop.disabled = jobStopping();
+    if(jobStopping() && !stop.classList.contains("arm")) stop.textContent = "Stopping…";
+    sum.innerHTML = (jobStopping() ? "Stopping " : "Dumping ") + "<b>" + esc(state.job && state.job.title ? state.job.title : "") + "</b> → <b>" +
                     esc(state.job ? state.job.dest : "") + "</b>";
     return;
   }
 
   stop.style.display = "none";
   stop.classList.remove("arm");
+  stop.disabled = false;
   stop.textContent = "Stop";
   go.style.display = "";
   reload.style.display = "none";
 
-  var ready = !!(app && state.target);
+  if(queueMode()){
+    go.disabled = !state.target;
+    if(!go.classList.contains("arm")) go.textContent = "Start queue (" + state.queue.length + ")";
+    sum.innerHTML = queueSummary();
+    return;
+  }
+
+  if(!go.classList.contains("arm")) go.textContent = "Start dump";
+
+  var ready = !!(app && state.target) && !(app && installing(app));
   go.disabled = !ready;
 
   if(state.launching)           sum.textContent = "Waiting for " + state.launching.title + " to start…";
-  else if(!state.apps.length)   sum.textContent = "Start a title from the Installed tab.";
+  else if(app && installing(app))
+    sum.innerHTML = "<b>" + esc(app.title) + '</b> <span style="color:var(--amber)">is still installing (' + app.installed +
+                    " %) - a dump now would be incomplete. It can be dumped once it is done.</span>";
+  else if(!state.apps.length)   sum.textContent = "Start a title, or queue several.";
   else if(!app)                 sum.textContent = "Select an app.";
   else if(!state.targets.length)sum.textContent = "Plug in a USB drive.";
   else if(!state.target)        sum.textContent = "Select a destination drive.";
   else {
-    var sub = $("c-subdir").value.trim();
+    var sub = currentSubdir();
     var size = state.sizes[app.dir];
     var drive = selectedTarget();
     var text = "<b>" + esc(app.title) + "</b>" +
@@ -1237,8 +1720,9 @@ function renderJob(job){
     live.style.display = "";
     verdict.style.display = "none";
 
+    /* whole percent, rounded down - the same figure the log line carries */
     var pct = job.totalBytes ? Math.min(100, job.copiedBytes / job.totalBytes * 100) : 0;
-    $("pctnum").textContent = pct.toFixed(pct >= 10 ? 0 : 1);
+    $("pctnum").textContent = Math.floor(pct);
     $("pbar").style.width = pct + "%";
     $("s-copied").textContent = bytes(job.copiedBytes);
     $("s-total").textContent  = job.totalBytes ? bytes(job.totalBytes) : "measuring…";
@@ -1246,10 +1730,14 @@ function renderJob(job){
     var rate = speed(job);
     $("s-speed").textContent = rate > 0 ? (rate / 1048576).toFixed(1) + " MB/s" : "—";
 
-    var elapsed = job.started ? (Date.now()/1000) - job.started : 0;
-    $("s-elapsed").textContent = clock(elapsed);
-    $("s-eta").textContent = (rate > 0 && job.totalBytes > job.copiedBytes)
-      ? clock((job.totalBytes - job.copiedBytes) / rate) : "—";
+    /* Elapsed and remaining go by the console's clock and its average since
+       the copy began, as the log does; "Speed" stays the momentary rate. */
+    var now = job.now || Date.now()/1000;
+    $("s-elapsed").textContent = clock(job.started ? now - job.started : 0);
+    var copyFor = job.copyStarted ? now - job.copyStarted : 0;
+    var avg = copyFor > 0 ? job.copiedBytes / copyFor : 0;
+    $("s-eta").textContent = (avg > 0 && job.totalBytes > job.copiedBytes)
+      ? clock((job.totalBytes - job.copiedBytes) / avg) : "—";
 
     var f = job.currentFile || "";
     $("s-file").textContent = f ? f : "";
@@ -1265,73 +1753,46 @@ function renderJob(job){
     var took = job.finished && job.started ? " · " + clock(job.finished - job.started) : "";
     verdict.className = "verdict " + kind;
     verdict.innerHTML = "<div><b>" + head + took + "</b>" + esc(job.message || "") + "</div>";
-    $("btn-reload").style.display = "";
+    if(!whb.busy) $("btn-reload").style.display = "";
   }
 }
 
-/* ---------------- console ---------------- */
-function appendLog(lines){
-  if(!lines || !lines.length) return;
-  var box = $("logbox");
-  var empty = box.querySelector(".empty");
-  if(empty) box.removeChild(empty);
-
-  var stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 24;
-
-  lines.forEach(function(l){
-    var d = document.createElement("div");
-    var low = l.toLowerCase();
-    if(low.indexOf("error") >= 0 || low.indexOf("failed") >= 0) d.className = "e";
-    else if(low.indexOf("complete") >= 0 || low.indexOf("success") >= 0) d.className = "g";
-    else if(low.indexOf("warn") >= 0 || low.indexOf("not found") >= 0) d.className = "a";
-    d.textContent = l;
-    box.appendChild(d);
-  });
-
-  while(box.childNodes.length > 400) box.removeChild(box.firstChild);
-  if(stick) box.scrollTop = box.scrollHeight;
-}
-
 /* ---------------- polling ---------------- */
-function setOnline(ok){
-  if(state.online === ok) return;
-  state.online = ok;
-  var el = $("conn");
-  el.className = "live " + (ok ? "on" : "off");
-  $("conntext").textContent = ok ? "Connected" : "Disconnected";
-}
+/* The dumper's part of the status poll; the kit has dealt with the log, the
+   connection and whb.busy already. */
+function onStatus(d, wasBusy){
+  var wasQueue = queueActive();
+  state.job = d.job;
+  state.squeue = d.queue || null;
+  renderJob(d.job);
+  if(d.move) renderMove(d.move);
 
-function pollStatus(){
-  api("/api/status?since=" + state.logSeq).then(function(d){
-    state.failures = 0;
-    setOnline(true);
-
-    if(d.log){
-      appendLog(d.log.lines);
-      if(d.log.seq) state.logSeq = d.log.seq;
+  if(wasBusy && !whb.busy){
+    presenceFor = null;      /* what is on the drive has just changed */
+    loadDevices();
+    if(wasQueue){
+      var ok = d.queue.items.filter(function(q){ return q.state === "done"; }).length;
+      var cut = d.queue.items.some(function(q){ return q.state === "skipped"; });
+      toast("Queue " + (cut ? "stopped" : "finished") + ": " + ok + " of " + d.queue.items.length + " dumped",
+            ok === d.queue.items.length ? "ok" : "bad");
     }
-
-    var wasBusy = state.busy;
-    state.busy = !!d.busy;
-    state.job = d.job;
-    renderJob(d.job);
-
-    if(wasBusy && !state.busy){
-      loadDevices();
-      if(d.job.state === "done") toast("Dump complete", "ok");
-      else if(d.job.state === "failed") toast(d.job.message || "Dump failed", "bad");
-    }
-    if(wasBusy !== state.busy) updateAction();
-  }).catch(function(){
-    if(++state.failures >= 2) setOnline(false);
-  });
+    else if(d.job.state === "done") toast("Dump complete", "ok");
+    else if(d.job.state === "failed") toast(d.job.message || "Dump failed", "bad");
+  }
+  /* a queue moves through phases without the busy flag ever changing */
+  if(wasBusy !== whb.busy || queueActive() || wasQueue || jobStopping()) updateAction();
+  else renderQueue();
 }
+function pollStatus(){ return whbPoll(); }
 
 function loadDevices(){
-  return api("/api/devices").then(function(d){
+  var asked = state.launching ? state.launching.titleId : null;
+  return api("/api/devices" + (asked ? "?waiting=" + encodeURIComponent(asked) : "")).then(function(d){
     state.apps = d.apps || [];
     state.targets = d.targets || [];
+    state.incomplete = d.incomplete || [];
     state.configPath = d.configPath;
+    state.configOnConsole = !!d.configOnConsole;
 
     if(state.app && !selectedApp()) state.app = null;
     if(!state.app && state.apps.length === 1) state.app = state.apps[0].dir;
@@ -1342,13 +1803,19 @@ function loadDevices(){
     if(!state.target){
       /* default to the writable drive with the most space */
       var best = null;
-      state.targets.forEach(function(t){
-        if(t.writable && (!best || t.freeBytes > best.freeBytes)) best = t;
-      });
+      state.targets.forEach(function(t){ if(betterTarget(t, best)) best = t; });
       if(best) state.target = best.mount;
     }
 
     if(d.config) applyConfig(d.config);
+
+    /* Up, but with no package behind it: a game that was dumped before and
+       is served from a folder. Believed on the second answer in a row, in
+       case a package mount is merely late. */
+    if(state.launching && asked === state.launching.titleId){
+      state.launching.folderSeen = d.waitingRunsFromFolder ? (state.launching.folderSeen || 0) + 1 : 0;
+      if(state.launching.folderSeen >= 2) endLaunchWait("folder");
+    }
 
     /* the title we launched has finished mounting */
     if(state.launching){
@@ -1361,10 +1828,13 @@ function loadDevices(){
       }
     }
 
-    if(state.app && !state.busy) fetchSize(state.app);
-    renderApps(); renderDrives(); updateAction();
-    if(state.library !== null) libSig = null;
-  }).catch(function(e){ toast("Could not read the console state: " + e.message, "bad"); });
+    if(state.app && !whb.busy) fetchSize(state.app);
+    renderApps(); renderDrives(); renderIncomplete(); updateAction();
+    renderLibrary();
+  }).catch(function(e){
+    /* while the payload is down the banner says it all */
+    if(whb.online) toast("Could not read the console state: " + e.message, "bad");
+  });
 }
 
 /* ---------------- actions ---------------- */
@@ -1376,15 +1846,73 @@ function start(){
   $("logbox").innerHTML = "";
   state.samples = [];
 
-  post("/api/dump", {app: app.dir, target: state.target}).then(function(d){
-    state.busy = true;
+  var go = $("btn-go"), request = {app: app.dir, target: state.target};
+  if(go.classList.contains("arm")) request.overwrite = 1;
+  clearTimeout(overwriteArm);
+  go.classList.remove("arm");
+
+  post("/api/dump", request).then(function(d){
+    whb.busy = true;
     state.job = d.job;
     renderJob(d.job);
     updateAction();
     toast("Dumping " + app.title, "ok");
   }).catch(function(e){
+    if(e.body && e.body.exists){
+      /* a finished dump of this title is there - replacing it is a decision */
+      go.disabled = false;
+      go.classList.add("arm");
+      go.textContent = "Already dumped - replace it?";
+      toast(e.message + ". Press again to delete it and dump anew.", "bad");
+      overwriteArm = setTimeout(function(){ go.classList.remove("arm"); updateAction(); }, 6000);
+      return;
+    }
     toast(e.message, "bad");
     updateAction();
+  });
+}
+var overwriteArm;
+
+/* ---------------- dumps that were cut short ---------------- */
+var cutSig = null, cutArm;
+
+function renderIncomplete(){
+  var box = $("incomplete"), list = state.incomplete || [];
+  var sig = list.map(function(c){ return c.mount + "/" + c.folder + c.state; }).join("~") + "#" + whb.busy;
+  if(sig === cutSig) return;
+  cutSig = sig;
+
+  box.hidden = !list.length;
+  if(!list.length){ box.innerHTML = ""; return; }
+
+  box.innerHTML = '<div class="cut-head">Unfinished dumps</div>' + list.map(function(c, i){
+    return '<div class="cut-row"><span class="meta"><span class="name">' + esc(c.title) + '</span>' +
+      '<span class="id">' + esc(c.dest + "/" + c.folder) + " &middot; " + esc(c.state === "running" ? "interrupted" : c.state) + '</span></span>' +
+      '<button type="button" class="mini" data-cut="' + i + '"' + (whb.busy ? " disabled" : "") + '>Delete</button></div>';
+  }).join("");
+
+  Array.prototype.forEach.call(box.querySelectorAll("[data-cut]"), function(el){
+    el.addEventListener("click", function(){
+      var c = list[Number(el.getAttribute("data-cut"))];
+      if(!el.classList.contains("warn")){
+        el.classList.add("warn");
+        el.textContent = "Delete for good?";
+        clearTimeout(cutArm);
+        cutArm = setTimeout(function(){ el.classList.remove("warn"); el.textContent = "Delete"; }, 4000);
+        return;
+      }
+      clearTimeout(cutArm);
+      el.disabled = true;
+      el.textContent = "Deleting…";
+      post("/api/dumps/delete", {mount: c.mount, folder: c.folder}).then(function(){
+        toast("Removed " + c.folder, "ok");
+        presenceFor = null;
+        loadDevices();
+      }).catch(function(e){
+        toast(e.message, "bad");
+        cutSig = null; renderIncomplete();
+      });
+    });
   });
 }
 
@@ -1397,14 +1925,41 @@ function stop(){
     clearTimeout(armTimer);
     armTimer = setTimeout(function(){
       b.classList.remove("arm");
-      b.textContent = "Stop";
+      b.textContent = queueActive() ? "Stop queue" : "Stop";
     }, 4000);
     return;
   }
   clearTimeout(armTimer);
   b.disabled = true;
   post("/api/abort").then(function(){
-    toast("Stopping after the current file…");
+    toast("Stopping the dump…");
+  }).catch(function(e){
+    toast(e.message, "bad");
+  }).then(function(){ b.disabled = false; });
+}
+
+/* Ends the dump the queue is on and lets it carry on with the next title.
+   What was written so far stays on the drive, incomplete - hence the ask. */
+var skipArm, skipPhase = null;
+function stopThisDump(){
+  var b = $("btn-skip"), dumping = skipPhase === "dump";
+  if(dumping && !b.classList.contains("arm")){
+    b.classList.add("arm");
+    b.textContent = "Confirm - queue goes on";
+    clearTimeout(skipArm);
+    skipArm = setTimeout(function(){
+      b.classList.remove("arm");
+      b.textContent = "Stop this dump";
+    }, 4000);
+    return;
+  }
+  clearTimeout(skipArm);
+  b.classList.remove("arm");
+  b.textContent = dumping ? "Stop this dump" : "Skip this title";
+  b.disabled = true;
+  post("/api/queue/skip").then(function(){
+    toast(dumping ? "Stopping this dump - the queue goes on with the next title…"
+                  : "Skipping this title…");
   }).catch(function(e){
     toast(e.message, "bad");
   }).then(function(){ b.disabled = false; });
@@ -1412,109 +1967,75 @@ function stop(){
 
 /* ---------------- boot ---------------- */
 /* ---------------- destination folder picker ---------------- */
-var pk = { mount: null, path: "" };
-
-function pkDriveForBrowse(){
-  if(state.target) return state.target;
+/* the drive with the most room; the console itself only when there is none */
+function betterTarget(t, best){
+  if(!t.writable) return false;
+  if(!best) return true;
+  if(!!t.internal !== !!best.internal) return !t.internal;
+  return t.freeBytes > best.freeBytes;
+}
+function pkDriveForBrowse(forConsole){
+  if(forConsole){ var con = consoleTarget(); return con ? con.mount : null; }
+  if(state.target && !targetIsConsole()) return state.target;
   var best = null;
-  state.targets.forEach(function(t){
-    if(t.writable && (!best || t.freeBytes > best.freeBytes)) best = t;
-  });
+  state.targets.forEach(function(t){ if(!t.internal && betterTarget(t, best)) best = t; });
   return best ? best.mount : null;
 }
 
-function openPicker(){
-  if(state.busy) return;
-  var mount = pkDriveForBrowse();
-  if(!mount){ toast("Select a destination drive first.", "bad"); return; }
-  pk.mount = mount;
-  pk.path = "";
-  $("picker").hidden = false;
-  $("pk-name").value = "";
-  pkBrowse("");
-}
-
-function closePicker(){ $("picker").hidden = true; }
-
-function pkBrowse(path){
-  pk.path = path;
-  var list = $("pk-list");
-  list.innerHTML = '<div class="pk-empty">loading…</div>';
-
-  var q = "/api/browse?mount=" + encodeURIComponent(pk.mount) +
-          "&path=" + encodeURIComponent(path);
-  api(q).then(function(d){
-    pk.path = d.path || "";
-    renderPicker(d.dirs || []);
-  }).catch(function(e){
-    list.innerHTML = '<div class="pk-empty">' + esc(e.message) + '</div>';
+function openPicker(forConsole){
+  if(whb.busy){ toast("A dump is running - type the folder in, or browse when it is done.", "bad"); return; }
+  var mount = pkDriveForBrowse(forConsole);
+  if(!mount){ toast(forConsole ? "The console's storage is not available." : "Plug in a USB drive to choose a folder on it.", "bad"); return; }
+  whbPickFolder({
+    mount: mount,
+    onUse: function(m, path){
+      $(forConsole ? "c-subdir-console" : "c-subdir").value = path;
+      saveConfig();
+      updateAction();
+    }
   });
 }
 
-var FOLDER_SVG = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
-
-function renderPicker(dirs){
-  /* breadcrumb */
-  $("pk-drive").textContent = pk.mount;
-  $("pk-crumb").textContent = pk.path ? "/" + pk.path : "/";
-
-  /* destination preview */
-  $("pk-dest").textContent = pk.mount + (pk.path ? "/" + pk.path : "") + "/…";
-
-  var list = $("pk-list");
-  var html = "";
-
-  if(pk.path){
-    html += '<button class="pk-row up" type="button" data-up="1">' + FOLDER_SVG + '<span>.. up one level</span></button>';
-  }
-  if(!dirs.length && !pk.path){
-    // still allow selecting root; show hint
-  }
-  dirs.forEach(function(name){
-    html += '<button class="pk-row" type="button" data-dir="' + esc(name) + '">' + FOLDER_SVG +
-            '<span>' + esc(name) + '</span></button>';
+/* Choosing where a dump goes: the same dialog, with the destinations to
+   switch between, and "Move here" instead of storing a setting. */
+function openMovePicker(d){
+  if(whb.busy){ toast("A dump or a move is running.", "bad"); return; }
+  if(!d) return;
+  whbPickFolder({
+    mount: d.mount, path: d.dir || "",
+    title: "Move " + d.folder + " to…", useLabel: "Move here", createLabel: "Create & move",
+    leaf: d.folder,
+    note: d.inUse
+      ? "ShadowMount starts " + d.title + " from this folder. It can be moved while the game is not running; afterwards the game starts " +
+        "from its installed package again - unless ShadowMount finds the dump in its new place and links it anew" +
+        (state.shadowMount ? " (it is running: stop it on the Dumps page first to prevent that)." : ".")
+      : "",
+    drives: state.targets.filter(function(t){ return t.writable; })
+                         .map(function(t){ return { mount: t.mount, label: t.internal ? "Console storage" : t.mount }; }),
+    /* start where dumps on that destination usually go */
+    startPath: function(mount){
+      if(mount === d.mount) return d.dir || "";
+      var internal = false;
+      state.targets.forEach(function(t){ if(t.mount === mount) internal = !!t.internal; });
+      return (internal ? state.config.dumpSubdirConsole : state.config.dumpSubdir) || "";
+    },
+    onUse: function(toMount, toDir){
+      post("/api/dumps/move", {mount: d.mount, dir: d.dir, folder: d.folder, toMount: toMount, toDir: toDir}).then(function(r){
+        if(r.copying) toast("Copying " + d.folder + " - the original goes once the copy is complete.", "ok");
+        else toast(d.folder + " moved to " + toMount + (toDir ? "/" + toDir : ""), "ok");
+        loadDumps(); pollStatus();
+      }).catch(function(e){ toast(e.message, "bad"); });
+    }
   });
-  if(!dirs.length){
-    html += '<div class="pk-empty">no sub-folders here — create one below, or use this folder</div>';
-  }
-  list.innerHTML = html;
-
-  var up = list.querySelector('[data-up]');
-  if(up) up.addEventListener("click", function(){
-    var parts = pk.path.split("/"); parts.pop();
-    pkBrowse(parts.join("/"));
-  });
-  Array.prototype.forEach.call(list.querySelectorAll('[data-dir]'), function(el){
-    el.addEventListener("click", function(){
-      var name = el.getAttribute("data-dir");
-      pkBrowse(pk.path ? pk.path + "/" + name : name);
-    });
-  });
-}
-
-function pkCreate(){
-  var name = $("pk-name").value.trim();
-  if(!name){ toast("Enter a folder name.", "bad"); return; }
-  post("/api/mkdir", { mount: pk.mount, path: pk.path, name: name }).then(function(d){
-    $("pk-name").value = "";
-    pk.path = d.path;            // the folder just created
-    pkUse();                     // select it as the destination and close
-    toast("Folder created", "ok");
-  }).catch(function(e){ toast(e.message, "bad"); });
-}
-
-function pkUse(){
-  $("c-subdir").value = pk.path;
-  closePicker();
-  saveConfig();
-  updateAction();
 }
 
 fillLevels();
 wireSettings();
 
-$("btn-go").addEventListener("click", start);
+/* one button for both: with titles queued it starts the queue */
+$("btn-go").addEventListener("click", function(){ if(queueMode()) startQueue(); else start(); });
 $("btn-stop").addEventListener("click", stop);
+$("btn-skip").addEventListener("click", stopThisDump);
 $("btn-reload").addEventListener("click", function(){
   $("progress").classList.remove("show");
   $("btn-reload").style.display = "none";
@@ -1522,59 +2043,279 @@ $("btn-reload").addEventListener("click", function(){
 });
 $("refresh").addEventListener("click", function(){
   var jobs = [loadDevices()];
-  if(state.tab === "library" || state.library !== null) jobs.push(loadLibrary());
+  jobs.push(loadLibrary());
   Promise.all(jobs).then(function(){ toast("Rescanned"); });
 });
 
-$("tab-running").addEventListener("click", function(){ showTab("running"); });
-$("tab-library").addEventListener("click", function(){ showTab("library"); });
-$("clearlog").addEventListener("click", function(){
-  $("logbox").innerHTML = '<div class="empty">console cleared</div>';
-});
-$("c-subdir").addEventListener("input", updateAction);
-
-$("c-browse").addEventListener("click", openPicker);
-$("pk-close").addEventListener("click", closePicker);
-$("pk-cancel").addEventListener("click", closePicker);
-$("pk-use").addEventListener("click", pkUse);
-$("pk-create").addEventListener("click", pkCreate);
-$("pk-name").addEventListener("keydown", function(e){ if(e.key === "Enter") pkCreate(); });
-$("picker").addEventListener("click", function(e){ if(e.target === $("picker")) closePicker(); });
-document.addEventListener("keydown", function(e){ if(e.key === "Escape" && !$("picker").hidden) closePicker(); });
-
-var quitArm;
-$("quit").addEventListener("click", function(){
-  var b = $("quit");
-  if(!b.classList.contains("arm")){
-    if(state.busy){ toast("A dump is running.", "bad"); return; }
-    b.classList.add("arm");
-    b.textContent = "confirm shut down";
-    clearTimeout(quitArm);
-    quitArm = setTimeout(function(){ b.classList.remove("arm"); b.textContent = "shut down payload"; }, 4000);
-    return;
-  }
-  clearTimeout(quitArm);
-  post("/api/quit").then(function(){
-    setOnline(false);
-    b.textContent = "payload stopped";
-    b.disabled = true;
-    toast("The payload has been stopped. Relaunch it from the homebrew menu.");
-  }).catch(function(e){
-    b.classList.remove("arm");
-    b.textContent = "shut down payload";
-    toast(e.message, "bad");
+Array.prototype.forEach.call($("q-existing").querySelectorAll("button"), function(b){
+  b.addEventListener("click", function(){
+    state.queueReplace = b.getAttribute("data-v") === "1";
+    try { localStorage.setItem(PRESENCE_KEY, state.queueReplace ? "1" : ""); } catch(e){}
+    showExistingChoice(); updateAction();
   });
 });
 
-$("sub").textContent = "Web console · " + location.host;
+$("q-clear").addEventListener("click", clearQueueResult);
+$("q-empty").addEventListener("click", function(){
+  state.queue = [];
+  storeQueue(); markQueued(); renderQueue(); updateAction();
+});
 
+$("c-subdir").addEventListener("input", updateAction);
+$("c-subdir-console").addEventListener("input", updateAction);
+
+$("c-browse").addEventListener("click", function(){ openPicker(false); });
+$("c-browse-console").addEventListener("click", function(){ openPicker(true); });
+
+/* ---------------- dumps ---------------- */
+/* What has been dumped, wherever it lies, and moving it: within a drive at
+   once, between a drive and the console by copying. */
+state.dumps = []; state.move = null;
+function loadDumps(){
+  $("dumplist").innerHTML = state.dumps.length ? $("dumplist").innerHTML : '<div class="empty">looking for dumps…</div>';
+  api("/api/dumps?token=" + encodeURIComponent(accessToken())).then(function(d){
+    state.dumps = d.dumps || [];
+    state.dumpsConsoleListed = !!d.consoleListed;
+    $("smbanner").hidden = !d.shadowMountRunning;
+    state.shadowMount = !!d.shadowMountRunning;
+    renderDumps();
+  }).catch(function(e){ $("dumplist").innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; });
+}
+var DUMPVIEW_KEY = "dumps.view";
+state.dumpsView = "cards";
+try { if(localStorage.getItem(DUMPVIEW_KEY) === "list") state.dumpsView = "list"; } catch(e){}
+
+function dumpPath(d){ return d.mount + "/" + (d.dir ? d.dir + "/" : "") + d.folder; }
+function dumpTags(d){
+  return (d.titleId.indexOf("CUSA") === 0 ? '<span class="tag ps4">PS4</span>' : '<span class="tag ps5">PS5</span>') +
+    (/-patch0$/.test(d.folder) ? '<span class="tag pkg" title="The update of this game - its base game is a folder of its own, ending in -app0">PATCH</span>' : "") +
+    (/-ac$/.test(d.folder) ? '<span class="tag pkg" title="Additional content of this game, dumped from its own package mount">DLC</span>' : "") +
+    (d.state && d.state !== "done" ? '<span class="tag cut" title="This dump was not finished">UNFINISHED</span>' : "") +
+    (d.fself === 1 ? '<span class="tag pkg" title="The executables are FSELF files">FSELF</span>' : "") +
+    (d.inUse ? mountTag(dumpPath(d)) : "");
+}
+/* a finished dump whose executables are still plain ELF can get them as FSELF now */
+function canFself(d){ return (!d.state || d.state === "done") && d.fself !== 1; }
+function canUnfself(d){ return (!d.state || d.state === "done") && d.fself === 1; }
+/* the other half of a PS4 dump made with split: <id>-app0 next to <id>-patch0 */
+function dumpSibling(d){
+  var other = /-patch0$/.test(d.folder) ? d.titleId + "-app0" : /-app0$/.test(d.folder) ? d.titleId + "-patch0" : null;
+  var found = null;
+  if(other) state.dumps.forEach(function(x){ if(x.mount === d.mount && x.dir === d.dir && x.folder === other) found = x; });
+  return found;
+}
+function dumpIcon(d){
+  return "/api/dumps/icon?mount=" + encodeURIComponent(d.mount) + "&dir=" + encodeURIComponent(d.dir) +
+         "&folder=" + encodeURIComponent(d.folder) + (d.internal ? "&token=" + encodeURIComponent(accessToken()) : "");
+}
+function renderDumps(){
+  var cards = state.dumpsView !== "list";
+  Array.prototype.forEach.call($("dumps-view").querySelectorAll("button"), function(b){
+    b.setAttribute("aria-pressed", String(b.getAttribute("data-v") === (cards ? "cards" : "list")));
+  });
+
+  var groups = {}, order = [];
+  state.dumps.forEach(function(d){
+    if(!groups[d.mount]){ groups[d.mount] = []; order.push(d.mount); }
+    groups[d.mount].push(d);
+  });
+  var html = "";
+  order.forEach(function(mount){
+    var list = groups[mount];
+    list.sort(function(a, b){ return a.title < b.title ? -1 : a.title > b.title ? 1 : a.folder < b.folder ? -1 : 1; });
+    html += '<section class="card"><div class="head"><h2>' + (list[0].internal ? "Console storage" : esc(mount)) +
+            '</h2><span class="num">' + list.length + '</span></div><div class="body">' + (cards ? '<div class="dumpgrid">' : "");
+    list.forEach(function(d){
+      var at = state.dumps.indexOf(d);
+      if(cards){
+        html += '<div class="dumpcard"><span class="pic">' +
+                '<span class="noimg">' + esc(d.titleId) + '</span>' +
+                '<img alt="" loading="lazy" onerror="this.style.display=\'none\'" src="' +
+                  esc(d.hasIcon ? dumpIcon(d) : "/api/libicon?title=" + encodeURIComponent(d.titleId)) + '"></span>' +
+                '<span class="txt"><span class="name" title="' + esc(d.title) + '">' + esc(d.title) + '</span>' +
+                '<span class="tags">' + dumpTags(d) + '</span>' +
+                '<span class="where">' + esc(dumpPath(d)) + '</span>' +
+                '<span class="size">' + (d.bytes ? bytes(d.bytes) : "size not known") + '</span>' +
+                '<span class="acts">' +
+                (d.inUse ? '<button type="button" class="mini" data-unlink="' + at + '">Unlink</button>' : "") +
+                '<button type="button" class="mini" data-move="' + at + '">Move</button>' +
+                (canFself(d) ? '<button type="button" class="mini" data-fself="' + at + '" title="Turn the decrypted executables into FSELF files, as the FSELF option does while dumping; plain copies stay in decrypted/">FSELF</button>' : "") +
+                (canUnfself(d) ? '<button type="button" class="mini" data-unfself="' + at + '" title="Put the plain executables from decrypted/ back">Undo FSELF</button>' : "") +
+                '<button type="button" class="mini del" data-del="' + at + '">Delete</button></span></span></div>';
+      } else {
+        html += '<div class="dumprow"><span class="meta"><span class="name">' + esc(d.title) + '</span>' +
+                '<span class="where">' + dumpTags(d) + esc(dumpPath(d)) + '</span></span>' +
+                '<span class="size">' + (d.bytes ? bytes(d.bytes) : "") + '</span>' +
+                (d.inUse ? '<button type="button" class="mini" data-unlink="' + at + '" style="margin-right:6px">Unlink</button>' : "") +
+                (canFself(d) ? '<button type="button" class="mini" data-fself="' + at + '" style="margin-right:6px">FSELF</button>' : "") +
+                (canUnfself(d) ? '<button type="button" class="mini" data-unfself="' + at + '" style="margin-right:6px">Undo FSELF</button>' : "") +
+                '<button type="button" class="mini" data-move="' + at + '">Move</button>' +
+                '<button type="button" class="mini del" data-del="' + at + '" style="margin-left:6px">Delete</button></div>';
+      }
+    });
+    html += (cards ? '</div>' : "") + '</div></section>';
+  });
+  if(!order.length) html = '<div class="empty-state"><strong>No dumps found</strong>Dumps show up here once there are some, on any drive or on the console.</div>';
+  if(!state.dumpsConsoleListed) html += '<p class="hint" style="margin:0 4px 18px">Dumps on the console are listed once this device has entered the code.</p>';
+  $("dumplist").innerHTML = html;
+  Array.prototype.forEach.call($("dumplist").querySelectorAll("[data-move]"), function(b){
+    b.addEventListener("click", function(){ openMovePicker(state.dumps[Number(b.getAttribute("data-move"))]); });
+  });
+  Array.prototype.forEach.call($("dumplist").querySelectorAll("[data-del]"), function(b){
+    b.addEventListener("click", function(){ openDelete(state.dumps[Number(b.getAttribute("data-del"))]); });
+  });
+  /* takes the link off the installed game; the dump stays where it is */
+  Array.prototype.forEach.call($("dumplist").querySelectorAll("[data-fself]"), function(b){
+    b.addEventListener("click", function(){
+      var d = state.dumps[Number(b.getAttribute("data-fself"))];
+      if(whb.busy){ toast("A dump or a move is running.", "bad"); return; }
+      b.disabled = true; b.textContent = "Converting…";
+      post("/api/dumps/fself", {mount: d.mount, dir: d.dir, folder: d.folder}).then(function(r){
+        toast(r.converted + " file" + (r.converted === 1 ? "" : "s") + " turned into FSELF" +
+              (r.skipped ? ", " + r.skipped + " left as they were" : ""), "ok");
+        loadDumps();
+      }).catch(function(e){ toast(e.message, "bad"); b.disabled = false; b.textContent = "FSELF"; });
+    });
+  });
+  Array.prototype.forEach.call($("dumplist").querySelectorAll("[data-unfself]"), function(b){
+    b.addEventListener("click", function(){
+      var d = state.dumps[Number(b.getAttribute("data-unfself"))];
+      if(whb.busy){ toast("A dump or a move is running.", "bad"); return; }
+      b.disabled = true; b.textContent = "Restoring…";
+      post("/api/dumps/unfself", {mount: d.mount, dir: d.dir, folder: d.folder}).then(function(r){
+        toast(r.restored + " file" + (r.restored === 1 ? "" : "s") + " restored" + (r.skipped ? ", " + r.skipped + " not" : ""), r.restored ? "ok" : "bad");
+        loadDumps();
+      }).catch(function(e){ toast(e.message, "bad"); b.disabled = false; b.textContent = "Undo FSELF"; });
+    });
+  });
+  Array.prototype.forEach.call($("dumplist").querySelectorAll("[data-unlink]"), function(b){
+    b.addEventListener("click", function(){
+      var d = state.dumps[Number(b.getAttribute("data-unlink"))];
+      b.disabled = true;
+      post("/api/dumps/unlink", {mount: d.mount, dir: d.dir, folder: d.folder}).then(function(r){
+        toast(r.shadowMountRunning
+          ? d.title + " unlinked - but ShadowMount is running and will link it again at its next scan."
+          : d.title + " unlinked - it starts from its installed package again.", r.shadowMountRunning ? "bad" : "ok");
+        loadDumps(); loadLibrary();
+      }).catch(function(e){ toast(e.message, "bad"); b.disabled = false; });
+    });
+  });
+}
+Array.prototype.forEach.call($("dumps-view").querySelectorAll("button"), function(b){
+  b.addEventListener("click", function(){
+    state.dumpsView = b.getAttribute("data-v");
+    try { localStorage.setItem(DUMPVIEW_KEY, state.dumpsView); } catch(e){}
+    renderDumps();
+  });
+});
+/* Deleting is for good, so it is asked about in a dialog of its own that
+   names what goes - and the server wants the folder's name repeated. */
+var delTarget = null;
+function openDelete(d){
+  if(whb.busy){ toast("A dump or a move is running.", "bad"); return; }
+  if(!d) return;
+  delTarget = d;
+  $("del-title").textContent = d.title;
+  $("del-path").textContent = dumpPath(d);
+  $("del-size").textContent = (d.bytes ? bytes(d.bytes) : "size not known") +
+    (d.state && d.state !== "done" ? " - unfinished" : "") + (d.inUse ? " - an installed game is linked to it; the link goes too" : "");
+  var sib = dumpSibling(d);
+  $("del-note").textContent = "The folder and everything in it is removed from the drive for good. There is no bin to get it back from." +
+    (sib ? " Its other half, " + sib.folder + ", stays - it is a dump of its own and has its own Delete." : "");
+  $("delconfirm").hidden = false;
+}
+function closeDelete(){ $("delconfirm").hidden = true; delTarget = null; }
+$("del-close").addEventListener("click", closeDelete);
+$("del-cancel").addEventListener("click", closeDelete);
+$("del-go").addEventListener("click", function(){
+  var d = delTarget;
+  if(!d) return;
+  closeDelete();
+  post("/api/dumps/remove", {mount: d.mount, dir: d.dir, folder: d.folder, confirm: d.folder}).then(function(){
+    toast("Deleting " + d.folder + "…", "ok");
+    pollStatus();
+  }).catch(function(e){ toast(e.message, "bad"); });
+});
+
+function renderMove(m){
+  var was = state.move ? state.move.state : "idle";
+  state.move = m;
+  var shown = m && m.state !== "idle";
+  $("movecard").hidden = !shown;
+  if(!shown) return;
+  var running = m.state === "running";
+  var pct = m.totalBytes ? Math.min(100, m.copiedBytes / m.totalBytes * 100) : (running ? 0 : 100);
+  $("movecard").querySelector("h2").textContent = m.deleting ? "Deleting" : "Moving";
+  $("move-pct").textContent = running ? (m.deleting ? "…" : pct.toFixed(0) + "%") : m.state;
+  $("move-what").textContent = m.deleting ? m.folder + "  in  " + m.from : m.folder + ":  " + m.from + "  →  " + m.to;
+  $("move-bar").hidden = !!m.deleting;
+  $("move-bar").firstElementChild.style.width = pct.toFixed(1) + "%";
+  $("move-msg").textContent = running ? (m.deleting ? "removing the files - this can take a while" : bytes(m.copiedBytes) + " of " + bytes(m.totalBytes)) : m.message;
+  $("move-stop").hidden = !running || !!m.deleting;
+  $("move-ok").hidden = running;
+  /* A result is acted on once, whether or not "running" was ever seen - a
+     rename or a small delete is over before the next poll. */
+  var result = running ? null : m.state + "|" + m.folder + "|" + m.message;
+  if(result && result !== state.moveResult){
+    if(state.moveResult !== undefined || was === "running") toast(m.message, m.state === "done" ? "ok" : "bad");
+    loadDumps(); loadDevices();
+  }
+  state.moveResult = result;
+}
+$("dumps-rescan").addEventListener("click", loadDumps);
+/* ending somebody else's payload takes a second press */
+var smArm;
+$("sm-stop").addEventListener("click", function(){
+  var b = $("sm-stop");
+  if(!b.classList.contains("arm")){
+    b.classList.add("arm");
+    b.textContent = "Really stop it? Press again";
+    clearTimeout(smArm);
+    smArm = setTimeout(function(){ b.classList.remove("arm"); b.textContent = "Stop ShadowMount"; }, 5000);
+    return;
+  }
+  clearTimeout(smArm);
+  b.classList.remove("arm"); b.textContent = "Stop ShadowMount"; b.disabled = true;
+  post("/api/shadowmount/stop").then(function(){
+    toast("ShadowMount stopped. Moved dumps stay unlinked until it is started again.", "ok");
+    loadDumps();
+  }).catch(function(e){ toast(e.message, "bad"); }).then(function(){ b.disabled = false; });
+});
+$("move-stop").addEventListener("click", function(){ post("/api/dumps/move/cancel").catch(function(e){ toast(e.message, "bad"); }); });
+$("move-ok").addEventListener("click", function(){
+  post("/api/dumps/move/clear").then(function(){ renderMove({state: "idle"}); }).catch(function(e){ toast(e.message, "bad"); });
+});
+
+
+
+/* ---------------- the kit ---------------- */
+whb.app = {
+  name: "PS5 App Dumper",
+  elf: "ps5-app-dumper", shortName: "App Dumper", storage: "ps5-app-dumper",
+  busyText: "A dump is running.", afterBusy: "after the dump",
+  lockedFrom: "start, stop or delete anything",
+  statusPath: "/api/status",
+  views: { "#settings": "view-settings", "#dumps": "view-dumps" }, settingsView: "view-settings",
+  onView: function(page){ if(page === "view-dumps") loadDumps(); },
+  onOnline: function(){ loadDevices(); loadLibrary(); },
+  onStatus: onStatus,
+  onConfig: applyConfig
+};
+whbBoot();
+
+try { state.showAllOptions = !!localStorage.getItem(SHOWALL_KEY); } catch(e){}
+try { state.queueReplace = !!localStorage.getItem(PRESENCE_KEY); } catch(e){}
+restoreQueue();
+renderQueue();
 loadDevices();
+loadLibrary();
 pollStatus();
 setInterval(pollStatus, 1000);
 setInterval(function(){
-  if(state.busy) return;
+  /* a queue starts and closes games, so the listing keeps moving under it */
+  if(whb.busy && !queueActive()) return;
   loadDevices();
-  if(state.tab === "library") loadLibrary();
+  loadLibrary();
 }, 8000);
 })();
 </script>

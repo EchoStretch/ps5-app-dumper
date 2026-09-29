@@ -1,4 +1,11 @@
+build/
+ext/
 source/web_assets.c
+source/tile_assets.c
+source/self_elf.c
 *.elf
 dist/
 .claude/worktrees/
+harness/out/
+examples/*/build/
+test-build.mk

@@ -20,20 +20,40 @@ This tool **only dumps to USB**. The web interface controls the dump over the ne
 
 1. Plug in the USB drive and start the payload (see *Usage* below). A notification shows the address, for example `http://192.168.1.42:8081`.
 2. Open that address in any browser on the same network — a phone or PC works well, or the console's own browser.
-3. Pick the title under **Installed** and press **Start**, or launch the game on the console yourself.
+3. Press **Start** on a title, or launch the game on the console yourself. The game that is up appears as a card at the top of the list.
 4. Once it shows up under **Running**, choose the destination drive and press **Start dump**.
 
 The page shows every mounted title with its name, icon and version, the size of the selected title against the free space on each drive, the live transfer rate with an ETA, and the full log output. Settings changed in the page are written straight to `config.ini`.
 
-**Starting titles:** the **Installed** tab lists what is installed on the console, internal and external drives alike. Press **Start** and the payload launches the title, waits for it to mount and selects it for you. A PS5 runs one game at a time, so starting a title closes the running one — the button asks first.
+**Starting titles:** the list shows what is installed on the console, internal and external drives alike, with the running game on top. Press **Start** and the payload launches the title, waits for it to mount and selects it for you. A PS5 runs one game at a time, so starting a title closes the running one — the button asks first.
 
 Not every title starts this way. A title that the console itself refuses to launch from the home screen will not start from here either, and the page says so. If the console does not expose the launch service at all, the tab still lists the titles but without Start buttons.
 
+**Disc or package:** every title carries a **DISC** or **PKG** badge, and **DISC OUT** marks a disc game whose disc is not in the drive. With the disc out the payload goes by what it has seen before (kept in `disc_titles.txt` next to `config.ini`) and by the disc-copy bitmap an install from disc leaves behind — a guess, which the queue lets you correct.
+
+**Queue:** press **+ Queue** on several installed titles to dump them in one go. The queue card on the right orders them, and **Start queue** hands the list to the console: each title is started — which closes the one before it — and once it shows up as the running title it gets the *load time* to finish loading (`queue_delay`, 30 seconds by default) before it is dumped. A title that does not come up, does not fit on the drive or fails to dump is marked and the queue moves on. **Stop queue** aborts the current dump and skips the rest; the button next to it leaves only the title at hand and lets the queue carry on with the next one - **Skip this title** while it waits for a disc, the launch or the load time, **Stop this dump** once it is dumping, which asks first because the files written so far stay behind incomplete.
+
+Several disc games can share a queue. When the next title is a disc game and its disc is not in the drive, the queue holds — for as long as it takes, with a reminder on the console every two minutes — and carries on a few seconds after the disc is in. Every queued title has a settings button: decrypt, FSELF, backport target and the PS4 split mode can differ from title to title, and a title with settings of its own is marked **CUSTOM**. Each dump writes the settings it ran with into the log.
+
+Click the DISC/PKG badge of a queued title to correct it before starting. The queue runs on the console, so the browser can be closed in the meantime.
+
+Before a dump starts, single or queued, its size is compared with the free space on the drive; a dump that would not fit is refused instead of filling the drive.
+
+**When the payload is not running:** the PS5 browser keeps a copy of the page (HTML5 application cache), so the home-screen shortcut opens it even then. The page says that the dumper is not running and reconnects by itself once it is. If Payload Manager (pldmgr) is running on the console and has a ps5-app-dumper ELF in its payload list (any file name starting with `ps5-app-dumper`), the page offers a button that asks it to start the dumper. Nothing depends on this: without pldmgr the button simply is not there. After updating the payload the cached page refreshes itself on the next visit.
+
+**Keeping it in Payload Manager:** a payload sent over the network is gone after a reboot. Under *Menu > Settings* the page can store the running version in pldmgr as `ps5-app-dumper_v<version>.elf`; pldmgr reads the version it shows from that file name. The build embeds a copy of the ELF for this, which is why it is built in two stages.
+
+**Rest mode:** the payload survives it. The console switches its network off when it goes to rest, and takes the USB drives with it; the web UI waits, listens on the same port again once the network is back and says so with a notification, and the settings return to the drive when it is mounted again. Do not send the console to rest while a dump to a USB drive is running: the drive goes away under it.
+
 **Port:** the first port tried is `8081`, because the homebrew launcher normally holds `8080`. If it is busy the payload walks up to nine ports further and announces the one it settled on. Set `web_port` in `config.ini` to pick another.
 
-**Turning it off:** set `enable_webui = 0` to go back to the old behaviour (dump the running title immediately and exit), or `auto_start = 1` to keep the setting but dump right away.
+**Home-screen shortcut:** open **Menu > Settings** and press **Install** next to *Home-screen shortcut* to put an "App Dumper" tile on the console's home screen. The tile opens the web interface in the console's browser. It is a shortcut only: it does **not** start the payload, so load the payload first as usual. The tile remembers the port the web interface was using when it was installed; if that changes, press **Reinstall**. Installing is refused while a dump or a queue is running. To remove the tile, delete it from the home screen like any other title.
 
-> The interface has no password. Anyone on your network who can reach the console can start a dump while the payload runs — use it on a network you trust, and shut the payload down from the footer link when you are done.
+**Turning it off:** set `enable_webui = 0` to go back to the old behaviour (dump the running title immediately and exit). With `auto_start = 1` the payload dumps the running title right at launch *and* serves the web interface, so the dump can be watched or stopped and the switch can be turned off again.
+
+**Access code:** anyone on your network can open the page and look, but a phone or PC has to enter a six-digit code once before it may start, stop or delete anything. The console shows the code in the notification it sends at start; the dialog that asks for it can put it on the TV again, and a device that is already in finds it under *Menu > Settings*. The console's own browser never needs it. The code is kept in `config.ini` (`access_code`, next to the `access_token` devices hold afterwards) — delete both lines to lock every device out and get a new code, or switch *Ask other devices for a code* off under *Menu > Settings* to do without (`require_code = 0`). That switch only works in the console's own browser, so a phone that got in cannot leave the door open.
+
+> The code keeps other people's devices from *changing* things. It does not hide anything: the title list, the log and folder names on your drives are readable by anyone who can reach the console, and the connection is plain HTTP. Use it on a network you trust, and shut the payload down from the footer link when you are done.
 
 ---
 
@@ -44,6 +64,8 @@ Not every title starts this way. A title that the console itself refuses to laun
   * Repository: [https://github.com/ps5-payload-dev/pacbrew-repo](https://github.com/ps5-payload-dev/pacbrew-repo)
 
 * A PS5 able to run payloads (Jailbroken 1.00 - 13.60).
+
+  * The web interface and what came with it - starting titles, the home-screen shortcut, replacing a running copy - have been tested on firmware **5.10** and **12.00**. They go through system services that differ between firmwares, so other versions may behave differently; the dump itself does not depend on them.
 
 * A USB drive formatted and mounted on the PS5 (the dumper writes files to the USB).
 
@@ -69,7 +91,13 @@ make
 
 You should get an ELF binary such as `ps5-app-dumper.elf`.
 
+The web console stands on **webhb**, the web-homebrew core that grew in this repository and is a project of its own now. It is not copied in here: `webhb.lock` pins a release (version, download URL, sha256), and the first `make` installs exactly that archive into `ext/webhb/` (`tools/get-webhb.sh`). With a webhb checkout next to this repository (`../webhb`) and nothing installed, the checkout is used instead; `make WEBHB_DIR=<path>` points anywhere else, `WEBHB_TARBALL=<file> tools/get-webhb.sh` installs from a local archive.
+
 ---
+
+### Working on it without a console
+
+`harness/` builds the web server, the dump job, the queue and the dump store for the host and runs them against a pretend console: `make -C harness run`, then open `http://127.0.0.1:8099/`. It needs no SDK. `make -C harness snapshot` records every route's answer and `make -C harness styles` the computed style of every element in every view - two ways to show that a change which was not meant to be seen cannot be seen. See `harness/README.md` for what it can and cannot show.
 
 ## Usage
 
@@ -125,21 +153,45 @@ socat -t 99999999 - TCP:<ip>:9021 < ps5-app-dumper.elf
 
 ## Configuration
 
-`config.ini` lives next to the dump, in `<drive>/homebrew/`. It is created on first run and rewritten whenever a setting is changed in the web interface.
+`config.ini` lives in `homebrew/ps5-app-dumper/`, together with the list of known disc titles and `logs/` (a general `dumper.log` plus one log per dump) - on a USB drive, or on the console itself under `/data`. **A drive that carries a `config.ini` wins**: it travels with the stick and can be edited on a PC. Without such a drive the console's copy is used, so settings and the access code survive without anything plugged in; *Menu > Settings > Copy to console* puts the drive's settings there as well. The file is rewritten whenever a setting is changed in the web interface. Files that older versions kept in `<drive>/ps5-app-dumper/` or `<drive>/homebrew/` are moved over automatically.
+
+**Where dumps go:** to the selected destination - a USB drive, or *Console storage* (`/data`) when you choose it; it is never picked automatically while a drive is there, and always keeps 10 GB free. Each kind of destination remembers a dump folder of its own (`dump_subdir`, `dump_subdir_console`, both chosen with *Browse*); a new install defaults to `homebrew/ps5-app-dumper/dumps` on both, an existing `config.ini` keeps what it says. Browsing the console's folders needs the access code, browsing a stick does not. Dumps still go to `<drive>/homebrew/` unless `dump_subdir` says otherwise.
+
+### The dumps you have
+
+*Menu > Dumps* lists every dump the payload can find - on each drive and on the console, in the configured folders or anywhere else within a few levels of the root - with its size and state. **Move** takes one to another folder: within a drive at once, between a drive and the console by copying it, comparing the size, and only then removing the original; a stop or an incomplete copy removes the copy instead and leaves the dump where it was. Nothing else runs meanwhile. Dumps on the console are only listed for devices that have entered the access code.
+
+The list can be shown as cards with each dump's own picture, or as a plain list. **Delete** removes a dump for good after a dialog that names it, its folder and its size; like Move it only ever touches a folder that is a dump (our info file next to it, or `sce_sys` / `eboot.bin` inside), never while something is running, and never a folder a game is being played from.
+
+> ShadowMount looks for games on its scan paths (`homebrew` among them, searched in depth) and redirects an installed title to a dump it finds there - the title then shows **MOUNT**, runs from the dump instead of its package, and cannot be dumped again. Moving the dump out of its reach is the way out; the payload then removes the link that points at the old place. While ShadowMount is running it links whatever it still finds anew, so the Dumps page says when it is and offers **Stop ShadowMount** (two presses). That only ends the process - start it again the way you usually do.
+
+### Existing and unfinished dumps
+
+Every dump leaves a small `<folder>.dump-info.json` next to its folder: the title, the settings it was made with, and whether it was finished. With that the payload never mixes two dumps in one folder:
+
+* a dump that was **cut short** is removed before its title is dumped again, and is listed under *Unfinished dumps* in the destination panel, where it can be deleted;
+* a **finished** dump is only replaced when you confirm it - the start button asks. A queue runs unattended, so it is told up front: *Existing dumps* in the queue card is **Skip** (the default) or **Replace**, the queued titles that are on the drive already carry a **DUMPED** badge, and starting a queue that replaces dumps asks for confirmation once. `auto_start` always leaves such a title alone;
+* a folder **without** an info file - an older dump, or something else - counts as finished and is never deleted unasked.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `enable_webui` | `1` | Serve the web interface instead of dumping right away |
-| `auto_start` | `0` | Dump the running title immediately, even with the web UI enabled |
+| `auto_start` | `0` | Dump the running title right at launch; the web UI comes up as well |
 | `web_port` | `8081` | First TCP port tried for the web interface |
-| `dump_subdir` | `homebrew` | Folder below the drive that receives the dump |
+| `dump_subdir` | `homebrew/ps5-app-dumper/dumps` | Folder below a drive's mount point that receives the dump |
+| `dump_subdir_console` | `homebrew/ps5-app-dumper/dumps` | The same below `/data`, when dumping to the console itself |
+| `queue_delay` | `30` | Seconds a queued title gets to load before its dump starts, 5-600 |
 | `enable_decrypter` | `1` | Decrypt SELF/SPRX files while dumping |
 | `enable_elf2fself` | `0` | Re-sign decrypted executables as FSELF |
 | `enable_backport` | `0` | Patch SDK versions down — advanced, may break the dump |
 | `ps4_backport_level` | `4` | PS4 SDK target, 1-6 |
 | `ps5_backport_level` | `1` | PS5 SDK target, 1-10 |
-| `enable_logging` | `1` | Write `log.txt` next to the dump |
+| `enable_logging` | `1` | Write `logs/dumper.log` and one log per dump in the data folder |
 | `split` | `3` | PS4 layout: 0 none, 1 app, 2 patch, 3 both |
+| `require_code` | `1` | Other devices need the code from the TV before they may change anything; can only be switched in the console's own browser |
+| `access_code`, `access_token` | made up | The six-digit code and what a device keeps after entering it. Delete both lines to lock every device out again and get a new code |
+
+The web UI writes the file; hand edits are picked up on the next start, and a value out of range is pulled into it rather than refused.
 
 ---
 
@@ -152,6 +204,15 @@ Contributions are welcome. When opening issues or PRs, please include:
 * The PS5 firmware version used during testing and any relevant SDK info.
 
 ---
+
+## Builds for testers
+
+A build that should not travel: copy `test-build.mk.example` to
+`test-build.mk`, fill in the last day, the firmware and the console ids, and
+run `make test-build`. The ELF lands in `dist/` under a name that says what it
+is, and on any other console or day it ends with a toast (webhb's
+`webhb/testgate.c`). A tester learns their console id from `test-probe.elf`
+or from the toast of a build that let them in.
 
 ## Credits / Links
 
