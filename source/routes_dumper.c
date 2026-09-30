@@ -402,45 +402,74 @@ static int apply_item_settings(dumper_config_t *cfg, const char *spec)
 /* "PPSA01234,CUSA05678" -> the titles to dump, in that order. "discs" names
    those among them the user marked as disc games; when the page sends it,
    even empty, it overrules what the scanner believes. */
+/* The queue arrives in pieces, "q0", "q1", ...: a value holds at most
+   WHB_PARAM_MAX bytes and a request at most a few dozen parameters, and 64
+   titles with their settings fit neither as one list nor as one parameter
+   each. Every piece is a comma list of <title id>[*][:<settings>] - '*' for
+   a disc game, the settings of a title that has its own. A page from before
+   (the browser may still hold one) sends "titles", "discs" and "o_<id>". */
+#define QUEUE_PIECES 16
+
 static void handle_queue_start(whb_req_t *req)
 {
     const char *target = whb_param(req, "target", NULL);
     if (!target || !*target) { whb_send_error(req, 400, "no destination selected"); return; }
 
-    char list[WHB_PARAM_MAX];
-    snprintf(list, sizeof(list), "%s", whb_param(req, "titles", ""));
+    char (*buf)[WHB_PARAM_MAX] = calloc(QUEUE_PIECES + 1, WHB_PARAM_MAX);
+    dumper_config_t *own = calloc(QUEUE_MAX + 1, sizeof(*own));
+    if (!buf || !own) { free(buf); free(own); whb_send_error(req, 500, "out of memory"); return; }
 
     const char *ids[QUEUE_MAX + 1];
-    int count = 0;
-
-    for (char *tok = strtok(list, ","); tok; tok = strtok(NULL, ",")) {
-        if (count > QUEUE_MAX) break;   /* one over, so queue_start reports it */
-        ids[count++] = tok;
-    }
-
-    const char *discs = whb_param(req, "discs", NULL);
+    const char *specs[QUEUE_MAX + 1] = {0};
     int is_disc[QUEUE_MAX + 1] = {0};
-    for (int i = 0; discs && i < count; i++)
-        is_disc[i] = (strstr(discs, ids[i]) != NULL);
+    int count = 0, discs_known = 0;
+
+    if (whb_param(req, "q0", NULL)) {
+        discs_known = 1;
+        for (int piece = 0; piece < QUEUE_PIECES; piece++) {
+            char key[8];
+            snprintf(key, sizeof(key), "q%d", piece);
+            const char *val = whb_param(req, key, NULL);
+            if (!val) break;
+            snprintf(buf[piece], WHB_PARAM_MAX, "%s", val);
+
+            char *save = NULL;
+            for (char *tok = strtok_r(buf[piece], ",", &save); tok; tok = strtok_r(NULL, ",", &save)) {
+                if (count > QUEUE_MAX) break;   /* one over, so queue_start reports it */
+                char *colon = strchr(tok, ':');
+                if (colon) { *colon = '\0'; specs[count] = colon + 1; }
+                size_t n = strlen(tok);
+                if (n && tok[n - 1] == '*') { tok[n - 1] = '\0'; is_disc[count] = 1; }
+                ids[count++] = tok;
+            }
+        }
+    } else {
+        snprintf(buf[QUEUE_PIECES], WHB_PARAM_MAX, "%s", whb_param(req, "titles", ""));
+        char *save = NULL;
+        for (char *tok = strtok_r(buf[QUEUE_PIECES], ",", &save); tok; tok = strtok_r(NULL, ",", &save)) {
+            if (count > QUEUE_MAX) break;
+            ids[count++] = tok;
+        }
+        const char *discs = whb_param(req, "discs", NULL);
+        discs_known = discs != NULL;
+        for (int i = 0; discs && i < count; i++)
+            is_disc[i] = (strstr(discs, ids[i]) != NULL);
+        for (int i = 0; i < count; i++) {
+            char key[32];
+            snprintf(key, sizeof(key), "o_%s", ids[i]);
+            specs[i] = whb_param(req, key, NULL);
+        }
+    }
 
     dumper_config_t cfg;
     cfg_snapshot(&cfg);
 
-    /* "o_<title id>" carries the settings of a title that has its own */
-    dumper_config_t *own = calloc(QUEUE_MAX + 1, sizeof(*own));
-    if (!own) { whb_send_error(req, 500, "out of memory"); return; }
-
     const dumper_config_t *item_cfg[QUEUE_MAX + 1] = {0};
     for (int i = 0; i < count && i <= QUEUE_MAX; i++) {
-        char key[32];
-        snprintf(key, sizeof(key), "o_%s", ids[i]);
-
-        const char *spec = whb_param(req, key, NULL);
-        if (!spec || !*spec) continue;
-
+        if (!specs[i] || !*specs[i]) continue;
         own[i] = cfg;
-        if (apply_item_settings(&own[i], spec) != 0) {
-            free(own);
+        if (apply_item_settings(&own[i], specs[i]) != 0) {
+            free(own); free(buf);
             whb_send_error(req, 400, "invalid settings for a queued title");
             return;
         }
@@ -448,10 +477,10 @@ static void handle_queue_start(whb_req_t *req)
     }
 
     char err[160] = {0};
-    int rc = queue_start(ids, discs ? is_disc : NULL, item_cfg, count, target,
+    int rc = queue_start(ids, discs_known ? is_disc : NULL, item_cfg, count, target,
                          cfg.queue_delay, whb_param_int(req, "replace", 0),
                          &cfg, err, sizeof(err));
-    free(own);
+    free(own); free(buf);
 
     if (rc != 0) {
         whb_send_error(req, 409, err[0] ? err : "could not start the queue");

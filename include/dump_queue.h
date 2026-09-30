@@ -23,7 +23,7 @@ along with this program; see the file COPYING. If not, see
 
 #include "utils.h"
 
-#define QUEUE_MAX        16
+#define QUEUE_MAX        64
 #define QUEUE_SETTLE_MIN 5
 #define QUEUE_SETTLE_MAX 600
 

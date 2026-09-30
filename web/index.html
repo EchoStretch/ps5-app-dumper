@@ -961,7 +961,7 @@ function renderLaunchBanner(){
 /* ---------------- queue ---------------- */
 /* The queue is put together in the browser and handed to the console in one
    go; from then on the console owns it and this page only mirrors it. */
-var QUEUE_MAX = 16, QUEUE_KEY = "ps5-app-dumper.queue";
+var QUEUE_MAX = 64, QUEUE_KEY = "ps5-app-dumper.queue";
 
 function storeQueue(){
   try { localStorage.setItem(QUEUE_KEY, JSON.stringify(state.queue)); } catch(e){}
@@ -1120,8 +1120,13 @@ function refreshPresence(){
 
   clearTimeout(presenceTimer);
   presenceTimer = setTimeout(function(){
-    api("/api/dumps/presence?target=" + encodeURIComponent(state.target) + "&titles=" + encodeURIComponent(ids)).then(function(d){
-      state.presence = d.titles || {};
+    /* 15 ids a request: the payload takes values of 191 bytes at most */
+    var all = ids.split(","), asks = [];
+    for(var i = 0; i < all.length; i += 15)
+      asks.push(api("/api/dumps/presence?target=" + encodeURIComponent(state.target) + "&titles=" + encodeURIComponent(all.slice(i, i + 15).join(","))));
+    Promise.all(asks).then(function(parts){
+      state.presence = {};
+      parts.forEach(function(d){ for(var k in d.titles || {}) state.presence[k] = d.titles[k]; });
       queueSig = null;
       renderQueue(); updateAction();
     }).catch(function(){ presenceFor = null; });
@@ -1288,12 +1293,15 @@ function startQueue(){
   b.classList.remove("arm");
   b.disabled = true;
 
-  var ids = state.queue.map(function(q){ return q.titleId; });
-  var discs = state.queue.filter(function(q){ return q.media === "disc"; })
-                         .map(function(q){ return q.titleId; });
-  var request = {titles: ids.join(","), discs: discs.join(","), target: state.target,
-                 replace: state.queueReplace ? 1 : 0};
-  state.queue.forEach(function(q){ if(q.own) request["o_" + q.titleId] = ownSpec(q); });
+  /* in pieces of a few titles: the payload takes values of 191 bytes at most
+     (routes_dumper.c, handle_queue_start) */
+  var request = {target: state.target, replace: state.queueReplace ? 1 : 0}, piece = "", n = 0;
+  state.queue.forEach(function(q){
+    var item = q.titleId + (q.media === "disc" ? "*" : "") + (q.own ? ":" + ownSpec(q) : "");
+    if(piece && piece.length + 1 + item.length > 180){ request["q" + n++] = piece; piece = ""; }
+    piece += (piece ? "," : "") + item;
+  });
+  if(piece) request["q" + n] = piece;
   post("/api/queue/start", request).then(function(){
     state.queue = [];
     state.queueOpen = null;
