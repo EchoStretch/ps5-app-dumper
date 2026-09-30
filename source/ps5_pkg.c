@@ -60,8 +60,10 @@ static void *custom_memmem(const void *haystack, size_t haystacklen,
 
 /* ------------------- Read Null-Terminated String ------------------- */
 
-/* ------------------- PARSE APP.JSON FOR APP_SC.PKG OFFSET & SIZE ------------------- */
-static int parse_app_json(const char *json_path, uint64_t *out_offset, uint64_t *out_size)
+/* ------------------- PARSE <PKG>.JSON FOR THE _SC.PKG PIECE ------------------- */
+/* The piece is "<CONTENT-ID>_sc.pkg" for games and DLC alike ("app_sc.pkg"
+   in some app.json files). */
+static int parse_pkg_json(const char *json_path, uint64_t *out_offset, uint64_t *out_size)
 {
     int fd = open(json_path, O_RDONLY);
     if (fd < 0) return -1;
@@ -71,8 +73,7 @@ static int parse_app_json(const char *json_path, uint64_t *out_offset, uint64_t 
     close(fd);
     if (r <= 0) return -1;
 
-    /* Find "app_sc.pkg" piece in pieces array */
-    char *sc_entry = strstr(buf, "app_sc.pkg");
+    char *sc_entry = strstr(buf, "_sc.pkg");
     if (!sc_entry) return -1;
 
     /* Backtrack to beginning of JSON object block for app_sc.pkg */
@@ -206,21 +207,16 @@ int unpkg_ps5(const char *pkgfn, const char *tidpath)
     uint64_t cnt_offset = UINT64_MAX;
     uint64_t cnt_size = 0;
 
-    /* 1. Get path to app.json */
+    /* 1. The json next to the package: app.pkg -> app.json, ac.pkg -> ac.json */
     char json_path[512] = {0};
-    char pkg_dir[512] = {0};
-    strncpy(pkg_dir, pkgfn, sizeof(pkg_dir) - 1);
+    size_t pkg_len = strlen(pkgfn);
+    if (pkg_len > 4 && pkg_len < sizeof(json_path) - 1 && strcmp(pkgfn + pkg_len - 4, ".pkg") == 0)
+        snprintf(json_path, sizeof(json_path), "%.*s.json", (int)(pkg_len - 4), pkgfn);
 
-    char *last_slash = strrchr(pkg_dir, '/');
-    if (last_slash) {
-        *last_slash = '\0';
-        snprintf(json_path, sizeof(json_path), "%s/app.json", pkg_dir);
-    }
-
-    /* 2. Check app.json for offset */
-    if (json_path[0] != '\0' && parse_app_json(json_path, &cnt_offset, &cnt_size) == 0)
+    /* 2. Check the json for offset */
+    if (json_path[0] != '\0' && parse_pkg_json(json_path, &cnt_offset, &cnt_size) == 0)
     {
-        write_log(g_log_path, "Parsed %s -> app_sc.pkg offset: 0x%llX",
+        write_log(g_log_path, "Parsed %s -> _sc.pkg offset: 0x%llX",
                   json_path, (unsigned long long)cnt_offset);
     }
     else
