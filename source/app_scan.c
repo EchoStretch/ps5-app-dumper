@@ -685,9 +685,14 @@ static int installed_percent_at(const char *root, const char *title_id)
    it needs - the languages it is set to, say. So the bitmap can stand below
    100 % for good. What the shell thinks about it is in <root>/<id>/app.xml
    ("playgo-status"): one <chunk> per chunk with locus="3" when it is here,
-   and req_locus="3" when this console wants it. The install is over when
-   every wanted chunk is here. Seen on FW 12.00: Hogwarts Legacy at 73 % with
-   7 of 21 chunks wanted, all 7 present, the bitmap untouched for days. */
+   and req_locus="3" when this console wants it; a chunk it does not want
+   may be left out altogether, chunk_count says how many there are. Seen on
+   FW 12.00: Hogwarts Legacy at 73 % with 7 of 21 chunks wanted, all 7
+   present, the bitmap untouched for days.
+   The shell writes the file when the install starts and does not always come
+   back to it: FF7 Rebirth and Remake (FW 10.60) still said locus="0" for most
+   wanted chunks three months after the bitmap last moved, Remake's at 100 %.
+   So which chunks are wanted can be read here, whether they arrived cannot. */
 static int playgo_status_at(const char *root, const char *title_id, playgo_status_t *st)
 {
     char path[320];
@@ -703,6 +708,9 @@ static int playgo_status_at(const char *root, const char *title_id, playgo_statu
 
     memset(st, 0, sizeof(*st));
     if (!strstr(xml, "playgo-status")) { free(xml); return -1; }
+
+    const char *cc = strstr(xml, "chunk_count=\"");
+    int declared = cc ? atoi(cc + 13) : 0;
 
     for (const char *p = strstr(xml, "<chunk "); p; p = strstr(p + 1, "<chunk ")) {
         const char *end = strchr(p, '>');
@@ -720,6 +728,7 @@ static int playgo_status_at(const char *root, const char *title_id, playgo_statu
         }
     }
     free(xml);
+    if (declared > st->chunks) st->chunks = declared;
     return st->chunks ? 0 : -1;
 }
 
@@ -731,8 +740,9 @@ int title_playgo_status(const char *title_id, playgo_status_t *st)
     return -1;
 }
 
-/* Without a PlayGo status (PS4 titles, older layouts) the bitmap has to do:
-   blocks still arrive while it keeps changing. */
+/* Blocks still arrive while the bitmap keeps changing. A PlayGo status that
+   has every wanted chunk here settles it at once; one that does not is not
+   believed (see playgo_status_at), the bitmap decides. */
 #define INSTALL_QUIET_SECONDS (10 * 60)
 
 int title_install_pending(const char *title_id)
@@ -741,7 +751,7 @@ int title_install_pending(const char *title_id)
     if (pct < 0 || pct >= 100) return 0;
 
     playgo_status_t st;
-    if (title_playgo_status(title_id, &st) == 0) return st.here < st.wanted;
+    if (title_playgo_status(title_id, &st) == 0 && st.wanted && st.here >= st.wanted) return 0;
 
     for (int r = 0; g_app_roots[r].path; r++) {
         char path[320];

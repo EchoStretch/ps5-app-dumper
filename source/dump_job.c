@@ -286,10 +286,10 @@ int job_start(const char *app_dir, const char *mount,
                 FAIL(why);
             }
             playgo_status_t pg;
-            if (title_playgo_status(id, &pg) == 0)
-                write_log(g_log_path, "%s: %d of %d chunks are wanted on this console and all are here; "
+            if (title_playgo_status(id, &pg) == 0 && pg.wanted < pg.chunks)
+                write_log(g_log_path, "%s: %d %% here, the install is over; this console wants %d of %d chunks, "
                                       "the other %d (other languages or regions) were never fetched - dumping what is there",
-                          id, pg.wanted, pg.chunks, pg.chunks - pg.wanted);
+                          id, installed, pg.wanted, pg.chunks, pg.chunks - pg.wanted);
             else
                 write_log(g_log_path, "%s has %d %% of its package on the console and the rest never arrived "
                                       "(content the console did not fetch) - dumping what is there", id, installed);
