@@ -55,7 +55,8 @@ static int run_headless(const dumper_config_t *cfg)
 
     write_log(logpath, "=== PS5 App Dumper v%s ===", VERSION);
 
-    app_entry_t apps[APP_SCAN_MAX];
+    /* not on the stack: with room for DLC each entry is a few KB */
+    static app_entry_t apps[APP_SCAN_MAX];
     int count = app_scan(apps, APP_SCAN_MAX);
 
     if (count <= 0) {

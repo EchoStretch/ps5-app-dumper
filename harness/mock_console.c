@@ -146,6 +146,12 @@ static void fill_lib(library_entry_t *e, int i)
     if (title_playgo_status(LIB[i].id, &e->playgo) != 0) memset(&e->playgo, 0, sizeof(e->playgo));
     if (!strcmp(LIB[i].id, "PPSA07777") && g_folder_linked) strcpy(e->mounted_from, FOLDER_GAME_DUMP);
     e->is_running = (running_now(id) && !strcmp(id, LIB[i].id)) || title_runs_from_folder(LIB[i].id);
+    /* Astro has one DLC with content (it mounts, see app_find) and one that only unlocks */
+    if (!strcmp(LIB[i].id, "PPSA01234")) {
+        e->addcont_count = 2;
+        strcpy(e->addcont[0], "ASTRODLC01000000"); e->addcont_bytes[0] = 1288490188;
+        strcpy(e->addcont[1], "ASTROUNLOCK00000"); e->addcont_bytes[1] = 1376256;
+    }
 }
 
 int library_scan(library_entry_t *out, int max)

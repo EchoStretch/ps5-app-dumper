@@ -782,6 +782,44 @@ static void read_mount_link(const char *root, const char *title_id, char *out, s
     if (!out[0] || out[0] != '/') snprintf(out, out_size, "%s", "(unknown folder)");
 }
 
+/* "DBSZ0CHAPOPACK00": sixteen capitals and digits, as the content id ends */
+static int is_addcont_label(const char *s)
+{
+    if (strlen(s) != 16) return 0;
+    for (; *s; s++)
+        if (!((*s >= 'A' && *s <= 'Z') || (*s >= '0' && *s <= '9'))) return 0;
+    return 1;
+}
+
+static void library_find_addcont(library_entry_t *e)
+{
+    static const char *const roots[] = { "/user/addcont", "/mnt/ext0/user/addcont", "/mnt/ext1/user/addcont", NULL };
+
+    e->addcont_count = 0;
+    for (int r = 0; roots[r]; r++) {
+        char dir[160];
+        snprintf(dir, sizeof(dir), "%s/%s", roots[r], e->title_id);
+        DIR *d = opendir(dir);
+        if (!d) continue;
+        struct dirent *ent;
+        while ((ent = readdir(d)) && e->addcont_count < DLC_MAX) {
+            if (!is_addcont_label(ent->d_name)) continue;
+            int seen = 0;
+            for (int i = 0; i < e->addcont_count; i++)
+                if (strcmp(e->addcont[i], ent->d_name) == 0) seen = 1;
+            if (seen) continue;
+
+            char pkg[224];
+            struct stat st;
+            snprintf(pkg, sizeof(pkg), "%s/%s/ac.pkg", dir, ent->d_name);
+            if (stat(pkg, &st) != 0) continue;
+            snprintf(e->addcont[e->addcont_count], sizeof(e->addcont[0]), "%s", ent->d_name);
+            e->addcont_bytes[e->addcont_count++] = (uint64_t)st.st_size;
+        }
+        closedir(d);
+    }
+}
+
 static void library_fill(library_entry_t *e, const char *title_id, const char *root, const char *label)
 {
     memset(e, 0, sizeof(*e));
@@ -810,6 +848,8 @@ static void library_fill(library_entry_t *e, const char *title_id, const char *r
     e->is_disc = e->on_disc || title_is_disc_game(e->title_id);
     /* a title ShadowMount serves from a dump folder does not need its disc */
     if (e->mounted_from[0] && !e->on_disc) e->is_disc = 0;
+
+    library_find_addcont(e);
 }
 
 int library_scan(library_entry_t *out, int max)

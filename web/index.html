@@ -673,9 +673,37 @@ function installing(t){ return !!t.installing; }
 function partial(t){ return !t.installing && typeof t.installed === "number" && t.installed >= 0 && t.installed < 100; }
 function dlcTag(a){
   var n = a.dlc ? a.dlc.length : 0;
+  var known = libraryEntry(a.titleId);
+  var more = (known && known.addcont ? known.addcont.length : 0) - n;
+  if(!n) return addcontTag(known);
   var on = !state.config || state.config.dumpDlc !== 0;
-  return n ? '<span class="tag pkg"' + (on ? "" : ' style="opacity:.5;text-decoration:line-through"') + ' title="' + esc(a.dlc.join(", ")) +
-             (on ? ' - dumped along, each as a folder of its own' : ' - not dumped: DLC are switched off under Settings') + '">+' + n + ' DLC</span>' : "";
+  return '<span class="tag pkg"' + (on ? "" : ' style="opacity:.5;text-decoration:line-through"') + ' title="' + esc(a.dlc.join(", ")) +
+         (on ? ' - dumped along, each as a folder of its own' : ' - not dumped: DLC are switched off under Settings') +
+         (more > 0 ? ". " + more + " more installed unlock what is in the game already - they are not mounted and stay on this console" : "") +
+         '">+' + n + ' DLC</span>';
+}
+/* The DLC installed for a title, mounted or not. Most only unlock what the
+   game has already: the console never mounts them, so there is nothing to
+   dump - and nothing to take along, they keep working on this console. */
+function addcontTag(t){
+  var ac = t && t.addcont || [];
+  if(!ac.length) return "";
+  var list = ac.map(function(x){ return x.label + " (" + bytes(x.bytes) + ")"; }).join(", ");
+  return '<span class="tag pkg" title="' + esc(ac.length + " DLC installed: " + list + ". Those with content of their own are mounted " +
+         "while the game runs and dumped with it. The others unlock what is in the game already; they stay installed on this console " +
+         "and keep working for a dump started here.") + '">' + ac.length + ' DLC</span>';
+}
+/* What the Dumps library has of a title: a finished dump somewhere, or only an
+   unfinished one. A DLC folder is the DLC's, not the game's. */
+function dumpedTag(titleId){
+  var done = [], cut = [];
+  (state.dumps || []).forEach(function(d){
+    if(d.titleId !== titleId || /-ac$/.test(d.folder)) return;
+    if(!d.state || d.state === "done") done.push(dumpPath(d));
+    else if(!(d.state === "running" && whb.busy)) cut.push(dumpPath(d));
+  });
+  return done.length ? '<span class="tag there" title="Dumped: ' + esc(done.join(", ")) + '">DUMPED</span>'
+       : cut.length ? '<span class="tag cut" title="Only an unfinished dump: ' + esc(cut.join(", ")) + '">UNFINISHED</span>' : "";
 }
 function partialWhy(t){
   var c = t.chunks || [];
@@ -706,7 +734,7 @@ function renderApps(){
   var sig = state.apps.map(function(a){
     var known = libraryEntry(a.titleId);
     return a.dir + "|" + a.title + "|" + a.version + "|" + a.hasIcon + "|" + a.media + a.discIn + "|" + a.installed + a.installing + "|" + (a.dlc || []).join(",") +
-           "|" + !!(known && known.hasPic) + "|" + !!known + "|" + state.canLaunch;
+           "|" + !!(known && known.hasPic) + "|" + !!known + "|" + state.canLaunch + "|" + (known && known.addcont ? known.addcont.length : 0) + dumpedTag(a.titleId);
   }).join("~");
 
   if(sig === appSig){ markPressed(box, "data-dir", state.app); markQueued(); return; }
@@ -732,7 +760,7 @@ function renderApps(){
       '<span class="meta">' +
         '<span class="hero-state"><i class="dot"></i>Running now</span>' +
         '<span class="name">' + esc(a.title) + '</span>' +
-        '<span class="id">' + tag + mediaTag(a.media, a.discIn) + installTag(a) + dlcTag(a) + esc(a.titleId) + (a.version ? " &middot; " + esc(a.version) : "") + '</span>' +
+        '<span class="id">' + tag + mediaTag(a.media, a.discIn) + installTag(a) + dlcTag(a) + dumpedTag(a.titleId) + esc(a.titleId) + (a.version ? " &middot; " + esc(a.version) : "") + '</span>' +
       '</span></div>' +
       '<div class="hero-bar">' +
         '<span class="hero-pick"' + (installing(a) ? ' style="color:var(--amber)"' : "") + '>' +
@@ -785,7 +813,8 @@ function renderLibrary(){
   var list = state.library.filter(function(t){ return !mounted[t.titleId]; });
 
   var sig = (state.canLaunch === false ? "nolaunch~" : "") + list.map(function(t){
-    return t.titleId + "|" + t.title + "|" + t.isRunning + "|" + t.media + t.discIn + "|" + (t.mountedFrom || "") + "|" + t.installed + t.installing;
+    return t.titleId + "|" + t.title + "|" + t.isRunning + "|" + t.media + t.discIn + "|" + (t.mountedFrom || "") + "|" + t.installed + t.installing +
+           "|" + (t.addcont || []).length + dumpedTag(t.titleId);
   }).join("~") + "#" + state.library.length;
   if(sig === libSig) return;
   libSig = sig;
@@ -816,7 +845,7 @@ function renderLibrary(){
     html += '<div class="tile lib" data-search="' + esc((t.title + " " + t.titleId).toLowerCase()) + '">' + icon +
       '<span class="meta">' +
         '<span class="name">' + esc(t.title) + '</span>' +
-        '<span class="id">' + tag + mediaTag(t.media, t.discIn) + mountTag(t.mountedFrom) + installTag(t) + esc(t.titleId) +
+        '<span class="id">' + tag + mediaTag(t.media, t.discIn) + mountTag(t.mountedFrom) + installTag(t) + addcontTag(t) + dumpedTag(t.titleId) + esc(t.titleId) +
           (t.source && t.source !== "internal" ? " &middot; " + esc(t.source) : "") + '</span>' +
       '</span>' +
       '<span class="lib-acts">' +
@@ -1778,7 +1807,7 @@ function onStatus(d, wasBusy){
 
   if(wasBusy && !whb.busy){
     presenceFor = null;      /* what is on the drive has just changed */
-    loadDevices();
+    loadDevices(); loadDumps();
     if(wasQueue){
       var ok = d.queue.items.filter(function(q){ return q.state === "done"; }).length;
       var cut = d.queue.items.some(function(q){ return q.state === "skipped"; });
@@ -2084,10 +2113,12 @@ function loadDumps(){
   $("dumplist").innerHTML = state.dumps.length ? $("dumplist").innerHTML : '<div class="empty">looking for dumps…</div>';
   api("/api/dumps?token=" + encodeURIComponent(accessToken())).then(function(d){
     state.dumps = d.dumps || [];
+    state.dumpsAt = Date.now();
     state.dumpsConsoleListed = !!d.consoleListed;
     $("smbanner").hidden = !d.shadowMountRunning;
     state.shadowMount = !!d.shadowMountRunning;
     renderDumps();
+    renderLibrary(); renderApps();    /* the DUMPED marks on the titles */
   }).catch(function(e){ $("dumplist").innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; });
 }
 var DUMPVIEW_KEY = "dumps.view";
@@ -2318,6 +2349,7 @@ restoreQueue();
 renderQueue();
 loadDevices();
 loadLibrary();
+loadDumps();
 pollStatus();
 setInterval(pollStatus, 1000);
 setInterval(function(){
@@ -2325,6 +2357,9 @@ setInterval(function(){
   if(whb.busy && !queueActive()) return;
   loadDevices();
   loadLibrary();
+  /* a drive plugged in or a dump moved elsewhere: the library walks every
+     drive, so not at the pace of the rest */
+  if(!whb.busy && Date.now() - (state.dumpsAt || 0) > 60000) loadDumps();
 }, 8000);
 })();
 </script>

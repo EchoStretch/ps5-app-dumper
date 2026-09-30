@@ -574,7 +574,13 @@ static void handle_library(whb_req_t *req)
                   lib[i].playgo.chunks, lib[i].playgo.wanted, lib[i].playgo.here);
         sb_puts(&sb, ",\"mountedFrom\":");
         sb_json_str(&sb, lib[i].mounted_from);
-        sb_puts(&sb, "}");
+        sb_puts(&sb, ",\"addcont\":[");
+        for (int k = 0; k < lib[i].addcont_count; k++) {
+            sb_puts(&sb, k ? ",{\"label\":" : "{\"label\":");
+            sb_json_str(&sb, lib[i].addcont[k]);
+            sb_printf(&sb, ",\"bytes\":%llu}", (unsigned long long)lib[i].addcont_bytes[k]);
+        }
+        sb_puts(&sb, "]}");
     }
 
     /* Whether a title is up is already known from the pfsmnt scan, so the
