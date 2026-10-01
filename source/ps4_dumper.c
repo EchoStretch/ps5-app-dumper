@@ -21,6 +21,7 @@ along with this program; see the file COPYING. If not, see
 #include <sys/stat.h>
 #include <time.h>
 #include <pthread.h>
+#include <dirent.h>
 
 #include "ps4_dumper.h"
 #include "ps4_pkg.h"
@@ -81,6 +82,83 @@ static void copy_meta_file(const char *tmpl, const char *title_id,
     } else {
         write_log(logpath, "Warning: Failed to copy %s", src);
     }
+}
+
+/* ----------------------------------------------------------------- */
+/*  Helper: does a file start with the given bytes                   */
+/* ----------------------------------------------------------------- */
+static int file_starts_with(const char *path, const char *magic, size_t len)
+{
+    char buf[16];
+    if (len > sizeof(buf)) return 0;
+    FILE *f = fopen(path, "rb");
+    if (!f) return 0;
+    size_t n = fread(buf, 1, len, f);
+    fclose(f);
+    return n == len && memcmp(buf, magic, len) == 0;
+}
+
+/* ----------------------------------------------------------------- */
+/*  Helper: copy a tree, keeping any file already at the destination */
+/* ----------------------------------------------------------------- */
+static void copy_tree_missing(const char *src_dir, const char *dst_dir, const char *logpath)
+{
+    DIR *d = opendir(src_dir);
+    if (!d) return;
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL) {
+        if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0) continue;
+        char src[1024], dst[1024];
+        snprintf(src, sizeof(src), "%s/%s", src_dir, e->d_name);
+        snprintf(dst, sizeof(dst), "%s/%s", dst_dir, e->d_name);
+        struct stat st;
+        if (stat(src, &st) != 0) continue;
+        if (S_ISDIR(st.st_mode)) {
+            copy_tree_missing(src, dst, logpath);
+            continue;
+        }
+        if (file_exists(dst)) continue;
+        mkdirs(dst_dir);
+        if (fs_copy_file(src, dst) == 0)
+            write_log(logpath, "Copied appmeta: %s", dst);
+        else
+            write_log(logpath, "Warning: Failed to copy %s", src);
+    }
+    closedir(d);
+}
+
+/* ----------------------------------------------------------------- */
+/*  Disc installs: restore the metadata a package needs              */
+/*                                                                   */
+/*  A disc title's app PFS carries the disc param.sfo -- an SCECDF   */
+/*  container with a disc-form table (APP00_CONTENT_ID, DISC_NUMBER, */
+/*  its own SYSTEM_VER) -- and no icons. The digital param.sfo and   */
+/*  the rest of the metadata exist only outside the PFS, in the      */
+/*  console's appmeta folders:                                       */
+/*    /system_data/priv/appmeta/<id>/param.sfo                       */
+/*    /user/appmeta/<id>/  icons, pic0/pic1, snd0, keymap_rp, ...    */
+/*  The digital param.sfo cannot be rebuilt from the disc one: the   */
+/*  two differ in values as well as key names, SYSTEM_VER included.  */
+/*  /user/appmeta is copied whole, since what it holds varies by     */
+/*  title; files already in the dump are never overwritten, except   */
+/*  a disc param.sfo.                                                */
+/* ----------------------------------------------------------------- */
+static void restore_disc_metadata(const char *title_id, const char *dst_base, const char *logpath)
+{
+    char sfo[1024], src[1024], dst[1024];
+    snprintf(sfo, sizeof(sfo), "%s/sce_sys/param.sfo", dst_base);
+
+    if (file_starts_with(sfo, "SCECDF", 6)) {
+        snprintf(src, sizeof(src), "/system_data/priv/appmeta/%s/param.sfo", title_id);
+        if (file_starts_with(src, "\0PSF", 4) && fs_copy_file(src, sfo) == 0)
+            write_log(logpath, "Disc param.sfo replaced with the digital one: %s", src);
+        else
+            write_log(logpath, "Warning: sce_sys/param.sfo is a disc param (SCECDF) and no digital copy was found at %s", src);
+    }
+
+    snprintf(src, sizeof(src), "/user/appmeta/%s", title_id);
+    snprintf(dst, sizeof(dst), "%s/sce_sys", dst_base);
+    copy_tree_missing(src, dst, logpath);
 }
 
 /* ----------------------------------------------------------------- */
@@ -259,6 +337,10 @@ int dump_ps4_cusa_app_real(
 
         decrypt_if_needed(sandbox_root, title_id, "app0", dst_app,
                           do_decrypt, do_elf2fself, do_backport, logpath);
+
+        /* Last, so neither the PFS extraction nor the decrypt pass can put the disc param back. */
+        if (!abort_requested())
+            restore_disc_metadata(title_id, dst_app, logpath);
     }
 
     /* === PATCH BLOCK === */
