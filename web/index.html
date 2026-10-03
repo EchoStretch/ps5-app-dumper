@@ -58,6 +58,11 @@
 .smbanner .sm-txt{display:block;font-size:12.5px;line-height:1.5;color:var(--ink-dim)}
 .smbanner .mini{margin-top:10px}
 .smbanner .mini.arm{border-color:var(--red);color:var(--red)}
+/* not a .banner: the kit pushes every button in one to the right */
+.renamebar{margin:0 0 18px;padding:13px 15px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.renamebar .txt{display:block;font-size:12.5px;line-height:1.5;color:var(--ink-dim)}
+.renamebar .rename-acts{display:flex;flex-wrap:wrap;margin-top:4px}
+.renamebar .rename-acts .mini{flex:none;margin:6px 6px 0 0}
 
 /* ---------------- layout ---------------- */
 main{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:18px;align-items:start}
@@ -560,7 +565,19 @@ div.cut{border-top:1px solid var(--line-soft);padding:10px 12px 12px}
         <button type="button" data-v="cards">Cards</button>
         <button type="button" data-v="list">List</button>
       </div>
+      <button type="button" class="mini" id="dumps-rename" style="margin-left:8px">Rename</button>
       <button type="button" class="mini" id="dumps-rescan" style="margin-left:8px">Rescan</button>
+    </div>
+
+    <div class="renamebar" id="renamebar" hidden>
+      <span class="txt"><b>Rename all dumps</b> - the game dumps listed below get the title id alone, PPSA01325-app0, or the game's
+        title behind it, PPSA01325-app0_ASTRO's_PLAYROOM. DLC keep their names. A dump ShadowMount runs a game from is left as it is,
+        since the link names its folder.</span>
+      <span class="rename-acts">
+        <button type="button" class="mini" data-rename="titles">Add game titles</button>
+        <button type="button" class="mini" data-rename="plain">Title IDs only</button>
+        <button type="button" class="mini" id="rename-no">Cancel</button>
+      </span>
     </div>
 
     <div class="banner smbanner" id="smbanner" hidden>
@@ -2443,6 +2460,26 @@ function renderMove(m){
   state.moveResult = result;
 }
 $("dumps-rescan").addEventListener("click", loadDumps);
+$("dumps-rename").addEventListener("click", function(){ $("renamebar").hidden = !$("renamebar").hidden; });
+$("rename-no").addEventListener("click", function(){ $("renamebar").hidden = true; });
+Array.prototype.forEach.call($("renamebar").querySelectorAll("[data-rename]"), function(b){
+  b.addEventListener("click", function(){
+    if(whb.busy){ toast("A dump is running - rename once it is done.", "bad"); return; }
+    Array.prototype.forEach.call($("renamebar").querySelectorAll("button"), function(x){ x.disabled = true; });
+    post("/api/dumps/rename", {mode: b.getAttribute("data-rename")}).then(function(r){
+      var note = [r.renamed + " renamed"];
+      if(r.unchanged) note.push(r.unchanged + " named so already");
+      if(r.inUse) note.push(r.inUse + " left alone - ShadowMount runs a game from " + (r.inUse === 1 ? "it" : "them"));
+      if(r.taken) note.push(r.taken + " not renamed - the new name is taken");
+      if(r.failed) note.push(r.failed + " failed, see the log");
+      toast(note.join(", "), r.failed || r.taken ? "bad" : "ok");
+      $("renamebar").hidden = true;
+      loadDumps();
+    }).catch(function(e){ toast(e.message, "bad"); }).then(function(){
+      Array.prototype.forEach.call($("renamebar").querySelectorAll("button"), function(x){ x.disabled = false; });
+    });
+  });
+});
 /* ending somebody else's payload takes a second press */
 var smArm;
 $("sm-stop").addEventListener("click", function(){

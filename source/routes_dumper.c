@@ -697,6 +697,25 @@ static void handle_dump_icon(whb_req_t *req)
 
 /* Takes the link off a title that is redirected to this dump, without moving
    the dump: the game then starts from its installed package again. */
+/* mode=titles | plain: every game dump the library finds gets the name
+   folder_titles would give it, or loses its title */
+static void handle_dumps_rename(whb_req_t *req)
+{
+    const char *mode = whb_param(req, "mode", "");
+    if (strcmp(mode, "titles") != 0 && strcmp(mode, "plain") != 0) { whb_send_error(req, 400, "mode is titles or plain"); return; }
+    if (dumper_busy()) { whb_send_error(req, 409, "a dump, a move or a queue is running"); return; }
+
+    int with_internal = whb_peer_is_local(req) || whb_access_token_ok(whb_param(req, "token", NULL));
+    dumplib_rename_report_t r;
+    dumplib_rename_all(strcmp(mode, "titles") == 0, with_internal, &r);
+
+    sb_t sb;
+    sb_init(&sb);
+    sb_printf(&sb, "{\"renamed\":%d,\"unchanged\":%d,\"inUse\":%d,\"taken\":%d,\"failed\":%d}",
+              r.renamed, r.unchanged, r.in_use, r.taken, r.failed);
+    whb_send_sb(req, 200, &sb);
+}
+
 static void handle_dump_unlink(whb_req_t *req)
 {
     const char *mount  = whb_param(req, "mount", NULL);
@@ -860,6 +879,7 @@ void routes_dumper_init(void)
     whb_route("POST", "/api/shadowmount/stop", handle_shadowmount_stop);
     whb_route("POST", "/api/dumps/unlink",   handle_dump_unlink);
     whb_route("POST", "/api/dumps/move",     handle_dump_move);
+    whb_route("POST", "/api/dumps/rename",   handle_dumps_rename);
     whb_route("POST", "/api/dumps/remove",   handle_dump_remove);
     whb_route("POST", "/api/dumps/move/cancel", handle_dump_move_cancel);
     whb_route("POST", "/api/dumps/move/clear",  handle_dump_move_clear);

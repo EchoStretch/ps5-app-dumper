@@ -105,6 +105,11 @@ static int plain_name(const char *name, char *out, size_t out_size)
     return 0;
 }
 
+int dump_plain_name(const char *folder, char *out, size_t out_size)
+{
+    return plain_name(folder, out, out_size);
+}
+
 static int is_dump_folder_name(const char *name)
 {
     if (dump_is_dlc_folder_name(name)) return 1;
@@ -387,6 +392,35 @@ int dump_info_int(const char *dest, const char *folder, const char *key, int *ou
     p += strlen(needle);
     if (*p < '0' || *p > '9') return -1;
     *out = atoi(p);
+    return 0;
+}
+
+int dump_info_set_string(const char *dest, const char *folder, const char *key, const char *value)
+{
+    char path[512], buf[2048], needle[48], tail[2048], esc[300];
+    info_path(dest, folder, path, sizeof(path));
+    FILE *f = fopen(path, "r");
+    if (!f) return -1;
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+
+    snprintf(needle, sizeof(needle), "\"%s\": \"", key);
+    char *p = strstr(buf, needle);
+    if (!p) return -1;
+    p += strlen(needle);
+    char *rest = p;
+    while (*rest && !(*rest == '"' && rest[-1] != '\\')) rest++;
+    snprintf(tail, sizeof(tail), "%s", rest);
+    json_escape(value, esc, sizeof(esc));
+    snprintf(p, sizeof(buf) - (size_t)(p - buf), "%s%s", esc, tail);
+
+    f = fopen(path, "w");
+    if (!f) return -1;
+    fputs(buf, f);
+    fflush(f);
+    fsync(fileno(f));
+    fclose(f);
     return 0;
 }
 
