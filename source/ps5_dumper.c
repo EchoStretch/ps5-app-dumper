@@ -28,6 +28,9 @@ along with this program; see the file COPYING. If not, see
 
 extern int decrypt_all(const char *src_game, const char *dst_game,
                        int do_elf2fself, int do_backport, int is_ps4);
+/* ps4_pkg.h shares its include guard and struct names with ps5_pkg.h */
+extern int isfpkg_ps4(const char *pkgfn);
+extern int unpkg_ps4(const char *pkgfn, const char *tidpath);
 
 
 /* --------------------------------------------------------------------- */
@@ -223,6 +226,43 @@ int dump_ps5_ppsa_app(
 
     return 0;
 }
+
+/* The mounted DLC's sce_sys holds little more than pfs-version.dat; param.json
+   and the rest come out of the installed ac.pkg, the icon out of appmeta. */
+static void dump_dlc_metadata(const char *title_id, int label_len, const char *label, const char *dst)
+{
+    static const char *pkg_paths[] = {
+        "/user/addcont/%s/%.*s/ac.pkg",
+        "/mnt/ext1/user/addcont/%s/%.*s/ac.pkg",
+        "/mnt/ext0/user/addcont/%s/%.*s/ac.pkg",
+        NULL
+    };
+    char pkg[512];
+    int found = 0;
+    for (int i = 0; pkg_paths[i] && !found; i++) {
+        snprintf(pkg, sizeof(pkg), pkg_paths[i], title_id, label_len, label);
+        found = file_exists(pkg);
+    }
+    if (!found) {
+        write_log(g_log_path, "DLC: no ac.pkg for %s/%.*s", title_id, label_len, label);
+    } else if (isfpkg_ps4(pkg) == 0) {
+        write_log(g_log_path, "DLC: extracting %s", pkg);
+        unpkg_ps4(pkg, dst);
+    } else {
+        write_log(g_log_path, "DLC: extracting %s", pkg);
+        unpkg_ps5(pkg, dst);
+    }
+
+    char meta[512], sce_sys[1100];
+    snprintf(meta, sizeof(meta), "/user/appmeta/addcont/%s/%.*s", title_id, label_len, label);
+    snprintf(sce_sys, sizeof(sce_sys), "%s/sce_sys", dst);
+    if (dir_exists(meta)) {
+        mkdirs(sce_sys);
+        write_log(g_log_path, "DLC: copying appmeta %s -> %s", meta, sce_sys);
+        copy_dir_recursive_tracked(meta, sce_sys);
+    }
+}
+
 int dump_dlc_folder(const char *sandbox, const char *name, const char *title_id, const char *dest)
 {
     char src[1024], dst[1024];
@@ -240,6 +280,10 @@ int dump_dlc_folder(const char *sandbox, const char *name, const char *title_id,
     /* the label between _00- and -ac is what the content is called */
     const char *label = strstr(name, "_00-");
     label = label ? label + 4 : name;
+    int label_len = (int)strlen(label) - 3;
+
+    dump_dlc_metadata(title_id, label_len, label, dst);
+    if (abort_requested()) return -1;
     char info[1100];
     snprintf(info, sizeof(info), "%s/%s.dump-info.json", dest, name);
     FILE *f = fopen(info, "w");
@@ -247,7 +291,7 @@ int dump_dlc_folder(const char *sandbox, const char *name, const char *title_id,
         fprintf(f, "{\n  \"tool\": \"ps5-app-dumper\",\n  \"kind\": \"dlc\",\n  \"titleId\": \"%s\",\n"
                    "  \"title\": \"%.*s\",\n  \"folder\": \"%s\",\n  \"state\": \"done\",\n  \"bytes\": %llu,\n"
                    "  \"finished\": %lld\n}\n",
-                title_id, (int)(strlen(label) - 3), label, name, bytes, (long long)time(NULL));
+                title_id, label_len, label, name, bytes, (long long)time(NULL));
         fclose(f);
     }
     write_log(g_log_path, "DLC: done %s", name);
