@@ -140,6 +140,7 @@ int unpkg_ps4(const char *pkgfn, const char *tidpath) {
     for (int i = 0; i < n_entries; i++) {
         entries[i].type              = bswap_32(entries[i].type);
         entries[i].name_table_offset = bswap_32(entries[i].name_table_offset);
+        entries[i].flags1            = bswap_32(entries[i].flags1);
         entries[i].offset            = bswap_32(entries[i].offset);
         entries[i].size              = bswap_32(entries[i].size);
     }
@@ -199,6 +200,15 @@ int unpkg_ps4(const char *pkgfn, const char *tidpath) {
         clean[sizeof(clean) - 1] = '\0';
         clean_entry_name(clean);
         if (!clean[0]) continue;
+
+        /* A retail package encrypts some entries (flags1 bit 31): license, nptitle/npbind,
+           selfinfo, imageinfo and the like. Written raw they are ciphertext, and a package built
+           from the dump would carry it as though it were the file. nptitle.dat and npbind.dat
+           come from appmeta instead. */
+        if (entries[i].flags1 & 0x80000000U) {
+            write_log(g_log_path, "unpkg: Skipped %s (encrypted in this package)", clean);
+            continue;
+        }
 
         char full[512];
         snprintf(full, sizeof(full), "%s/%s", out_dir, clean);
