@@ -65,6 +65,13 @@ int  job_start(const char *app_dir, const char *mount,
                const dumper_config_t *cfg, int overwrite,
                char *err, size_t err_size);
 
+/* Dumps only the DLC mounted with a running title, next to where its dump
+   goes - for a game dumped before its DLC were there, or with them switched
+   off. The game's own dump and its info file are left alone; a DLC that is
+   dumped already is skipped. Same returns as job_start. */
+int  job_start_dlc(const char *app_dir, const char *mount,
+                   const dumper_config_t *cfg, char *err, size_t err_size);
+
 /* Asks the running job to stop. The copy routines look for this between
    blocks, so it takes effect within moments even inside a huge file. */
 void job_abort(void);

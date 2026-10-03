@@ -265,7 +265,11 @@ static void handle_dump(whb_req_t *req)
     cfg_snapshot(&cfg);
 
     char err[160] = {0};
-    int rc = job_start(app, target, &cfg, whb_param_int(req, "overwrite", 0), err, sizeof(err));
+    /* only=dlc: the DLC mounted with the title, next to a dump made before */
+    const char *only = whb_param(req, "only", "");
+    int rc = strcmp(only, "dlc") == 0
+           ? job_start_dlc(app, target, &cfg, err, sizeof(err))
+           : job_start(app, target, &cfg, whb_param_int(req, "overwrite", 0), err, sizeof(err));
 
     if (rc == JOB_ERR_EXISTS) {
         /* the page asks, and comes back with overwrite=1 */

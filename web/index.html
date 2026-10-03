@@ -765,6 +765,8 @@ function renderApps(){
       '<div class="hero-bar">' +
         '<span class="hero-pick"' + (installing(a) ? ' style="color:var(--amber)"' : "") + '>' +
           (installing(a) ? "still installing - not ready to dump" : partial(a) ? "ready to dump - " + (a.chunks && a.chunks[1] < a.chunks[0] ? a.chunks[1] + " of " + a.chunks[0] + " chunks, all this console wants" : a.installed + " % of the package is here, the rest never arrived") : state.apps.length > 1 ? "tap to select" : "ready to dump") + '</span>' +
+        (a.dlc && a.dlc.length ? '<button class="mini" type="button" data-dlconly="' + esc(a.dir) + '" title="Dump only the ' + a.dlc.length +
+          ' DLC mounted with this game, next to its dump - the game itself is not copied again" style="margin-right:6px">Dump DLC</button>' : "") +
         (known && state.canLaunch ? '<button class="mini" type="button" data-queue="' + esc(a.titleId) + '"></button>' : "") +
       '</div></div>';
   });
@@ -795,7 +797,27 @@ function renderApps(){
       toggleQueued(el.getAttribute("data-queue"));
     });
   });
+  Array.prototype.forEach.call(box.querySelectorAll("[data-dlconly]"), function(el){
+    el.addEventListener("click", function(e){
+      e.stopPropagation();
+      dumpDlcOnly(el, el.getAttribute("data-dlconly"));
+    });
+  });
   markQueued();
+}
+
+/* The DLC of a running game alone, for a game dumped before they were there */
+function dumpDlcOnly(btn, dir){
+  if(whb.busy){ toast("A dump is running already.", "bad"); return; }
+  if(!state.target){ toast("Select a destination drive first.", "bad"); return; }
+  btn.disabled = true;
+  post("/api/dump", {app: dir, target: state.target, only: "dlc"}).then(function(d){
+    whb.busy = true;
+    state.job = d.job;
+    renderJob(d.job);
+    updateAction();
+    toast("Dumping the DLC", "ok");
+  }).catch(function(e){ toast(e.message, "bad"); }).then(function(){ btn.disabled = false; });
 }
 
 /* ---------------- rendering: installed titles ---------------- */
