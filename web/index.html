@@ -26,9 +26,14 @@
 .dumprow:first-child{border-top:0}
 .dumprow .meta{flex:1;min-width:0}
 .dumprow .name{display:block;font-size:14.5px}
-.dumprow .where{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-faint);margin-top:3px;word-break:break-all}
-.dumprow .size{font-family:var(--mono);font-size:11.5px;color:var(--ink-dim);margin:0 12px;white-space:nowrap;flex:none}
-.dumprow .mini{flex:none}
+.dumprow .tags{display:block;margin-top:4px}
+.dumprow .where{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-faint);margin-top:3px}
+.dumprow .acts{display:flex;align-items:center;flex:none;margin-left:12px}
+.dumprow .size{font-family:var(--mono);font-size:11.5px;color:var(--ink-dim);margin-right:12px;white-space:nowrap}
+.dumprow .mini{flex:none;margin-left:6px}
+/* a path breaks after its slashes (<wbr>), and a tap copies it */
+.copy{cursor:pointer;overflow-wrap:break-word}
+.copy:hover{color:var(--ink-dim)}
 /* dumps as cards: a grid, whose gap the console's browser does honour */
 .dumpgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));grid-gap:12px;gap:12px}
 .dumpcard{border:1px solid var(--line-soft);border-radius:10px;background:var(--panel-2);overflow:hidden;min-width:0}
@@ -40,7 +45,7 @@
 .dumpcard .txt{display:block;padding:10px 11px 11px}
 .dumpcard .name{display:block;font-size:14px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dumpcard .tags{display:block;margin-top:6px}
-.dumpcard .where{display:block;font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);margin-top:6px;word-break:break-all;line-height:1.35}
+.dumpcard .where{display:block;font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);margin-top:6px;line-height:1.35}
 .dumpcard .size{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-dim);margin-top:6px;white-space:nowrap}
 /* buttons wrap and share the row; margins, the console's WebKit has no flex gap */
 .dumpcard .acts{display:flex;flex-wrap:wrap;margin:3px -6px 0 0}
@@ -303,6 +308,11 @@ div.cut{border-top:1px solid var(--line-soft);padding:10px 12px 12px}
 @media(max-width:560px){
   .pct{font-size:36px}
   .grid{grid-template-columns:1fr}
+  /* a phone: the text gets the whole width, size and buttons go below it */
+  .dumprow{flex-wrap:wrap}
+  .dumprow .meta{flex:1 1 100%}
+  .dumprow .acts{flex:1 1 100%;margin:8px 0 0}
+  .dumprow .size{margin-right:auto}
 }
 /* ---------------- flex gap fallback ---------------- *
  * For the flex gaps above; what it is about, and the kit's own lines: whb.css. */
@@ -2170,6 +2180,32 @@ function dumpIcon(d){
   return "/api/dumps/icon?mount=" + encodeURIComponent(d.mount) + "&dir=" + encodeURIComponent(d.dir) +
          "&folder=" + encodeURIComponent(d.folder) + (d.internal ? "&token=" + encodeURIComponent(accessToken()) : "");
 }
+/* A path that may break after each slash, and is copied on a tap */
+function pathSpan(path){
+  return '<span class="where copy" data-copy="' + esc(path) + '" title="Copy the path">' +
+         esc(path).replace(/\//g, "/<wbr>") + '</span>';
+}
+/* execCommand first: the page is plain http, where the Clipboard API is
+   missing in most browsers, the console's among them */
+function copyText(text){
+  var ok = false;
+  try {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed"; ta.style.top = "0"; ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select(); ta.setSelectionRange(0, text.length);
+    ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+  } catch(e){}
+  if(ok){ toast("Copied: " + text, "ok"); return; }
+  if(navigator.clipboard && navigator.clipboard.writeText)
+    navigator.clipboard.writeText(text).then(function(){ toast("Copied: " + text, "ok"); },
+                                             function(){ toast("This browser does not let the page copy - " + text, "bad"); });
+  else toast("This browser does not let the page copy - " + text, "bad");
+}
+
 function renderDumps(){
   var cards = state.dumpsView !== "list";
   Array.prototype.forEach.call($("dumps-view").querySelectorAll("button"), function(b){
@@ -2196,7 +2232,7 @@ function renderDumps(){
                   esc(d.hasIcon ? dumpIcon(d) : "/api/libicon?title=" + encodeURIComponent(d.titleId)) + '"></span>' +
                 '<span class="txt"><span class="name" title="' + esc(d.title) + '">' + esc(d.title) + '</span>' +
                 '<span class="tags">' + dumpTags(d) + '</span>' +
-                '<span class="where">' + esc(dumpPath(d)) + '</span>' +
+                pathSpan(dumpPath(d)) +
                 '<span class="size">' + (d.bytes ? bytes(d.bytes) : "size not known") + '</span>' +
                 '<span class="acts">' +
                 (d.inUse ? '<button type="button" class="mini" data-unlink="' + at + '">Unlink</button>' : "") +
@@ -2206,13 +2242,13 @@ function renderDumps(){
                 '<button type="button" class="mini del" data-del="' + at + '">Delete</button></span></span></div>';
       } else {
         html += '<div class="dumprow"><span class="meta"><span class="name">' + esc(d.title) + '</span>' +
-                '<span class="where">' + dumpTags(d) + esc(dumpPath(d)) + '</span></span>' +
-                '<span class="size">' + (d.bytes ? bytes(d.bytes) : "") + '</span>' +
-                (d.inUse ? '<button type="button" class="mini" data-unlink="' + at + '" style="margin-right:6px">Unlink</button>' : "") +
-                (canFself(d) ? '<button type="button" class="mini" data-fself="' + at + '" style="margin-right:6px">FSELF</button>' : "") +
-                (canUnfself(d) ? '<button type="button" class="mini" data-unfself="' + at + '" style="margin-right:6px">Undo FSELF</button>' : "") +
+                '<span class="tags">' + dumpTags(d) + '</span>' + pathSpan(dumpPath(d)) + '</span>' +
+                '<span class="acts"><span class="size">' + (d.bytes ? bytes(d.bytes) : "") + '</span>' +
+                (d.inUse ? '<button type="button" class="mini" data-unlink="' + at + '">Unlink</button>' : "") +
+                (canFself(d) ? '<button type="button" class="mini" data-fself="' + at + '">FSELF</button>' : "") +
+                (canUnfself(d) ? '<button type="button" class="mini" data-unfself="' + at + '">Undo FSELF</button>' : "") +
                 '<button type="button" class="mini" data-move="' + at + '">Move</button>' +
-                '<button type="button" class="mini del" data-del="' + at + '" style="margin-left:6px">Delete</button></div>';
+                '<button type="button" class="mini del" data-del="' + at + '">Delete</button></span></div>';
       }
     });
     html += (cards ? '</div>' : "") + '</div></section>';
@@ -2220,6 +2256,9 @@ function renderDumps(){
   if(!order.length) html = '<div class="empty-state"><strong>No dumps found</strong>Dumps show up here once there are some, on any drive or on the console.</div>';
   if(!state.dumpsConsoleListed) html += '<p class="hint" style="margin:0 4px 18px">Dumps on the console are listed once this device has entered the code.</p>';
   $("dumplist").innerHTML = html;
+  Array.prototype.forEach.call($("dumplist").querySelectorAll("[data-copy]"), function(el){
+    el.addEventListener("click", function(){ copyText(el.getAttribute("data-copy")); });
+  });
   Array.prototype.forEach.call($("dumplist").querySelectorAll("[data-move]"), function(b){
     b.addEventListener("click", function(){ openMovePicker(state.dumps[Number(b.getAttribute("data-move"))]); });
   });
