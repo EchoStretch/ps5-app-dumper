@@ -685,9 +685,14 @@ static int installed_percent_at(const char *root, const char *title_id)
    it needs - the languages it is set to, say. So the bitmap can stand below
    100 % for good. What the shell thinks about it is in <root>/<id>/app.xml
    ("playgo-status"): one <chunk> per chunk with locus="3" when it is here,
-   and req_locus="3" when this console wants it. The install is over when
-   every wanted chunk is here. Seen on FW 12.00: Hogwarts Legacy at 73 % with
-   7 of 21 chunks wanted, all 7 present, the bitmap untouched for days. */
+   and req_locus="3" when this console wants it; a chunk it does not want
+   may be left out altogether, chunk_count says how many there are. Seen on
+   FW 12.00: Hogwarts Legacy at 73 % with 7 of 21 chunks wanted, all 7
+   present, the bitmap untouched for days.
+   The shell writes the file when the install starts and does not always come
+   back to it: FF7 Rebirth and Remake (FW 10.60) still said locus="0" for most
+   wanted chunks three months after the bitmap last moved, Remake's at 100 %.
+   So which chunks are wanted can be read here, whether they arrived cannot. */
 static int playgo_status_at(const char *root, const char *title_id, playgo_status_t *st)
 {
     char path[320];
@@ -703,6 +708,9 @@ static int playgo_status_at(const char *root, const char *title_id, playgo_statu
 
     memset(st, 0, sizeof(*st));
     if (!strstr(xml, "playgo-status")) { free(xml); return -1; }
+
+    const char *cc = strstr(xml, "chunk_count=\"");
+    int declared = cc ? atoi(cc + 13) : 0;
 
     for (const char *p = strstr(xml, "<chunk "); p; p = strstr(p + 1, "<chunk ")) {
         const char *end = strchr(p, '>');
@@ -720,6 +728,7 @@ static int playgo_status_at(const char *root, const char *title_id, playgo_statu
         }
     }
     free(xml);
+    if (declared > st->chunks) st->chunks = declared;
     return st->chunks ? 0 : -1;
 }
 
@@ -731,8 +740,9 @@ int title_playgo_status(const char *title_id, playgo_status_t *st)
     return -1;
 }
 
-/* Without a PlayGo status (PS4 titles, older layouts) the bitmap has to do:
-   blocks still arrive while it keeps changing. */
+/* Blocks still arrive while the bitmap keeps changing. A PlayGo status that
+   has every wanted chunk here settles it at once; one that does not is not
+   believed (see playgo_status_at), the bitmap decides. */
 #define INSTALL_QUIET_SECONDS (10 * 60)
 
 int title_install_pending(const char *title_id)
@@ -741,7 +751,7 @@ int title_install_pending(const char *title_id)
     if (pct < 0 || pct >= 100) return 0;
 
     playgo_status_t st;
-    if (title_playgo_status(title_id, &st) == 0) return st.here < st.wanted;
+    if (title_playgo_status(title_id, &st) == 0 && st.wanted && st.here >= st.wanted) return 0;
 
     for (int r = 0; g_app_roots[r].path; r++) {
         char path[320];
@@ -772,6 +782,44 @@ static void read_mount_link(const char *root, const char *title_id, char *out, s
     if (!out[0] || out[0] != '/') snprintf(out, out_size, "%s", "(unknown folder)");
 }
 
+/* "DBSZ0CHAPOPACK00": sixteen capitals and digits, as the content id ends */
+static int is_addcont_label(const char *s)
+{
+    if (strlen(s) != 16) return 0;
+    for (; *s; s++)
+        if (!((*s >= 'A' && *s <= 'Z') || (*s >= '0' && *s <= '9'))) return 0;
+    return 1;
+}
+
+static void library_find_addcont(library_entry_t *e)
+{
+    static const char *const roots[] = { "/user/addcont", "/mnt/ext0/user/addcont", "/mnt/ext1/user/addcont", NULL };
+
+    e->addcont_count = 0;
+    for (int r = 0; roots[r]; r++) {
+        char dir[160];
+        snprintf(dir, sizeof(dir), "%s/%s", roots[r], e->title_id);
+        DIR *d = opendir(dir);
+        if (!d) continue;
+        struct dirent *ent;
+        while ((ent = readdir(d)) && e->addcont_count < DLC_MAX) {
+            if (!is_addcont_label(ent->d_name)) continue;
+            int seen = 0;
+            for (int i = 0; i < e->addcont_count; i++)
+                if (strcmp(e->addcont[i], ent->d_name) == 0) seen = 1;
+            if (seen) continue;
+
+            char pkg[224];
+            struct stat st;
+            snprintf(pkg, sizeof(pkg), "%s/%s/ac.pkg", dir, ent->d_name);
+            if (stat(pkg, &st) != 0) continue;
+            snprintf(e->addcont[e->addcont_count], sizeof(e->addcont[0]), "%s", ent->d_name);
+            e->addcont_bytes[e->addcont_count++] = (uint64_t)st.st_size;
+        }
+        closedir(d);
+    }
+}
+
 static void library_fill(library_entry_t *e, const char *title_id, const char *root, const char *label)
 {
     memset(e, 0, sizeof(*e));
@@ -800,6 +848,8 @@ static void library_fill(library_entry_t *e, const char *title_id, const char *r
     e->is_disc = e->on_disc || title_is_disc_game(e->title_id);
     /* a title ShadowMount serves from a dump folder does not need its disc */
     if (e->mounted_from[0] && !e->on_disc) e->is_disc = 0;
+
+    library_find_addcont(e);
 }
 
 int library_scan(library_entry_t *out, int max)

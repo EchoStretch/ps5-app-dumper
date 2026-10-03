@@ -48,6 +48,8 @@ typedef struct {
     char            dest[384];
     dumper_config_t cfg;
     int             remove_first;   /* something of this title is in the way */
+    int             dlc_only;       /* the DLC alone, the game stays as it is */
+    uint32_t        dlc_pick;       /* bit i: app.dlc[i] was picked; 0 = all  */
     time_t          started;
 } job_request_t;
 
@@ -107,6 +109,77 @@ static int free_bytes(const char *path, uint64_t *out)
     return 0;
 }
 
+/* A DLC whose folder holds a finished dump already is not copied again. */
+static int dlc_dumped(const char *dest, const char *name)
+{
+    char state[16] = {0};
+    return dump_info_string(dest, name, "state", state, sizeof(state)) == 0 && strcmp(state, "done") == 0;
+}
+
+static void worker_dlc_only(job_request_t *req)
+{
+    int todo[DLC_MAX], n = 0, had = 0;
+    uint64_t estimate = 0;
+
+    set_stage("Measuring");
+    for (int i = 0; i < req->app.dlc_count; i++) {
+        if (req->dlc_pick && !(req->dlc_pick & (1u << i))) continue;
+        if (dlc_dumped(req->dest, req->app.dlc[i])) {
+            if (!req->dlc_pick) {
+                write_log(g_log_path, "DLC: %s is dumped already, left as it is", req->app.dlc[i]);
+                had++;
+                continue;
+            }
+            /* picked by hand: dumped anew, without what the old copy left */
+            char old[512];
+            snprintf(old, sizeof(old), "%s/%s", req->dest, req->app.dlc[i]);
+            write_log(g_log_path, "DLC: %s is dumped already and was picked - replacing it", req->app.dlc[i]);
+            dump_remove_tree(old);
+        }
+        char path[320];
+        size_t bytes = 0;
+        snprintf(path, sizeof(path), "%s/%s", SANDBOX_PATH, req->app.dlc[i]);
+        size_walker(path, &bytes);
+        estimate += bytes;
+        todo[n++] = i;
+    }
+
+    pthread_mutex_lock(&g_mtx);
+    g_status.total_bytes = estimate;
+    g_dlc_bytes = estimate;
+    g_status.state = JOB_RUNNING;
+    pthread_mutex_unlock(&g_mtx);
+
+    if (!n) {
+        finish(JOB_DONE, "All %d DLC of %s are dumped already", had, req->app.title_id);
+        return;
+    }
+
+    uint64_t avail = 0;
+    if (free_bytes(req->dest, &avail) == 0 && estimate > avail) {
+        finish(JOB_FAILED, "Not enough space: the DLC need %.1f GB, the drive has %.1f GB free",
+               estimate / 1073741824.0, avail / 1073741824.0);
+        return;
+    }
+
+    write_log(g_log_path, "Web UI: dumping %d DLC of %s to %s", n, req->app.title_id, req->dest);
+    copy_start_time = time(NULL);
+
+    int rc = 0;
+    set_stage("Dumping DLC");
+    for (int k = 0; k < n && rc == 0 && !abort_requested(); k++)
+        rc = dump_dlc_folder(SANDBOX_PATH, req->app.dlc[todo[k]], req->app.title_id, req->dest);
+
+    if (abort_requested()) {
+        finish(JOB_ABORTED, "DLC dump stopped, the last one is incomplete");
+        printf_notification("Dump stopped by user");
+    } else if (rc != 0) {
+        finish(JOB_FAILED, "DLC dump failed with code %d", rc);
+    } else {
+        finish(JOB_DONE, "%d DLC dumped to %s%s", n, req->dest, had ? ", the others were there already" : "");
+    }
+}
+
 static void *worker(void *arg)
 {
     job_request_t *req = (job_request_t *)arg;
@@ -115,6 +188,8 @@ static void *worker(void *arg)
     /* The backport modules read their levels straight from config.ini, so
        the only global left to propagate is the PS4 split mode. */
     g_split_mode = req->cfg.split;
+    if (req->cfg.folder_titles) dump_title_suffix(req->app.title, g_folder_suffix, sizeof(g_folder_suffix));
+    else g_folder_suffix[0] = '\0';
     g_enable_logging = req->cfg.enable_logging;
     g_ps4_backport_level = req->cfg.ps4_backport_level;
     g_ps5_backport_level = req->cfg.ps5_backport_level;
@@ -125,8 +200,16 @@ static void *worker(void *arg)
     if (!get_app_data_path()[0])
         snprintf(g_log_path, sizeof(g_log_path), "%s/log.txt", req->dest);
 
+    if (req->dlc_only) {
+        worker_dlc_only(req);
+        log_use_general();
+        free(req);
+        return NULL;
+    }
+
     dump_info_t info = {
         .title_id = req->app.title_id,
+        .suffix   = g_folder_suffix,
         .title    = req->app.title[0] ? req->app.title : req->app.title_id,
         .state    = "running",
         .cfg      = &req->cfg,
@@ -254,9 +337,10 @@ void job_dest_path(const char *mount, const dumper_config_t *cfg, char *out, siz
     else           snprintf(out, out_size, "%s", mount);
 }
 
-int job_start(const char *app_dir, const char *mount,
-              const dumper_config_t *cfg, int overwrite,
-              char *err, size_t err_size)
+static int job_start_ex(const char *app_dir, const char *mount,
+                        const dumper_config_t *cfg, int overwrite, int dlc_only,
+                        const char *const *names, int count,
+                        char *err, size_t err_size)
 {
     #define FAIL(msg) do { if (err && err_size) snprintf(err, err_size, "%s", msg); \
                            pthread_mutex_unlock(&g_start_mtx); return -1; } while (0)
@@ -274,7 +358,7 @@ int job_start(const char *app_dir, const char *mount,
        auto_start alike. A title that stands below 100 % for good - PlayGo
        chunks the console never fetches - is dumped as it is, and the log
        says so. */
-    {
+    if (!dlc_only) {
         char id[16] = {0};
         snprintf(id, sizeof(id), "%.9s", app_dir);
         int installed = title_installed_percent(id);
@@ -286,10 +370,10 @@ int job_start(const char *app_dir, const char *mount,
                 FAIL(why);
             }
             playgo_status_t pg;
-            if (title_playgo_status(id, &pg) == 0)
-                write_log(g_log_path, "%s: %d of %d chunks are wanted on this console and all are here; "
+            if (title_playgo_status(id, &pg) == 0 && pg.wanted < pg.chunks)
+                write_log(g_log_path, "%s: %d %% here, the install is over; this console wants %d of %d chunks, "
                                       "the other %d (other languages or regions) were never fetched - dumping what is there",
-                          id, pg.wanted, pg.chunks, pg.chunks - pg.wanted);
+                          id, installed, pg.wanted, pg.chunks, pg.chunks - pg.wanted);
             else
                 write_log(g_log_path, "%s has %d %% of its package on the console and the rest never arrived "
                                       "(content the console did not fetch) - dumping what is there", id, installed);
@@ -307,10 +391,27 @@ int job_start(const char *app_dir, const char *mount,
 
     req->app = app;
     req->cfg = *cfg;
+    req->dlc_only = dlc_only;
     req->started = time(NULL);
     job_dest_path(mount, cfg, req->dest, sizeof(req->dest));
 
-    dump_presence_t there = dump_presence(req->dest, app.title_id, app.is_ps4, cfg->split);
+    if (dlc_only && !app.dlc_count) {
+        free(req);
+        FAIL("no DLC is mounted with this title - DLC that only unlock content are never mounted");
+    }
+    for (int k = 0; k < count; k++) {
+        int i = 0;
+        while (i < app.dlc_count && strcmp(app.dlc[i], names[k]) != 0) i++;
+        if (i == app.dlc_count) {
+            free(req);
+            FAIL("a picked DLC is not mounted any more - start the game again");
+        }
+        req->dlc_pick |= 1u << i;
+    }
+
+    /* the game's dump is none of a DLC-only job's business */
+    dump_presence_t there = dlc_only ? DUMP_ABSENT
+                                     : dump_presence(req->dest, app.title_id, app.is_ps4, cfg->split);
     if (there == DUMP_PRESENT && !overwrite) {
         if (err && err_size)
             snprintf(err, err_size, "%s is already dumped in %s", app.title_id, req->dest);
@@ -364,6 +465,20 @@ int job_start(const char *app_dir, const char *mount,
     return 0;
 
     #undef FAIL
+}
+
+int job_start(const char *app_dir, const char *mount,
+              const dumper_config_t *cfg, int overwrite,
+              char *err, size_t err_size)
+{
+    return job_start_ex(app_dir, mount, cfg, overwrite, 0, NULL, 0, err, err_size);
+}
+
+int job_start_dlc(const char *app_dir, const char *mount,
+                  const dumper_config_t *cfg, const char *const *names, int count,
+                  char *err, size_t err_size)
+{
+    return job_start_ex(app_dir, mount, cfg, 0, 1, names, count, err, err_size);
 }
 
 void job_abort(void)

@@ -69,6 +69,11 @@ static const whb_cfg_key_t g_keys[] = {
       .comment = "; === Additional content ===\n"
                  "; dump_dlc = 1 -> the DLC mounted with a title are dumped along with it, each as a\n"
                  ";                 folder of its own next to the game's (default)\n" },
+    { .ini_name = "folder_titles", .web_name = "folderTitles", .type = WHB_CFG_BOOL, .def = 1,
+      .comment = "; === Folder names ===\n"
+                 "; folder_titles = 1 -> the game's title goes behind its dump folders' names:\n"
+                 ";                      PPSA01325-app0_ASTROs_PLAYROOM (default)\n"
+                 "; folder_titles = 0 -> the title id alone: PPSA01325-app0\n" },
     { .ini_name = "queue_delay", .web_name = "queueDelay", .type = WHB_CFG_INT,
       .lo = QUEUE_SETTLE_MIN, .hi = QUEUE_SETTLE_MAX, .def = 30,
       .comment = "; === Dump Queue ===\n"
@@ -98,6 +103,7 @@ void cfg_snapshot(dumper_config_t *out)
     out->auto_start         = whb_config_int("auto_start", 0);
     out->queue_delay        = whb_config_int("queue_delay", 30);
     out->dump_dlc           = whb_config_int("dump_dlc", 1);
+    out->folder_titles      = whb_config_int("folder_titles", 1);
     whb_config_str("dump_subdir", out->dump_subdir, sizeof(out->dump_subdir));
     whb_config_str("dump_subdir_console", out->dump_subdir_console, sizeof(out->dump_subdir_console));
     whb_config_unlock();

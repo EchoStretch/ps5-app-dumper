@@ -26,6 +26,7 @@ along with this program; see the file COPYING. If not, see
 
 #define SANDBOX_PATH    "/mnt/sandbox/pfsmnt"
 #define APP_SCAN_MAX    24
+#define DLC_MAX         32
 
 /* One mounted application, as exposed by pfsmnt while the title runs. */
 typedef struct {
@@ -34,7 +35,7 @@ typedef struct {
     /* the additional content mounted with it, as pfsmnt names it:
        "EP9000-PPSA01521_00-BURNINGSHORESPS5-ac" (the -nest twin is not a copy) */
     int  dlc_count;
-    char dlc[8][96];
+    char dlc[DLC_MAX][96];
     char title_id[16];    /* "PPSA01234"                                */
     char title[128];      /* human readable name, empty when unknown    */
     char version[24];     /* content/app version, empty when unknown    */
@@ -85,6 +86,12 @@ typedef struct {
     int  installed_pct;
     int  install_pending; /* 1 while chunks this console wants are still missing */
     playgo_status_t playgo;
+    /* The DLC installed for it under <root>/addcont/<id>/<label>/ac.pkg, mounted
+       or not. Most unlock content that is in the game already: tiny packages
+       the console never mounts. Only a mounted one can be dumped. */
+    int      addcont_count;
+    char     addcont[DLC_MAX][20];
+    uint64_t addcont_bytes[DLC_MAX];
 } library_entry_t;
 
 #define LIBRARY_SCAN_MAX 128

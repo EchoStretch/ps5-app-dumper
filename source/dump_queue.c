@@ -235,7 +235,8 @@ static int bring_up(int index, const char *title_id, const char *dir, int settle
 /* Returns -1 when the queue was stopped, 0 otherwise. */
 static int process_item(int index)
 {
-    queue_status_t snap;
+    /* static: a snapshot of 64 items is ~23 KB, and only the one worker runs */
+    static queue_status_t snap;
     queue_get_status(&snap);
 
     const char *title_id = snap.items[index].title_id;
@@ -321,7 +322,7 @@ static void *worker(void *arg)
 {
     (void)arg;
 
-    queue_status_t snap;
+    static queue_status_t snap;   /* see process_item */
     queue_get_status(&snap);
 
     int stopped = 0;
@@ -397,7 +398,7 @@ int queue_start(const char *const *title_ids, const int *is_disc,
                                          FAIL("destination path is too long");
     if (!app_launch_available())         FAIL("this console build cannot start titles");
 
-    queue_status_t next;
+    static queue_status_t next;   /* ~23 KB; g_start_mtx keeps it to one caller */
     memset(&next, 0, sizeof(next));
 
     for (int i = 0; i < count; i++) {

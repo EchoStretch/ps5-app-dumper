@@ -26,9 +26,14 @@
 .dumprow:first-child{border-top:0}
 .dumprow .meta{flex:1;min-width:0}
 .dumprow .name{display:block;font-size:14.5px}
-.dumprow .where{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-faint);margin-top:3px;word-break:break-all}
-.dumprow .size{font-family:var(--mono);font-size:11.5px;color:var(--ink-dim);margin:0 12px;white-space:nowrap;flex:none}
-.dumprow .mini{flex:none}
+.dumprow .tags{display:block;margin-top:4px}
+.dumprow .where{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-faint);margin-top:3px}
+.dumprow .acts{display:flex;align-items:center;flex:none;margin-left:12px}
+.dumprow .size{font-family:var(--mono);font-size:11.5px;color:var(--ink-dim);margin-right:12px;white-space:nowrap}
+.dumprow .mini{flex:none;margin-left:6px}
+/* a path breaks after its slashes (<wbr>), and a tap copies it */
+.copy{cursor:pointer;overflow-wrap:break-word}
+.copy:hover{color:var(--ink-dim)}
 /* dumps as cards: a grid, whose gap the console's browser does honour */
 .dumpgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));grid-gap:12px;gap:12px}
 .dumpcard{border:1px solid var(--line-soft);border-radius:10px;background:var(--panel-2);overflow:hidden;min-width:0}
@@ -40,7 +45,7 @@
 .dumpcard .txt{display:block;padding:10px 11px 11px}
 .dumpcard .name{display:block;font-size:14px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dumpcard .tags{display:block;margin-top:6px}
-.dumpcard .where{display:block;font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);margin-top:6px;word-break:break-all;line-height:1.35}
+.dumpcard .where{display:block;font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);margin-top:6px;line-height:1.35}
 .dumpcard .size{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-dim);margin-top:6px;white-space:nowrap}
 /* buttons wrap and share the row; margins, the console's WebKit has no flex gap */
 .dumpcard .acts{display:flex;flex-wrap:wrap;margin:3px -6px 0 0}
@@ -53,6 +58,11 @@
 .smbanner .sm-txt{display:block;font-size:12.5px;line-height:1.5;color:var(--ink-dim)}
 .smbanner .mini{margin-top:10px}
 .smbanner .mini.arm{border-color:var(--red);color:var(--red)}
+/* not a .banner: the kit pushes every button in one to the right */
+.renamebar{margin:0 0 18px;padding:13px 15px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+.renamebar .txt{display:block;font-size:12.5px;line-height:1.5;color:var(--ink-dim)}
+.renamebar .rename-acts{display:flex;flex-wrap:wrap;margin-top:4px}
+.renamebar .rename-acts .mini{flex:none;margin:6px 6px 0 0}
 
 /* ---------------- layout ---------------- */
 main{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:18px;align-items:start}
@@ -181,6 +191,14 @@ button.tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .hero-state .dot{margin-right:7px;animation:pulse 2s ease-in-out infinite}
 /* controls sit on a plain strip below the art: whatever picture a game
    brings, the button never has to compete with it */
+.dlc-pick{padding:6px 16px 12px;border-top:1px solid var(--line-soft);cursor:default}
+.dlc-pick label{display:flex;align-items:center;padding:6px 0;cursor:pointer}
+.dlc-pick label input{margin:0 10px 0 0;flex:none}
+.dlc-pick .lbl{flex:1;min-width:0;font-family:var(--mono);font-size:12px;overflow-wrap:break-word}
+.dlc-pick .lbl .tag{margin-left:8px}
+.dlc-pick .size{font-family:var(--mono);font-size:11px;color:var(--ink-dim);margin-left:10px;white-space:nowrap}
+.dlc-pick .pick-acts{display:flex;justify-content:flex-end;margin-top:8px}
+.dlc-pick .pick-acts .mini{margin-left:6px}
 .hero-bar{
   display:flex;align-items:center;padding:9px 14px;border-top:1px solid var(--line-soft);
   background:var(--panel-2)
@@ -262,7 +280,8 @@ button.tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .bar i.low{background:linear-gradient(90deg,#c4740a,var(--amber))}
 
 /* dumps that were cut short */
-.cut{border-top:1px solid var(--line-soft);padding:10px 12px 12px}
+/* the box of unfinished dumps - not the UNFINISHED tag, which is a .tag.cut */
+div.cut{border-top:1px solid var(--line-soft);padding:10px 12px 12px}
 .cut-head{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--amber);margin-bottom:8px}
 .cut-row{display:flex;align-items:center;padding:7px 0;border-top:1px solid var(--line-soft)}
 .cut-row:first-of-type{border-top:0}
@@ -302,6 +321,11 @@ button.tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 @media(max-width:560px){
   .pct{font-size:36px}
   .grid{grid-template-columns:1fr}
+  /* a phone: the text gets the whole width, size and buttons go below it */
+  .dumprow{flex-wrap:wrap}
+  .dumprow .meta{flex:1 1 100%}
+  .dumprow .acts{flex:1 1 100%;margin:8px 0 0}
+  .dumprow .size{margin-right:auto}
 }
 /* ---------------- flex gap fallback ---------------- *
  * For the flex gaps above; what it is about, and the kit's own lines: whb.css. */
@@ -505,6 +529,13 @@ button.tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
             </div>
             <div class="row">
               <div class="txt">
+                <div class="label">Game title in folder names</div>
+                <div class="hint">PPSA01325-app0_ASTROs_PLAYROOM instead of PPSA01325-app0. Dumps named either way are recognised.</div>
+              </div>
+              <label class="sw"><input type="checkbox" id="c-ftitles"><span></span></label>
+            </div>
+            <div class="row">
+              <div class="txt">
                 <div class="label">SDK backport</div>
                 <div class="hint">Patch SDK versions down. May break the dump.</div>
               </div>
@@ -534,7 +565,19 @@ button.tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
         <button type="button" data-v="cards">Cards</button>
         <button type="button" data-v="list">List</button>
       </div>
+      <button type="button" class="mini" id="dumps-rename" style="margin-left:8px">Rename</button>
       <button type="button" class="mini" id="dumps-rescan" style="margin-left:8px">Rescan</button>
+    </div>
+
+    <div class="renamebar" id="renamebar" hidden>
+      <span class="txt"><b>Rename all dumps</b> - the game dumps listed below get the title id alone, PPSA01325-app0, or the game's
+        title behind it, PPSA01325-app0_ASTRO's_PLAYROOM. DLC keep their names. A dump ShadowMount runs a game from is left as it is,
+        since the link names its folder.</span>
+      <span class="rename-acts">
+        <button type="button" class="mini" data-rename="titles">Add game titles</button>
+        <button type="button" class="mini" data-rename="plain">Title IDs only</button>
+        <button type="button" class="mini" id="rename-no">Cancel</button>
+      </span>
     </div>
 
     <div class="banner smbanner" id="smbanner" hidden>
@@ -672,13 +715,41 @@ function installing(t){ return !!t.installing; }
 function partial(t){ return !t.installing && typeof t.installed === "number" && t.installed >= 0 && t.installed < 100; }
 function dlcTag(a){
   var n = a.dlc ? a.dlc.length : 0;
+  var known = libraryEntry(a.titleId);
+  var more = (known && known.addcont ? known.addcont.length : 0) - n;
+  if(!n) return addcontTag(known);
   var on = !state.config || state.config.dumpDlc !== 0;
-  return n ? '<span class="tag pkg"' + (on ? "" : ' style="opacity:.5;text-decoration:line-through"') + ' title="' + esc(a.dlc.join(", ")) +
-             (on ? ' - dumped along, each as a folder of its own' : ' - not dumped: DLC are switched off under Settings') + '">+' + n + ' DLC</span>' : "";
+  return '<span class="tag pkg"' + (on ? "" : ' style="opacity:.5;text-decoration:line-through"') + ' title="' + esc(a.dlc.join(", ")) +
+         (on ? ' - dumped along, each as a folder of its own' : ' - not dumped: DLC are switched off under Settings') +
+         (more > 0 ? ". " + more + " more installed unlock what is in the game already - they are not mounted and stay on this console" : "") +
+         '">+' + n + ' DLC</span>';
+}
+/* The DLC installed for a title, mounted or not. Most only unlock what the
+   game has already: the console never mounts them, so there is nothing to
+   dump - and nothing to take along, they keep working on this console. */
+function addcontTag(t){
+  var ac = t && t.addcont || [];
+  if(!ac.length) return "";
+  var list = ac.map(function(x){ return x.label + " (" + bytes(x.bytes) + ")"; }).join(", ");
+  return '<span class="tag pkg" title="' + esc(ac.length + " DLC installed: " + list + ". Those with content of their own are mounted " +
+         "while the game runs and dumped with it. The others unlock what is in the game already; they stay installed on this console " +
+         "and keep working for a dump started here.") + '">' + ac.length + ' DLC</span>';
+}
+/* What the Dumps library has of a title: a finished dump somewhere, or only an
+   unfinished one. A DLC folder is the DLC's, not the game's. */
+function dumpedTag(titleId){
+  var done = [], cut = [];
+  (state.dumps || []).forEach(function(d){
+    if(d.titleId !== titleId || /-ac$/.test(d.folder)) return;
+    if(!d.state || d.state === "done") done.push(dumpPath(d));
+    else if(!(d.state === "running" && whb.busy)) cut.push(dumpPath(d));
+  });
+  return done.length ? '<span class="tag there" title="Dumped: ' + esc(done.join(", ")) + '">DUMPED</span>'
+       : cut.length ? '<span class="tag cut" title="Only an unfinished dump: ' + esc(cut.join(", ")) + '">UNFINISHED</span>' : "";
 }
 function partialWhy(t){
   var c = t.chunks || [];
-  return c[0] ? "The package has " + c[0] + " PlayGo chunks; this console wants " + c[1] + " of them (its languages and region) and has them all. " +
+  return c[0] && c[1] < c[0] ? "The package has " + c[0] + " PlayGo chunks; this console wants " + c[1] + " of them (its languages and region). " +
                 "The other " + (c[0] - c[1]) + " were never fetched. A dump has what is here"
               : t.installed + " % of the package is on the console and the rest never arrived - content the console did not fetch. A dump has what is here";
 }
@@ -705,7 +776,8 @@ function renderApps(){
   var sig = state.apps.map(function(a){
     var known = libraryEntry(a.titleId);
     return a.dir + "|" + a.title + "|" + a.version + "|" + a.hasIcon + "|" + a.media + a.discIn + "|" + a.installed + a.installing + "|" + (a.dlc || []).join(",") +
-           "|" + !!(known && known.hasPic) + "|" + !!known + "|" + state.canLaunch;
+           "|" + !!(known && known.hasPic) + "|" + !!known + "|" + state.canLaunch + "|" + (known && known.addcont ? known.addcont.length : 0) + dumpedTag(a.titleId) +
+           "|" + (state.dlcPick === a.dir ? "pick" : "");
   }).join("~");
 
   if(sig === appSig){ markPressed(box, "data-dir", state.app); markQueued(); return; }
@@ -731,13 +803,18 @@ function renderApps(){
       '<span class="meta">' +
         '<span class="hero-state"><i class="dot"></i>Running now</span>' +
         '<span class="name">' + esc(a.title) + '</span>' +
-        '<span class="id">' + tag + mediaTag(a.media, a.discIn) + installTag(a) + dlcTag(a) + esc(a.titleId) + (a.version ? " &middot; " + esc(a.version) : "") + '</span>' +
+        '<span class="id">' + tag + mediaTag(a.media, a.discIn) + installTag(a) + dlcTag(a) + dumpedTag(a.titleId) + esc(a.titleId) + (a.version ? " &middot; " + esc(a.version) : "") + '</span>' +
       '</span></div>' +
       '<div class="hero-bar">' +
         '<span class="hero-pick"' + (installing(a) ? ' style="color:var(--amber)"' : "") + '>' +
-          (installing(a) ? "still installing - not ready to dump" : partial(a) ? "ready to dump - " + (a.chunks && a.chunks[0] ? a.chunks[2] + " of " + a.chunks[0] + " chunks, all this console wants" : a.installed + " % of the package is here, the rest never arrived") : state.apps.length > 1 ? "tap to select" : "ready to dump") + '</span>' +
+          (installing(a) ? "still installing - not ready to dump" : partial(a) ? "ready to dump - " + (a.chunks && a.chunks[1] < a.chunks[0] ? a.chunks[1] + " of " + a.chunks[0] + " chunks, all this console wants" : a.installed + " % of the package is here, the rest never arrived") : state.apps.length > 1 ? "tap to select" : "ready to dump") + '</span>' +
+        (a.dlc && a.dlc.length ? '<button class="mini" type="button" data-dlconly="' + esc(a.dir) + '" title="Dump only the ' + a.dlc.length +
+          ' DLC mounted with this game, next to its dump - the game itself is not copied again" style="margin-right:6px">Dump DLC</button>'
+          /* DLC installed, none mounted: say why there is nothing to dump instead of hiding the button */
+          : known && known.addcont && known.addcont.length ? '<button class="mini" type="button" data-nodlc="' + known.addcont.length +
+          '" style="margin-right:6px;opacity:.5">Dump DLC</button>' : "") +
         (known && state.canLaunch ? '<button class="mini" type="button" data-queue="' + esc(a.titleId) + '"></button>' : "") +
-      '</div></div>';
+      '</div>' + (state.dlcPick === a.dir ? dlcPickPanel(a, known) : "") + '</div>';
   });
   box.innerHTML = html;
 
@@ -766,7 +843,96 @@ function renderApps(){
       toggleQueued(el.getAttribute("data-queue"));
     });
   });
+  Array.prototype.forEach.call(box.querySelectorAll("[data-dlconly]"), function(el){
+    el.addEventListener("click", function(e){
+      e.stopPropagation();
+      dumpDlcOnly(el, el.getAttribute("data-dlconly"));
+    });
+  });
+  Array.prototype.forEach.call(box.querySelectorAll("[data-nodlc]"), function(el){
+    el.addEventListener("click", function(e){
+      e.stopPropagation();
+      var n = Number(el.getAttribute("data-nodlc"));
+      toast("None of the " + n + " DLC is mounted: they only unlock what is in the game already, so there is nothing to dump. " +
+            "They stay installed and keep working for a dump started on this console. A DLC with content of its own is mounted while the game runs.", "bad");
+    });
+  });
+  Array.prototype.forEach.call(box.querySelectorAll(".dlc-pick"), function(p){
+    /* the card under it picks the title - nothing in here should */
+    p.addEventListener("click", function(e){ e.stopPropagation(); });
+    p.addEventListener("keydown", function(e){ e.stopPropagation(); });
+    Array.prototype.forEach.call(p.querySelectorAll("input[data-name]"), function(c){
+      c.addEventListener("change", function(){ state.dlcPicked[c.getAttribute("data-name")] = c.checked; });
+    });
+    var go = p.querySelector("[data-pickgo]"), no = p.querySelector("[data-pickno]");
+    go.addEventListener("click", function(){
+      var names = Object.keys(state.dlcPicked).filter(function(n){ return state.dlcPicked[n]; });
+      if(!names.length){ toast("Tick at least one DLC.", "bad"); return; }
+      startDlcDump(go, state.dlcPick, names);
+    });
+    no.addEventListener("click", function(){ state.dlcPick = null; renderApps(); });
+  });
   markQueued();
+}
+
+/* "EP9000-PPSA01521_00-BURNINGSHORESPS5-ac" -> "BURNINGSHORESPS5" */
+function dlcLabel(name){
+  var m = /_00-(.*)-ac$/.exec(name);
+  return m ? m[1] : name;
+}
+/* a finished dump of this DLC, anywhere the Dumps library looked */
+function dlcDumpedAt(name){
+  var at = "";
+  (state.dumps || []).forEach(function(d){ if(d.folder === name && (!d.state || d.state === "done")) at = dumpPath(d); });
+  return at;
+}
+state.dlcPick = null;    /* the dir whose DLC list is open */
+state.dlcPicked = {};
+function dlcPickPanel(a, known){
+  var sizes = {};
+  (known && known.addcont || []).forEach(function(x){ sizes[x.label] = x.bytes; });
+  var rows = a.dlc.map(function(n){
+    var at = dlcDumpedAt(n), label = dlcLabel(n);
+    if(!(n in state.dlcPicked)) state.dlcPicked[n] = !at;
+    return '<label><input type="checkbox" data-name="' + esc(n) + '"' + (state.dlcPicked[n] ? " checked" : "") + '>' +
+           '<span class="lbl">' + esc(label) + (at ? '<span class="tag there" title="Dumped: ' + esc(at) + ' - ticked, it is dumped anew">DUMPED</span>' : "") + '</span>' +
+           (sizes[label] ? '<span class="size">' + bytes(sizes[label]) + '</span>' : "") + '</label>';
+  }).join("");
+  return '<div class="dlc-pick">' + rows +
+         '<div class="pick-acts"><button class="mini" type="button" data-pickno>Cancel</button>' +
+         '<button class="mini" type="button" data-pickgo>Dump selected</button></div></div>';
+}
+
+/* The DLC of a running game alone, for a game dumped before they were there.
+   One is dumped right away; with several, the card lists them to pick from. */
+function dumpDlcOnly(btn, dir){
+  var a = null;
+  state.apps.forEach(function(x){ if(x.dir === dir) a = x; });
+  if(!a) return;
+  /* the list also when the one there is dumped already: picking it replaces it */
+  if(a.dlc.length > 1 || dlcDumpedAt(a.dlc[0])){
+    state.dlcPick = state.dlcPick === dir ? null : dir;
+    state.dlcPicked = {};
+    renderApps();
+    return;
+  }
+  startDlcDump(btn, dir, null);
+}
+function startDlcDump(btn, dir, names){
+  if(whb.busy){ toast("A dump is running already.", "bad"); return; }
+  if(!state.target){ toast("Select a destination drive first.", "bad"); return; }
+  var request = {app: dir, target: state.target, only: "dlc"};
+  (names || []).forEach(function(n, i){ request["d" + i] = n; });
+  btn.disabled = true;
+  post("/api/dump", request).then(function(d){
+    whb.busy = true;
+    state.job = d.job;
+    state.dlcPick = null;
+    renderApps();
+    renderJob(d.job);
+    updateAction();
+    toast("Dumping " + (names ? names.length : 1) + " DLC", "ok");
+  }).catch(function(e){ toast(e.message, "bad"); }).then(function(){ btn.disabled = false; });
 }
 
 /* ---------------- rendering: installed titles ---------------- */
@@ -784,7 +950,8 @@ function renderLibrary(){
   var list = state.library.filter(function(t){ return !mounted[t.titleId]; });
 
   var sig = (state.canLaunch === false ? "nolaunch~" : "") + list.map(function(t){
-    return t.titleId + "|" + t.title + "|" + t.isRunning + "|" + t.media + t.discIn + "|" + (t.mountedFrom || "") + "|" + t.installed + t.installing;
+    return t.titleId + "|" + t.title + "|" + t.isRunning + "|" + t.media + t.discIn + "|" + (t.mountedFrom || "") + "|" + t.installed + t.installing +
+           "|" + (t.addcont || []).length + dumpedTag(t.titleId);
   }).join("~") + "#" + state.library.length;
   if(sig === libSig) return;
   libSig = sig;
@@ -815,7 +982,7 @@ function renderLibrary(){
     html += '<div class="tile lib" data-search="' + esc((t.title + " " + t.titleId).toLowerCase()) + '">' + icon +
       '<span class="meta">' +
         '<span class="name">' + esc(t.title) + '</span>' +
-        '<span class="id">' + tag + mediaTag(t.media, t.discIn) + mountTag(t.mountedFrom) + installTag(t) + esc(t.titleId) +
+        '<span class="id">' + tag + mediaTag(t.media, t.discIn) + mountTag(t.mountedFrom) + installTag(t) + addcontTag(t) + dumpedTag(t.titleId) + esc(t.titleId) +
           (t.source && t.source !== "internal" ? " &middot; " + esc(t.source) : "") + '</span>' +
       '</span>' +
       '<span class="lib-acts">' +
@@ -960,7 +1127,7 @@ function renderLaunchBanner(){
 /* ---------------- queue ---------------- */
 /* The queue is put together in the browser and handed to the console in one
    go; from then on the console owns it and this page only mirrors it. */
-var QUEUE_MAX = 16, QUEUE_KEY = "ps5-app-dumper.queue";
+var QUEUE_MAX = 64, QUEUE_KEY = "ps5-app-dumper.queue";
 
 function storeQueue(){
   try { localStorage.setItem(QUEUE_KEY, JSON.stringify(state.queue)); } catch(e){}
@@ -1119,8 +1286,13 @@ function refreshPresence(){
 
   clearTimeout(presenceTimer);
   presenceTimer = setTimeout(function(){
-    api("/api/dumps/presence?target=" + encodeURIComponent(state.target) + "&titles=" + encodeURIComponent(ids)).then(function(d){
-      state.presence = d.titles || {};
+    /* 15 ids a request: the payload takes values of 191 bytes at most */
+    var all = ids.split(","), asks = [];
+    for(var i = 0; i < all.length; i += 15)
+      asks.push(api("/api/dumps/presence?target=" + encodeURIComponent(state.target) + "&titles=" + encodeURIComponent(all.slice(i, i + 15).join(","))));
+    Promise.all(asks).then(function(parts){
+      state.presence = {};
+      parts.forEach(function(d){ for(var k in d.titles || {}) state.presence[k] = d.titles[k]; });
       queueSig = null;
       renderQueue(); updateAction();
     }).catch(function(){ presenceFor = null; });
@@ -1287,12 +1459,15 @@ function startQueue(){
   b.classList.remove("arm");
   b.disabled = true;
 
-  var ids = state.queue.map(function(q){ return q.titleId; });
-  var discs = state.queue.filter(function(q){ return q.media === "disc"; })
-                         .map(function(q){ return q.titleId; });
-  var request = {titles: ids.join(","), discs: discs.join(","), target: state.target,
-                 replace: state.queueReplace ? 1 : 0};
-  state.queue.forEach(function(q){ if(q.own) request["o_" + q.titleId] = ownSpec(q); });
+  /* in pieces of a few titles: the payload takes values of 191 bytes at most
+     (routes_dumper.c, handle_queue_start) */
+  var request = {target: state.target, replace: state.queueReplace ? 1 : 0}, piece = "", n = 0;
+  state.queue.forEach(function(q){
+    var item = q.titleId + (q.media === "disc" ? "*" : "") + (q.own ? ":" + ownSpec(q) : "");
+    if(piece && piece.length + 1 + item.length > 180){ request["q" + n++] = piece; piece = ""; }
+    piece += (piece ? "," : "") + item;
+  });
+  if(piece) request["q" + n] = piece;
   post("/api/queue/start", request).then(function(){
     state.queue = [];
     state.queueOpen = null;
@@ -1407,6 +1582,7 @@ function applyConfig(c){
   $("c-decrypt").checked  = !!c.enableDecrypter;
   $("c-logging").checked  = !!c.enableLogging;
   if($("c-dlc")) $("c-dlc").checked = c.dumpDlc !== 0;
+  if($("c-ftitles")) $("c-ftitles").checked = c.folderTitles !== 0;
   $("c-fself").checked    = !!c.enableElf2fself;
   $("c-backport").checked = !!c.enableBackport;
   $("c-auto").checked     = !!c.autoStart;
@@ -1444,6 +1620,7 @@ function collectConfig(){
     enableDecrypter: $("c-decrypt").checked ? 1 : 0,
     enableLogging:   $("c-logging").checked ? 1 : 0,
     dumpDlc:         $("c-dlc") && $("c-dlc").checked ? 1 : 0,
+    folderTitles:    $("c-ftitles") && $("c-ftitles").checked ? 1 : 0,
     enableElf2fself: $("c-fself").checked ? 1 : 0,
     enableBackport:  $("c-backport").checked ? 1 : 0,
     autoStart:       $("c-auto").checked ? 1 : 0,
@@ -1472,7 +1649,7 @@ function saveConfig(){
 }
 
 function wireSettings(){
-  ["c-decrypt","c-logging","c-fself","c-dlc","c-backport","c-auto"].forEach(function(id){
+  ["c-decrypt","c-logging","c-fself","c-dlc","c-ftitles","c-backport","c-auto"].forEach(function(id){
     $(id).addEventListener("change", function(){
       if(id === "c-backport" && $(id).checked)
         toast("Backporting is experimental and can break the dump.", "bad");
@@ -1769,7 +1946,7 @@ function onStatus(d, wasBusy){
 
   if(wasBusy && !whb.busy){
     presenceFor = null;      /* what is on the drive has just changed */
-    loadDevices();
+    loadDevices(); loadDumps();
     if(wasQueue){
       var ok = d.queue.items.filter(function(q){ return q.state === "done"; }).length;
       var cut = d.queue.items.some(function(q){ return q.state === "skipped"; });
@@ -2075,10 +2252,12 @@ function loadDumps(){
   $("dumplist").innerHTML = state.dumps.length ? $("dumplist").innerHTML : '<div class="empty">looking for dumps…</div>';
   api("/api/dumps?token=" + encodeURIComponent(accessToken())).then(function(d){
     state.dumps = d.dumps || [];
+    state.dumpsAt = Date.now();
     state.dumpsConsoleListed = !!d.consoleListed;
     $("smbanner").hidden = !d.shadowMountRunning;
     state.shadowMount = !!d.shadowMountRunning;
     renderDumps();
+    renderLibrary(); renderApps();    /* the DUMPED marks on the titles */
   }).catch(function(e){ $("dumplist").innerHTML = '<div class="empty">' + esc(e.message) + '</div>'; });
 }
 var DUMPVIEW_KEY = "dumps.view";
@@ -2108,6 +2287,32 @@ function dumpIcon(d){
   return "/api/dumps/icon?mount=" + encodeURIComponent(d.mount) + "&dir=" + encodeURIComponent(d.dir) +
          "&folder=" + encodeURIComponent(d.folder) + (d.internal ? "&token=" + encodeURIComponent(accessToken()) : "");
 }
+/* A path that may break after each slash, and is copied on a tap */
+function pathSpan(path){
+  return '<span class="where copy" data-copy="' + esc(path) + '" title="Copy the path">' +
+         esc(path).replace(/\//g, "/<wbr>") + '</span>';
+}
+/* execCommand first: the page is plain http, where the Clipboard API is
+   missing in most browsers, the console's among them */
+function copyText(text){
+  var ok = false;
+  try {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed"; ta.style.top = "0"; ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select(); ta.setSelectionRange(0, text.length);
+    ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+  } catch(e){}
+  if(ok){ toast("Copied: " + text, "ok"); return; }
+  if(navigator.clipboard && navigator.clipboard.writeText)
+    navigator.clipboard.writeText(text).then(function(){ toast("Copied: " + text, "ok"); },
+                                             function(){ toast("This browser does not let the page copy - " + text, "bad"); });
+  else toast("This browser does not let the page copy - " + text, "bad");
+}
+
 function renderDumps(){
   var cards = state.dumpsView !== "list";
   Array.prototype.forEach.call($("dumps-view").querySelectorAll("button"), function(b){
@@ -2134,7 +2339,7 @@ function renderDumps(){
                   esc(d.hasIcon ? dumpIcon(d) : "/api/libicon?title=" + encodeURIComponent(d.titleId)) + '"></span>' +
                 '<span class="txt"><span class="name" title="' + esc(d.title) + '">' + esc(d.title) + '</span>' +
                 '<span class="tags">' + dumpTags(d) + '</span>' +
-                '<span class="where">' + esc(dumpPath(d)) + '</span>' +
+                pathSpan(dumpPath(d)) +
                 '<span class="size">' + (d.bytes ? bytes(d.bytes) : "size not known") + '</span>' +
                 '<span class="acts">' +
                 (d.inUse ? '<button type="button" class="mini" data-unlink="' + at + '">Unlink</button>' : "") +
@@ -2144,13 +2349,13 @@ function renderDumps(){
                 '<button type="button" class="mini del" data-del="' + at + '">Delete</button></span></span></div>';
       } else {
         html += '<div class="dumprow"><span class="meta"><span class="name">' + esc(d.title) + '</span>' +
-                '<span class="where">' + dumpTags(d) + esc(dumpPath(d)) + '</span></span>' +
-                '<span class="size">' + (d.bytes ? bytes(d.bytes) : "") + '</span>' +
-                (d.inUse ? '<button type="button" class="mini" data-unlink="' + at + '" style="margin-right:6px">Unlink</button>' : "") +
-                (canFself(d) ? '<button type="button" class="mini" data-fself="' + at + '" style="margin-right:6px">FSELF</button>' : "") +
-                (canUnfself(d) ? '<button type="button" class="mini" data-unfself="' + at + '" style="margin-right:6px">Undo FSELF</button>' : "") +
+                '<span class="tags">' + dumpTags(d) + '</span>' + pathSpan(dumpPath(d)) + '</span>' +
+                '<span class="acts"><span class="size">' + (d.bytes ? bytes(d.bytes) : "") + '</span>' +
+                (d.inUse ? '<button type="button" class="mini" data-unlink="' + at + '">Unlink</button>' : "") +
+                (canFself(d) ? '<button type="button" class="mini" data-fself="' + at + '">FSELF</button>' : "") +
+                (canUnfself(d) ? '<button type="button" class="mini" data-unfself="' + at + '">Undo FSELF</button>' : "") +
                 '<button type="button" class="mini" data-move="' + at + '">Move</button>' +
-                '<button type="button" class="mini del" data-del="' + at + '" style="margin-left:6px">Delete</button></div>';
+                '<button type="button" class="mini del" data-del="' + at + '">Delete</button></span></div>';
       }
     });
     html += (cards ? '</div>' : "") + '</div></section>';
@@ -2158,6 +2363,9 @@ function renderDumps(){
   if(!order.length) html = '<div class="empty-state"><strong>No dumps found</strong>Dumps show up here once there are some, on any drive or on the console.</div>';
   if(!state.dumpsConsoleListed) html += '<p class="hint" style="margin:0 4px 18px">Dumps on the console are listed once this device has entered the code.</p>';
   $("dumplist").innerHTML = html;
+  Array.prototype.forEach.call($("dumplist").querySelectorAll("[data-copy]"), function(el){
+    el.addEventListener("click", function(){ copyText(el.getAttribute("data-copy")); });
+  });
   Array.prototype.forEach.call($("dumplist").querySelectorAll("[data-move]"), function(b){
     b.addEventListener("click", function(){ openMovePicker(state.dumps[Number(b.getAttribute("data-move"))]); });
   });
@@ -2263,6 +2471,26 @@ function renderMove(m){
   state.moveResult = result;
 }
 $("dumps-rescan").addEventListener("click", loadDumps);
+$("dumps-rename").addEventListener("click", function(){ $("renamebar").hidden = !$("renamebar").hidden; });
+$("rename-no").addEventListener("click", function(){ $("renamebar").hidden = true; });
+Array.prototype.forEach.call($("renamebar").querySelectorAll("[data-rename]"), function(b){
+  b.addEventListener("click", function(){
+    if(whb.busy){ toast("A dump is running - rename once it is done.", "bad"); return; }
+    Array.prototype.forEach.call($("renamebar").querySelectorAll("button"), function(x){ x.disabled = true; });
+    post("/api/dumps/rename", {mode: b.getAttribute("data-rename")}).then(function(r){
+      var note = [r.renamed + " renamed"];
+      if(r.unchanged) note.push(r.unchanged + " named so already");
+      if(r.inUse) note.push(r.inUse + " left alone - ShadowMount runs a game from " + (r.inUse === 1 ? "it" : "them"));
+      if(r.taken) note.push(r.taken + " not renamed - the new name is taken");
+      if(r.failed) note.push(r.failed + " failed, see the log");
+      toast(note.join(", "), r.failed || r.taken ? "bad" : "ok");
+      $("renamebar").hidden = true;
+      loadDumps();
+    }).catch(function(e){ toast(e.message, "bad"); }).then(function(){
+      Array.prototype.forEach.call($("renamebar").querySelectorAll("button"), function(x){ x.disabled = false; });
+    });
+  });
+});
 /* ending somebody else's payload takes a second press */
 var smArm;
 $("sm-stop").addEventListener("click", function(){
@@ -2309,6 +2537,7 @@ restoreQueue();
 renderQueue();
 loadDevices();
 loadLibrary();
+loadDumps();
 pollStatus();
 setInterval(pollStatus, 1000);
 setInterval(function(){
@@ -2316,6 +2545,9 @@ setInterval(function(){
   if(whb.busy && !queueActive()) return;
   loadDevices();
   loadLibrary();
+  /* a drive plugged in or a dump moved elsewhere: the library walks every
+     drive, so not at the pace of the rest */
+  if(!whb.busy && Date.now() - (state.dumpsAt || 0) > 60000) loadDumps();
 }, 8000);
 })();
 </script>

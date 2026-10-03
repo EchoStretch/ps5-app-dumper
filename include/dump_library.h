@@ -46,6 +46,17 @@ typedef struct {
    names are not for everybody on the network. Returns how many. */
 int dumplib_scan(dumplib_entry_t *out, int max, int with_internal);
 
+typedef struct {
+    int renamed, unchanged, in_use, taken, failed;
+} dumplib_rename_report_t;
+
+/* Renames every game dump the library finds to the plain name, or to it with
+   the game's title behind (dump_title_suffix) - folder and info file alike.
+   DLC folders keep their names. A dump an installed title is redirected to
+   (ShadowMount) is left alone, since the link names its path; so is one
+   whose new name is taken already. with_internal as for dumplib_scan. */
+void dumplib_rename_all(int with_titles, int with_internal, dumplib_rename_report_t *r);
+
 /* The picture of a dump: <mount>/<dir>/<folder>/sce_sys/icon0.png, checked the
    way a move checks its source. Returns 0 and the path, -1 when there is none
    or the folder is not a dump. */

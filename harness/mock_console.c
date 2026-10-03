@@ -99,7 +99,11 @@ static void fill_app(app_entry_t *a, int i)
     strcpy(a->title, LIB[i].title);
     strcpy(a->version, LIB[i].ver);
     a->is_ps4  = !strncmp(LIB[i].id, "CUSA", 4);
-    if (!strcmp(LIB[i].id, "PPSA01234")) { a->dlc_count = 1; snprintf(a->dlc[0], sizeof(a->dlc[0]), "UP9000-PPSA01234_00-ASTRODLC01-ac"); }
+    if (!strcmp(LIB[i].id, "PPSA01234")) {
+        a->dlc_count = 2;
+        snprintf(a->dlc[0], sizeof(a->dlc[0]), "UP9000-PPSA01234_00-ASTRODLC01000000-ac");
+        snprintf(a->dlc[1], sizeof(a->dlc[1]), "UP9000-PPSA01234_00-ASTROBGM00000000-ac");
+    }
     a->on_disc = title_on_disc(LIB[i].id);
     a->is_disc = LIB[i].disc;
 }
@@ -146,6 +150,14 @@ static void fill_lib(library_entry_t *e, int i)
     if (title_playgo_status(LIB[i].id, &e->playgo) != 0) memset(&e->playgo, 0, sizeof(e->playgo));
     if (!strcmp(LIB[i].id, "PPSA07777") && g_folder_linked) strcpy(e->mounted_from, FOLDER_GAME_DUMP);
     e->is_running = (running_now(id) && !strcmp(id, LIB[i].id)) || title_runs_from_folder(LIB[i].id);
+    /* Astro has two DLC with content (they mount, see app_find) and one that only unlocks */
+    if (!strcmp(LIB[i].id, "PPSA01234")) {
+        e->addcont_count = 2;
+        strcpy(e->addcont[0], "ASTRODLC01000000"); e->addcont_bytes[0] = 1288490188;
+        strcpy(e->addcont[1], "ASTROUNLOCK00000"); e->addcont_bytes[1] = 1376256;
+        e->addcont_count = 3;
+        strcpy(e->addcont[2], "ASTROBGM00000000"); e->addcont_bytes[2] = 26542080;
+    }
 }
 
 int library_scan(library_entry_t *out, int max)
@@ -282,9 +294,9 @@ static int fake_dump(const char *dir, const char *dest)
     folder_size_current = 600u << 20;
 
     char path[512];
-    snprintf(path, sizeof(path), "%s/%s/sce_sys", dest, dir);
+    snprintf(path, sizeof(path), "%s/%s%s/sce_sys", dest, dir, g_folder_suffix);
     mkdirs(path);
-    snprintf(path, sizeof(path), "%s/%s/eboot.bin", dest, dir);
+    snprintf(path, sizeof(path), "%s/%s%s/eboot.bin", dest, dir, g_folder_suffix);
     FILE *f = fopen(path, "w");
     if (f) { fputs("fake", f); fclose(f); }
 

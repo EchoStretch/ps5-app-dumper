@@ -265,7 +265,20 @@ static void handle_dump(whb_req_t *req)
     cfg_snapshot(&cfg);
 
     char err[160] = {0};
-    int rc = job_start(app, target, &cfg, whb_param_int(req, "overwrite", 0), err, sizeof(err));
+    /* only=dlc: the DLC mounted with the title, next to a dump made before;
+       d0, d1, ... pick some of them by their pfsmnt names (one a parameter:
+       a name alone may take half of what a value holds) */
+    const char *only = whb_param(req, "only", "");
+    const char *names[DLC_MAX];
+    int picked = 0;
+    for (; picked < DLC_MAX; picked++) {
+        char key[8];
+        snprintf(key, sizeof(key), "d%d", picked);
+        if (!(names[picked] = whb_param(req, key, NULL))) break;
+    }
+    int rc = strcmp(only, "dlc") == 0
+           ? job_start_dlc(app, target, &cfg, names, picked, err, sizeof(err))
+           : job_start(app, target, &cfg, whb_param_int(req, "overwrite", 0), err, sizeof(err));
 
     if (rc == JOB_ERR_EXISTS) {
         /* the page asks, and comes back with overwrite=1 */
@@ -402,45 +415,74 @@ static int apply_item_settings(dumper_config_t *cfg, const char *spec)
 /* "PPSA01234,CUSA05678" -> the titles to dump, in that order. "discs" names
    those among them the user marked as disc games; when the page sends it,
    even empty, it overrules what the scanner believes. */
+/* The queue arrives in pieces, "q0", "q1", ...: a value holds at most
+   WHB_PARAM_MAX bytes and a request at most a few dozen parameters, and 64
+   titles with their settings fit neither as one list nor as one parameter
+   each. Every piece is a comma list of <title id>[*][:<settings>] - '*' for
+   a disc game, the settings of a title that has its own. A page from before
+   (the browser may still hold one) sends "titles", "discs" and "o_<id>". */
+#define QUEUE_PIECES 16
+
 static void handle_queue_start(whb_req_t *req)
 {
     const char *target = whb_param(req, "target", NULL);
     if (!target || !*target) { whb_send_error(req, 400, "no destination selected"); return; }
 
-    char list[WHB_PARAM_MAX];
-    snprintf(list, sizeof(list), "%s", whb_param(req, "titles", ""));
+    char (*buf)[WHB_PARAM_MAX] = calloc(QUEUE_PIECES + 1, WHB_PARAM_MAX);
+    dumper_config_t *own = calloc(QUEUE_MAX + 1, sizeof(*own));
+    if (!buf || !own) { free(buf); free(own); whb_send_error(req, 500, "out of memory"); return; }
 
     const char *ids[QUEUE_MAX + 1];
-    int count = 0;
-
-    for (char *tok = strtok(list, ","); tok; tok = strtok(NULL, ",")) {
-        if (count > QUEUE_MAX) break;   /* one over, so queue_start reports it */
-        ids[count++] = tok;
-    }
-
-    const char *discs = whb_param(req, "discs", NULL);
+    const char *specs[QUEUE_MAX + 1] = {0};
     int is_disc[QUEUE_MAX + 1] = {0};
-    for (int i = 0; discs && i < count; i++)
-        is_disc[i] = (strstr(discs, ids[i]) != NULL);
+    int count = 0, discs_known = 0;
+
+    if (whb_param(req, "q0", NULL)) {
+        discs_known = 1;
+        for (int piece = 0; piece < QUEUE_PIECES; piece++) {
+            char key[8];
+            snprintf(key, sizeof(key), "q%d", piece);
+            const char *val = whb_param(req, key, NULL);
+            if (!val) break;
+            snprintf(buf[piece], WHB_PARAM_MAX, "%s", val);
+
+            char *save = NULL;
+            for (char *tok = strtok_r(buf[piece], ",", &save); tok; tok = strtok_r(NULL, ",", &save)) {
+                if (count > QUEUE_MAX) break;   /* one over, so queue_start reports it */
+                char *colon = strchr(tok, ':');
+                if (colon) { *colon = '\0'; specs[count] = colon + 1; }
+                size_t n = strlen(tok);
+                if (n && tok[n - 1] == '*') { tok[n - 1] = '\0'; is_disc[count] = 1; }
+                ids[count++] = tok;
+            }
+        }
+    } else {
+        snprintf(buf[QUEUE_PIECES], WHB_PARAM_MAX, "%s", whb_param(req, "titles", ""));
+        char *save = NULL;
+        for (char *tok = strtok_r(buf[QUEUE_PIECES], ",", &save); tok; tok = strtok_r(NULL, ",", &save)) {
+            if (count > QUEUE_MAX) break;
+            ids[count++] = tok;
+        }
+        const char *discs = whb_param(req, "discs", NULL);
+        discs_known = discs != NULL;
+        for (int i = 0; discs && i < count; i++)
+            is_disc[i] = (strstr(discs, ids[i]) != NULL);
+        for (int i = 0; i < count; i++) {
+            char key[32];
+            snprintf(key, sizeof(key), "o_%s", ids[i]);
+            specs[i] = whb_param(req, key, NULL);
+        }
+    }
 
     dumper_config_t cfg;
     cfg_snapshot(&cfg);
 
-    /* "o_<title id>" carries the settings of a title that has its own */
-    dumper_config_t *own = calloc(QUEUE_MAX + 1, sizeof(*own));
-    if (!own) { whb_send_error(req, 500, "out of memory"); return; }
-
     const dumper_config_t *item_cfg[QUEUE_MAX + 1] = {0};
     for (int i = 0; i < count && i <= QUEUE_MAX; i++) {
-        char key[32];
-        snprintf(key, sizeof(key), "o_%s", ids[i]);
-
-        const char *spec = whb_param(req, key, NULL);
-        if (!spec || !*spec) continue;
-
+        if (!specs[i] || !*specs[i]) continue;
         own[i] = cfg;
-        if (apply_item_settings(&own[i], spec) != 0) {
-            free(own);
+        if (apply_item_settings(&own[i], specs[i]) != 0) {
+            free(own); free(buf);
             whb_send_error(req, 400, "invalid settings for a queued title");
             return;
         }
@@ -448,10 +490,10 @@ static void handle_queue_start(whb_req_t *req)
     }
 
     char err[160] = {0};
-    int rc = queue_start(ids, discs ? is_disc : NULL, item_cfg, count, target,
+    int rc = queue_start(ids, discs_known ? is_disc : NULL, item_cfg, count, target,
                          cfg.queue_delay, whb_param_int(req, "replace", 0),
                          &cfg, err, sizeof(err));
-    free(own);
+    free(own); free(buf);
 
     if (rc != 0) {
         whb_send_error(req, 409, err[0] ? err : "could not start the queue");
@@ -545,7 +587,13 @@ static void handle_library(whb_req_t *req)
                   lib[i].playgo.chunks, lib[i].playgo.wanted, lib[i].playgo.here);
         sb_puts(&sb, ",\"mountedFrom\":");
         sb_json_str(&sb, lib[i].mounted_from);
-        sb_puts(&sb, "}");
+        sb_puts(&sb, ",\"addcont\":[");
+        for (int k = 0; k < lib[i].addcont_count; k++) {
+            sb_puts(&sb, k ? ",{\"label\":" : "{\"label\":");
+            sb_json_str(&sb, lib[i].addcont[k]);
+            sb_printf(&sb, ",\"bytes\":%llu}", (unsigned long long)lib[i].addcont_bytes[k]);
+        }
+        sb_puts(&sb, "]}");
     }
 
     /* Whether a title is up is already known from the pfsmnt scan, so the
@@ -649,6 +697,25 @@ static void handle_dump_icon(whb_req_t *req)
 
 /* Takes the link off a title that is redirected to this dump, without moving
    the dump: the game then starts from its installed package again. */
+/* mode=titles | plain: every game dump the library finds gets the name
+   folder_titles would give it, or loses its title */
+static void handle_dumps_rename(whb_req_t *req)
+{
+    const char *mode = whb_param(req, "mode", "");
+    if (strcmp(mode, "titles") != 0 && strcmp(mode, "plain") != 0) { whb_send_error(req, 400, "mode is titles or plain"); return; }
+    if (dumper_busy()) { whb_send_error(req, 409, "a dump, a move or a queue is running"); return; }
+
+    int with_internal = whb_peer_is_local(req) || whb_access_token_ok(whb_param(req, "token", NULL));
+    dumplib_rename_report_t r;
+    dumplib_rename_all(strcmp(mode, "titles") == 0, with_internal, &r);
+
+    sb_t sb;
+    sb_init(&sb);
+    sb_printf(&sb, "{\"renamed\":%d,\"unchanged\":%d,\"inUse\":%d,\"taken\":%d,\"failed\":%d}",
+              r.renamed, r.unchanged, r.in_use, r.taken, r.failed);
+    whb_send_sb(req, 200, &sb);
+}
+
 static void handle_dump_unlink(whb_req_t *req)
 {
     const char *mount  = whb_param(req, "mount", NULL);
@@ -812,6 +879,7 @@ void routes_dumper_init(void)
     whb_route("POST", "/api/shadowmount/stop", handle_shadowmount_stop);
     whb_route("POST", "/api/dumps/unlink",   handle_dump_unlink);
     whb_route("POST", "/api/dumps/move",     handle_dump_move);
+    whb_route("POST", "/api/dumps/rename",   handle_dumps_rename);
     whb_route("POST", "/api/dumps/remove",   handle_dump_remove);
     whb_route("POST", "/api/dumps/move/cancel", handle_dump_move_cancel);
     whb_route("POST", "/api/dumps/move/clear",  handle_dump_move_clear);

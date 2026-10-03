@@ -51,7 +51,7 @@ int dump_ps5_ppsa_app(
 
     char src_game[1024], dst_game[1024];
     snprintf(src_game, sizeof(src_game), "%s/%s", sandbox, app_folder);
-    snprintf(dst_game, sizeof(dst_game), "%s/%s", usb_path, app_folder);
+    snprintf(dst_game, sizeof(dst_game), "%s/%s%s", usb_path, app_folder, g_folder_suffix);
 
     mkdirs(dst_game);  // void return
 

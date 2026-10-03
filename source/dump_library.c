@@ -296,6 +296,50 @@ static void *move_thread(void *arg)
     return NULL;
 }
 
+void dumplib_rename_all(int with_titles, int with_internal, dumplib_rename_report_t *r)
+{
+    memset(r, 0, sizeof(*r));
+    dumplib_entry_t *list = calloc(DUMPLIB_MAX, sizeof(*list));
+    if (!list) { r->failed = 1; return; }
+    int count = dumplib_scan(list, DUMPLIB_MAX, with_internal);
+
+    for (int i = 0; i < count; i++) {
+        dumplib_entry_t *e = &list[i];
+        char plain[32], suffix[48] = "", target[64];
+        if (dump_plain_name(e->folder, plain, sizeof(plain)) != 0) continue;   /* DLC */
+        if (!strcmp(e->state, "running")) continue;
+
+        /* a title the library only knows by its id gets no "_PPSA01234" */
+        if (with_titles && e->title[0] && strcmp(e->title, e->title_id) != 0)
+            dump_title_suffix(e->title, suffix, sizeof(suffix));
+        snprintf(target, sizeof(target), "%s%s", plain, suffix);
+        if (!strcmp(target, e->folder)) { r->unchanged++; continue; }
+        if (e->in_use) { r->in_use++; continue; }
+
+        char dest[256], from[512], to[512], info_from[512], info_to[512];
+        snprintf(dest, sizeof(dest), "%s%s%s", e->mount, e->dir[0] ? "/" : "", e->dir);
+        snprintf(from, sizeof(from), "%s/%s", dest, e->folder);
+        snprintf(to, sizeof(to), "%s/%s", dest, target);
+        snprintf(info_from, sizeof(info_from), "%s" DUMP_INFO_SUFFIX, from);
+        snprintf(info_to, sizeof(info_to), "%s" DUMP_INFO_SUFFIX, to);
+
+        struct stat st;
+        if (stat(to, &st) == 0 || stat(info_to, &st) == 0) { r->taken++; continue; }
+        if (rename(from, to) != 0) {
+            write_log(g_log_path, "Rename: %s -> %s failed (errno %d)", from, to, errno);
+            r->failed++;
+            continue;
+        }
+        if (file_exists(info_from)) {
+            if (rename(info_from, info_to) == 0) dump_info_set_string(dest, target, "folder", target);
+            else write_log(g_log_path, "Rename: info file %s stayed behind (errno %d)", info_from, errno);
+        }
+        write_log(g_log_path, "Rename: %s -> %s", from, target);
+        r->renamed++;
+    }
+    free(list);
+}
+
 int dumplib_move(const char *mount, const char *dir, const char *folder,
                  const char *to_mount, const char *to_dir, char *err, size_t err_size)
 {
