@@ -44,17 +44,93 @@ int dump_is_dlc_folder_name(const char *name)
     return 1;
 }
 
+/* what a title suffix is made of */
+static int suffix_char(char c)
+{
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+           c == '_' || c == '-' || c == '.' || c == '(' || c == ')' || c == '&' || c == '+' ||
+           c == '!' || c == '\'';
+}
+
+#define TITLE_SUFFIX_MAX 40
+
+void dump_title_suffix(const char *title, char *out, size_t out_size)
+{
+    char buf[TITLE_SUFFIX_MAX + 1];
+    size_t n = 0;
+    const char *p = title ? title : "";
+
+    for (; *p && n < TITLE_SUFFIX_MAX; p++) {
+        char c = (*p == ' ') ? '_' : *p;
+        if (!suffix_char(c)) continue;          /* colons, question marks, the TM sign, ... */
+        if (c == '_' && (n == 0 || buf[n - 1] == '_')) continue;
+        buf[n++] = c;
+    }
+    /* cut short: at the end of the last whole word, if there is one */
+    if (*p && *p != ' ' && n == TITLE_SUFFIX_MAX) {
+        size_t w = n;
+        while (w && buf[w - 1] != '_') w--;
+        if (w > TITLE_SUFFIX_MAX / 2) n = w;
+    }
+    while (n && (buf[n - 1] == '_' || buf[n - 1] == '.')) n--;
+    buf[n] = '\0';
+
+    if (out_size) snprintf(out, out_size, n ? "_%s" : "%s", buf);
+}
+
+/* The plain name inside a folder name: "PPSA01234-app0" for both
+   "PPSA01234-app0" and "PPSA01234-app0_ASTROs_PLAYROOM". -1 when the name
+   is no dump folder of ours. */
+static int plain_name(const char *name, char *out, size_t out_size)
+{
+    if (!name || strlen(name) < 9) return -1;
+    if (strncmp(name, "PPSA", 4) != 0 && strncmp(name, "CUSA", 4) != 0) return -1;
+
+    for (int i = 4; i < 9; i++)
+        if (name[i] < '0' || name[i] > '9') return -1;
+
+    const char *rest = name + 9;
+    size_t base = 9;
+    if (strncmp(rest, "-app0", 5) == 0)        base += 5;
+    else if (strncmp(rest, "-patch0", 7) == 0) base += 7;
+
+    const char *tail = name + base;
+    if (tail[0] && tail[0] != '_') return -1;
+    for (const char *p = tail; *p; p++)
+        if (!suffix_char(*p)) return -1;
+
+    if (base >= out_size) return -1;
+    memcpy(out, name, base);
+    out[base] = '\0';
+    return 0;
+}
+
 static int is_dump_folder_name(const char *name)
 {
     if (dump_is_dlc_folder_name(name)) return 1;
-    if (!name || strlen(name) < 9) return 0;
-    if (strncmp(name, "PPSA", 4) != 0 && strncmp(name, "CUSA", 4) != 0) return 0;
+    char plain[32];
+    return plain_name(name, plain, sizeof(plain)) == 0;
+}
 
-    for (int i = 4; i < 9; i++)
-        if (name[i] < '0' || name[i] > '9') return 0;
-
-    const char *rest = name + 9;
-    return rest[0] == '\0' || strcmp(rest, "-app0") == 0 || strcmp(rest, "-patch0") == 0;
+/* The folders below dest that belong to the plain name, with a title behind
+   it or without - whatever folder_titles was when they were dumped. */
+static int folders_named(const char *dest, const char *plain, char out[][64], int max)
+{
+    DIR *d = opendir(dest);
+    if (!d) return 0;
+    int n = 0;
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL && n < max) {
+        char p[32];
+        if (plain_name(ent->d_name, p, sizeof(p)) != 0 || strcmp(p, plain) != 0) continue;
+        if (strlen(ent->d_name) >= 64) continue;
+        char dir[512];
+        snprintf(dir, sizeof(dir), "%s/%s", dest, ent->d_name);
+        if (!dir_exists(dir)) continue;
+        snprintf(out[n++], 64, "%s", ent->d_name);
+    }
+    closedir(d);
+    return n;
 }
 
 int dump_folders(const char *title_id, int is_ps4, int split,
@@ -125,6 +201,8 @@ void dump_info_write(const char *dest, int is_ps4, int split, const dump_info_t 
 {
     char folders[DUMP_FOLDERS_MAX][64];
     int count = dump_folders(info->title_id, is_ps4, split, folders);
+    for (int i = 0; i < count && info->suffix && info->suffix[0]; i++)
+        strncat(folders[i], info->suffix, sizeof(folders[i]) - strlen(folders[i]) - 1);
 
     char title[300];
     json_escape(info->title, title, sizeof(title));
@@ -184,11 +262,11 @@ dump_presence_t dump_presence(const char *dest, const char *title_id,
     dump_presence_t result = DUMP_ABSENT;
 
     for (int i = 0; i < count; i++) {
-        char dir[512], info[512], state[16] = {0};
-        snprintf(dir, sizeof(dir), "%s/%s", dest, folders[i]);
-        if (!dir_exists(dir)) continue;
-
-        info_path(dest, folders[i], info, sizeof(info));
+      char found[4][64];
+      int nf = folders_named(dest, folders[i], found, 4);
+      for (int k = 0; k < nf; k++) {
+        char info[512], state[16] = {0};
+        info_path(dest, found[k], info, sizeof(info));
 
         /* A folder without an info file is not ours to judge: it may be a
            dump from an older version, or something else entirely. It
@@ -197,6 +275,7 @@ dump_presence_t dump_presence(const char *dest, const char *title_id,
             return DUMP_INCOMPLETE;
 
         result = DUMP_PRESENT;
+      }
     }
 
     return result;
@@ -252,8 +331,16 @@ int dump_remove_title(const char *dest, const char *title_id, int is_ps4, int sp
     int count = dump_folders(title_id, is_ps4, split, folders);
     int rc = 0;
 
-    for (int i = 0; i < count; i++)
-        if (remove_folder(dest, folders[i]) != 0) rc = -1;
+    for (int i = 0; i < count; i++) {
+        char found[4][64];
+        int nf = folders_named(dest, folders[i], found, 4);
+        for (int k = 0; k < nf; k++)
+            if (remove_folder(dest, found[k]) != 0) rc = -1;
+        /* a note whose folder is gone already */
+        char info[512];
+        info_path(dest, folders[i], info, sizeof(info));
+        unlink(info);
+    }
 
     return rc;
 }

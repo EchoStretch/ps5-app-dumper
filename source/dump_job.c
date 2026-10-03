@@ -179,6 +179,8 @@ static void *worker(void *arg)
     /* The backport modules read their levels straight from config.ini, so
        the only global left to propagate is the PS4 split mode. */
     g_split_mode = req->cfg.split;
+    if (req->cfg.folder_titles) dump_title_suffix(req->app.title, g_folder_suffix, sizeof(g_folder_suffix));
+    else g_folder_suffix[0] = '\0';
     g_enable_logging = req->cfg.enable_logging;
     g_ps4_backport_level = req->cfg.ps4_backport_level;
     g_ps5_backport_level = req->cfg.ps5_backport_level;
@@ -198,6 +200,7 @@ static void *worker(void *arg)
 
     dump_info_t info = {
         .title_id = req->app.title_id,
+        .suffix   = g_folder_suffix,
         .title    = req->app.title[0] ? req->app.title : req->app.title_id,
         .state    = "running",
         .cfg      = &req->cfg,

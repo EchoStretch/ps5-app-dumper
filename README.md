@@ -181,6 +181,7 @@ Every dump leaves a small `<folder>.dump-info.json` next to its folder: the titl
 | `dump_subdir` | `homebrew/ps5-app-dumper/dumps` | Folder below a drive's mount point that receives the dump |
 | `dump_subdir_console` | `homebrew/ps5-app-dumper/dumps` | The same below `/data`, when dumping to the console itself |
 | `queue_delay` | `30` | Seconds a queued title gets to load before its dump starts, 5-600 |
+| `folder_titles` | `1` | Put the game's title behind its dump folders' names, `PPSA01325-app0_ASTRO's_PLAYROOM`; spaces become `_`, characters a file system may refuse are left out. Dumps named either way are recognised |
 | `enable_decrypter` | `1` | Decrypt SELF/SPRX files while dumping |
 | `enable_elf2fself` | `0` | Re-sign decrypted executables as FSELF |
 | `enable_backport` | `0` | Patch SDK versions down — advanced, may break the dump |

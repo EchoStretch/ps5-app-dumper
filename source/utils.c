@@ -46,6 +46,7 @@ pthread_t progress_thread = 0;
 static volatile int g_abort_requested = 0;
 
 int g_split_mode = 3;  // default: split both
+char g_folder_suffix[48] = "";
 int g_ps4_backport_level = 0;
 int g_ps5_backport_level = 0;
 

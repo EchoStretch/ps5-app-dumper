@@ -24,6 +24,7 @@ along with this program; see the file COPYING. If not, see
 #include "app_launch.h"
 #include "app_scan.h"
 #include "dump_job.h"
+#include "dump_store.h"
 #include "routes.h"
 #include "ps4_dumper.h"
 #include "ps5_dumper.h"
@@ -70,6 +71,8 @@ static int run_headless(const dumper_config_t *cfg)
 
     write_log(logpath, "Detected App: %s", app->dir);
     printf_notification("Detected: %s", app->title[0] ? app->title : app->dir);
+
+    if (cfg->folder_titles) dump_title_suffix(app->title, g_folder_suffix, sizeof(g_folder_suffix));
 
     if (app->is_ps4) {
         dump_ps4_cusa_app(SANDBOX_PATH, app->dir, app->patch_dir, usb,

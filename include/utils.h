@@ -70,6 +70,7 @@ typedef struct {
     char dump_subdir_console[64]; /* the same below /data, the console's own storage */
     int  queue_delay;          /* seconds a queued title gets to load before its dump */
     int  dump_dlc;             /* 1 -> the DLC mounted with a title go along with it   */
+    int  folder_titles;        /* 1 -> the game's title behind its dump folders' names */
 } dumper_config_t;
 
 /* ------------------------------------------------------------------ */
@@ -81,6 +82,9 @@ void clear_abort(void);
 int  abort_requested(void);
 
 extern int g_split_mode;               // 0-3: split mode
+/* what goes behind the dump folders' names, "_ASTROs_PLAYROOM" or "" -
+   set per job like g_split_mode (dump_title_suffix, folder_titles) */
+extern char g_folder_suffix[48];
 /* Backport targets of the dump in progress. 0 leaves the choice to
    config.ini; the web UI sets them per job so a queue can dump each title
    with its own settings, and so they hold without a drive to save them on. */

@@ -52,6 +52,7 @@ typedef struct {
 
 typedef struct {
     const char            *title_id;
+    const char            *suffix;    /* "_ASTROs_PLAYROOM" or "": dump_title_suffix */
     const char            *title;
     const char            *state;     /* "running" | "done" | "failed" | "aborted" */
     const dumper_config_t *cfg;
@@ -60,8 +61,15 @@ typedef struct {
     time_t                 finished;
 } dump_info_t;
 
+/* The game's title for the end of its folder names (folder_titles):
+   "_ASTROs_PLAYROOM". Spaces become '_', what a file system or a tool may
+   trip over is left out, and it is kept to 40 characters. "" when nothing
+   is left of the title. */
+void dump_title_suffix(const char *title, char *out, size_t out_size);
+
 /* The folders a dump of this title writes below its destination: one for a
    PS5 title, one or two for a PS4 title depending on the split mode.
+   These are the plain names; a dump may carry a title suffix behind them.
    Returns how many. */
 int dump_folders(const char *title_id, int is_ps4, int split,
                  char out[DUMP_FOLDERS_MAX][64]);

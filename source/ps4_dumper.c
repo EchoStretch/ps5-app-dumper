@@ -205,16 +205,16 @@ int dump_ps4_cusa_app_real(
     snprintf(base_path, sizeof(base_path), "%s/%s", usb_base, title_id);
 
     if (g_split_mode == 0) {
-        snprintf(dst_app, sizeof(dst_app), "%s", base_path);
-        snprintf(dst_pat, sizeof(dst_pat), "%s", base_path);
+        snprintf(dst_app, sizeof(dst_app), "%s%s", base_path, g_folder_suffix);
+        snprintf(dst_pat, sizeof(dst_pat), "%s%s", base_path, g_folder_suffix);
         mkdirs(dst_app);
     } else {
         if (g_split_mode & 1) {
-            snprintf(dst_app, sizeof(dst_app), "%s-app0", base_path);
+            snprintf(dst_app, sizeof(dst_app), "%s-app0%s", base_path, g_folder_suffix);
             mkdirs(dst_app);
         }
         if (g_split_mode & 2) {
-            snprintf(dst_pat, sizeof(dst_pat), "%s-patch0", base_path);
+            snprintf(dst_pat, sizeof(dst_pat), "%s-patch0%s", base_path, g_folder_suffix);
             mkdirs(dst_pat);
         }
     }

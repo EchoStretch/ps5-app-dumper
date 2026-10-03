@@ -288,9 +288,9 @@ static int fake_dump(const char *dir, const char *dest)
     folder_size_current = 600u << 20;
 
     char path[512];
-    snprintf(path, sizeof(path), "%s/%s/sce_sys", dest, dir);
+    snprintf(path, sizeof(path), "%s/%s%s/sce_sys", dest, dir, g_folder_suffix);
     mkdirs(path);
-    snprintf(path, sizeof(path), "%s/%s/eboot.bin", dest, dir);
+    snprintf(path, sizeof(path), "%s/%s%s/eboot.bin", dest, dir, g_folder_suffix);
     FILE *f = fopen(path, "w");
     if (f) { fputs("fake", f); fclose(f); }
 

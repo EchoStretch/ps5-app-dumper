@@ -516,6 +516,13 @@ div.cut{border-top:1px solid var(--line-soft);padding:10px 12px 12px}
             </div>
             <div class="row">
               <div class="txt">
+                <div class="label">Game title in folder names</div>
+                <div class="hint">PPSA01325-app0_ASTROs_PLAYROOM instead of PPSA01325-app0. Dumps named either way are recognised.</div>
+              </div>
+              <label class="sw"><input type="checkbox" id="c-ftitles"><span></span></label>
+            </div>
+            <div class="row">
+              <div class="txt">
                 <div class="label">SDK backport</div>
                 <div class="hint">Patch SDK versions down. May break the dump.</div>
               </div>
@@ -1477,6 +1484,7 @@ function applyConfig(c){
   $("c-decrypt").checked  = !!c.enableDecrypter;
   $("c-logging").checked  = !!c.enableLogging;
   if($("c-dlc")) $("c-dlc").checked = c.dumpDlc !== 0;
+  if($("c-ftitles")) $("c-ftitles").checked = c.folderTitles !== 0;
   $("c-fself").checked    = !!c.enableElf2fself;
   $("c-backport").checked = !!c.enableBackport;
   $("c-auto").checked     = !!c.autoStart;
@@ -1514,6 +1522,7 @@ function collectConfig(){
     enableDecrypter: $("c-decrypt").checked ? 1 : 0,
     enableLogging:   $("c-logging").checked ? 1 : 0,
     dumpDlc:         $("c-dlc") && $("c-dlc").checked ? 1 : 0,
+    folderTitles:    $("c-ftitles") && $("c-ftitles").checked ? 1 : 0,
     enableElf2fself: $("c-fself").checked ? 1 : 0,
     enableBackport:  $("c-backport").checked ? 1 : 0,
     autoStart:       $("c-auto").checked ? 1 : 0,
@@ -1542,7 +1551,7 @@ function saveConfig(){
 }
 
 function wireSettings(){
-  ["c-decrypt","c-logging","c-fself","c-dlc","c-backport","c-auto"].forEach(function(id){
+  ["c-decrypt","c-logging","c-fself","c-dlc","c-ftitles","c-backport","c-auto"].forEach(function(id){
     $(id).addEventListener("change", function(){
       if(id === "c-backport" && $(id).checked)
         toast("Backporting is experimental and can break the dump.", "bad");
