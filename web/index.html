@@ -809,7 +809,10 @@ function renderApps(){
         '<span class="hero-pick"' + (installing(a) ? ' style="color:var(--amber)"' : "") + '>' +
           (installing(a) ? "still installing - not ready to dump" : partial(a) ? "ready to dump - " + (a.chunks && a.chunks[1] < a.chunks[0] ? a.chunks[1] + " of " + a.chunks[0] + " chunks, all this console wants" : a.installed + " % of the package is here, the rest never arrived") : state.apps.length > 1 ? "tap to select" : "ready to dump") + '</span>' +
         (a.dlc && a.dlc.length ? '<button class="mini" type="button" data-dlconly="' + esc(a.dir) + '" title="Dump only the ' + a.dlc.length +
-          ' DLC mounted with this game, next to its dump - the game itself is not copied again" style="margin-right:6px">Dump DLC</button>' : "") +
+          ' DLC mounted with this game, next to its dump - the game itself is not copied again" style="margin-right:6px">Dump DLC</button>'
+          /* DLC installed, none mounted: say why there is nothing to dump instead of hiding the button */
+          : known && known.addcont && known.addcont.length ? '<button class="mini" type="button" data-nodlc="' + known.addcont.length +
+          '" style="margin-right:6px;opacity:.5">Dump DLC</button>' : "") +
         (known && state.canLaunch ? '<button class="mini" type="button" data-queue="' + esc(a.titleId) + '"></button>' : "") +
       '</div>' + (state.dlcPick === a.dir ? dlcPickPanel(a, known) : "") + '</div>';
   });
@@ -844,6 +847,14 @@ function renderApps(){
     el.addEventListener("click", function(e){
       e.stopPropagation();
       dumpDlcOnly(el, el.getAttribute("data-dlconly"));
+    });
+  });
+  Array.prototype.forEach.call(box.querySelectorAll("[data-nodlc]"), function(el){
+    el.addEventListener("click", function(e){
+      e.stopPropagation();
+      var n = Number(el.getAttribute("data-nodlc"));
+      toast("None of the " + n + " DLC is mounted: they only unlock what is in the game already, so there is nothing to dump. " +
+            "They stay installed and keep working for a dump started on this console. A DLC with content of its own is mounted while the game runs.", "bad");
     });
   });
   Array.prototype.forEach.call(box.querySelectorAll(".dlc-pick"), function(p){
