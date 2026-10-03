@@ -49,6 +49,7 @@ typedef struct {
     dumper_config_t cfg;
     int             remove_first;   /* something of this title is in the way */
     int             dlc_only;       /* the DLC alone, the game stays as it is */
+    uint32_t        dlc_pick;       /* bit i: app.dlc[i] was picked; 0 = all  */
     time_t          started;
 } job_request_t;
 
@@ -122,10 +123,18 @@ static void worker_dlc_only(job_request_t *req)
 
     set_stage("Measuring");
     for (int i = 0; i < req->app.dlc_count; i++) {
+        if (req->dlc_pick && !(req->dlc_pick & (1u << i))) continue;
         if (dlc_dumped(req->dest, req->app.dlc[i])) {
-            write_log(g_log_path, "DLC: %s is dumped already, left as it is", req->app.dlc[i]);
-            had++;
-            continue;
+            if (!req->dlc_pick) {
+                write_log(g_log_path, "DLC: %s is dumped already, left as it is", req->app.dlc[i]);
+                had++;
+                continue;
+            }
+            /* picked by hand: dumped anew, without what the old copy left */
+            char old[512];
+            snprintf(old, sizeof(old), "%s/%s", req->dest, req->app.dlc[i]);
+            write_log(g_log_path, "DLC: %s is dumped already and was picked - replacing it", req->app.dlc[i]);
+            dump_remove_tree(old);
         }
         char path[320];
         size_t bytes = 0;
@@ -330,6 +339,7 @@ void job_dest_path(const char *mount, const dumper_config_t *cfg, char *out, siz
 
 static int job_start_ex(const char *app_dir, const char *mount,
                         const dumper_config_t *cfg, int overwrite, int dlc_only,
+                        const char *const *names, int count,
                         char *err, size_t err_size)
 {
     #define FAIL(msg) do { if (err && err_size) snprintf(err, err_size, "%s", msg); \
@@ -388,6 +398,15 @@ static int job_start_ex(const char *app_dir, const char *mount,
     if (dlc_only && !app.dlc_count) {
         free(req);
         FAIL("no DLC is mounted with this title - DLC that only unlock content are never mounted");
+    }
+    for (int k = 0; k < count; k++) {
+        int i = 0;
+        while (i < app.dlc_count && strcmp(app.dlc[i], names[k]) != 0) i++;
+        if (i == app.dlc_count) {
+            free(req);
+            FAIL("a picked DLC is not mounted any more - start the game again");
+        }
+        req->dlc_pick |= 1u << i;
     }
 
     /* the game's dump is none of a DLC-only job's business */
@@ -452,13 +471,14 @@ int job_start(const char *app_dir, const char *mount,
               const dumper_config_t *cfg, int overwrite,
               char *err, size_t err_size)
 {
-    return job_start_ex(app_dir, mount, cfg, overwrite, 0, err, err_size);
+    return job_start_ex(app_dir, mount, cfg, overwrite, 0, NULL, 0, err, err_size);
 }
 
 int job_start_dlc(const char *app_dir, const char *mount,
-                  const dumper_config_t *cfg, char *err, size_t err_size)
+                  const dumper_config_t *cfg, const char *const *names, int count,
+                  char *err, size_t err_size)
 {
-    return job_start_ex(app_dir, mount, cfg, 0, 1, err, err_size);
+    return job_start_ex(app_dir, mount, cfg, 0, 1, names, count, err, err_size);
 }
 
 void job_abort(void)

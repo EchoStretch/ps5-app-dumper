@@ -186,6 +186,14 @@ button.tag:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .hero-state .dot{margin-right:7px;animation:pulse 2s ease-in-out infinite}
 /* controls sit on a plain strip below the art: whatever picture a game
    brings, the button never has to compete with it */
+.dlc-pick{padding:6px 16px 12px;border-top:1px solid var(--line-soft);cursor:default}
+.dlc-pick label{display:flex;align-items:center;padding:6px 0;cursor:pointer}
+.dlc-pick label input{margin:0 10px 0 0;flex:none}
+.dlc-pick .lbl{flex:1;min-width:0;font-family:var(--mono);font-size:12px;overflow-wrap:break-word}
+.dlc-pick .lbl .tag{margin-left:8px}
+.dlc-pick .size{font-family:var(--mono);font-size:11px;color:var(--ink-dim);margin-left:10px;white-space:nowrap}
+.dlc-pick .pick-acts{display:flex;justify-content:flex-end;margin-top:8px}
+.dlc-pick .pick-acts .mini{margin-left:6px}
 .hero-bar{
   display:flex;align-items:center;padding:9px 14px;border-top:1px solid var(--line-soft);
   background:var(--panel-2)
@@ -751,7 +759,8 @@ function renderApps(){
   var sig = state.apps.map(function(a){
     var known = libraryEntry(a.titleId);
     return a.dir + "|" + a.title + "|" + a.version + "|" + a.hasIcon + "|" + a.media + a.discIn + "|" + a.installed + a.installing + "|" + (a.dlc || []).join(",") +
-           "|" + !!(known && known.hasPic) + "|" + !!known + "|" + state.canLaunch + "|" + (known && known.addcont ? known.addcont.length : 0) + dumpedTag(a.titleId);
+           "|" + !!(known && known.hasPic) + "|" + !!known + "|" + state.canLaunch + "|" + (known && known.addcont ? known.addcont.length : 0) + dumpedTag(a.titleId) +
+           "|" + (state.dlcPick === a.dir ? "pick" : "");
   }).join("~");
 
   if(sig === appSig){ markPressed(box, "data-dir", state.app); markQueued(); return; }
@@ -785,7 +794,7 @@ function renderApps(){
         (a.dlc && a.dlc.length ? '<button class="mini" type="button" data-dlconly="' + esc(a.dir) + '" title="Dump only the ' + a.dlc.length +
           ' DLC mounted with this game, next to its dump - the game itself is not copied again" style="margin-right:6px">Dump DLC</button>' : "") +
         (known && state.canLaunch ? '<button class="mini" type="button" data-queue="' + esc(a.titleId) + '"></button>' : "") +
-      '</div></div>';
+      '</div>' + (state.dlcPick === a.dir ? dlcPickPanel(a, known) : "") + '</div>';
   });
   box.innerHTML = html;
 
@@ -820,20 +829,81 @@ function renderApps(){
       dumpDlcOnly(el, el.getAttribute("data-dlconly"));
     });
   });
+  Array.prototype.forEach.call(box.querySelectorAll(".dlc-pick"), function(p){
+    /* the card under it picks the title - nothing in here should */
+    p.addEventListener("click", function(e){ e.stopPropagation(); });
+    p.addEventListener("keydown", function(e){ e.stopPropagation(); });
+    Array.prototype.forEach.call(p.querySelectorAll("input[data-name]"), function(c){
+      c.addEventListener("change", function(){ state.dlcPicked[c.getAttribute("data-name")] = c.checked; });
+    });
+    var go = p.querySelector("[data-pickgo]"), no = p.querySelector("[data-pickno]");
+    go.addEventListener("click", function(){
+      var names = Object.keys(state.dlcPicked).filter(function(n){ return state.dlcPicked[n]; });
+      if(!names.length){ toast("Tick at least one DLC.", "bad"); return; }
+      startDlcDump(go, state.dlcPick, names);
+    });
+    no.addEventListener("click", function(){ state.dlcPick = null; renderApps(); });
+  });
   markQueued();
 }
 
-/* The DLC of a running game alone, for a game dumped before they were there */
+/* "EP9000-PPSA01521_00-BURNINGSHORESPS5-ac" -> "BURNINGSHORESPS5" */
+function dlcLabel(name){
+  var m = /_00-(.*)-ac$/.exec(name);
+  return m ? m[1] : name;
+}
+/* a finished dump of this DLC, anywhere the Dumps library looked */
+function dlcDumpedAt(name){
+  var at = "";
+  (state.dumps || []).forEach(function(d){ if(d.folder === name && (!d.state || d.state === "done")) at = dumpPath(d); });
+  return at;
+}
+state.dlcPick = null;    /* the dir whose DLC list is open */
+state.dlcPicked = {};
+function dlcPickPanel(a, known){
+  var sizes = {};
+  (known && known.addcont || []).forEach(function(x){ sizes[x.label] = x.bytes; });
+  var rows = a.dlc.map(function(n){
+    var at = dlcDumpedAt(n), label = dlcLabel(n);
+    if(!(n in state.dlcPicked)) state.dlcPicked[n] = !at;
+    return '<label><input type="checkbox" data-name="' + esc(n) + '"' + (state.dlcPicked[n] ? " checked" : "") + '>' +
+           '<span class="lbl">' + esc(label) + (at ? '<span class="tag there" title="Dumped: ' + esc(at) + ' - ticked, it is dumped anew">DUMPED</span>' : "") + '</span>' +
+           (sizes[label] ? '<span class="size">' + bytes(sizes[label]) + '</span>' : "") + '</label>';
+  }).join("");
+  return '<div class="dlc-pick">' + rows +
+         '<div class="pick-acts"><button class="mini" type="button" data-pickno>Cancel</button>' +
+         '<button class="mini" type="button" data-pickgo>Dump selected</button></div></div>';
+}
+
+/* The DLC of a running game alone, for a game dumped before they were there.
+   One is dumped right away; with several, the card lists them to pick from. */
 function dumpDlcOnly(btn, dir){
+  var a = null;
+  state.apps.forEach(function(x){ if(x.dir === dir) a = x; });
+  if(!a) return;
+  /* the list also when the one there is dumped already: picking it replaces it */
+  if(a.dlc.length > 1 || dlcDumpedAt(a.dlc[0])){
+    state.dlcPick = state.dlcPick === dir ? null : dir;
+    state.dlcPicked = {};
+    renderApps();
+    return;
+  }
+  startDlcDump(btn, dir, null);
+}
+function startDlcDump(btn, dir, names){
   if(whb.busy){ toast("A dump is running already.", "bad"); return; }
   if(!state.target){ toast("Select a destination drive first.", "bad"); return; }
+  var request = {app: dir, target: state.target, only: "dlc"};
+  (names || []).forEach(function(n, i){ request["d" + i] = n; });
   btn.disabled = true;
-  post("/api/dump", {app: dir, target: state.target, only: "dlc"}).then(function(d){
+  post("/api/dump", request).then(function(d){
     whb.busy = true;
     state.job = d.job;
+    state.dlcPick = null;
+    renderApps();
     renderJob(d.job);
     updateAction();
-    toast("Dumping the DLC", "ok");
+    toast("Dumping " + (names ? names.length : 1) + " DLC", "ok");
   }).catch(function(e){ toast(e.message, "bad"); }).then(function(){ btn.disabled = false; });
 }
 

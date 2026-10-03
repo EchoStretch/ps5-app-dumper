@@ -265,10 +265,19 @@ static void handle_dump(whb_req_t *req)
     cfg_snapshot(&cfg);
 
     char err[160] = {0};
-    /* only=dlc: the DLC mounted with the title, next to a dump made before */
+    /* only=dlc: the DLC mounted with the title, next to a dump made before;
+       d0, d1, ... pick some of them by their pfsmnt names (one a parameter:
+       a name alone may take half of what a value holds) */
     const char *only = whb_param(req, "only", "");
+    const char *names[DLC_MAX];
+    int picked = 0;
+    for (; picked < DLC_MAX; picked++) {
+        char key[8];
+        snprintf(key, sizeof(key), "d%d", picked);
+        if (!(names[picked] = whb_param(req, key, NULL))) break;
+    }
     int rc = strcmp(only, "dlc") == 0
-           ? job_start_dlc(app, target, &cfg, err, sizeof(err))
+           ? job_start_dlc(app, target, &cfg, names, picked, err, sizeof(err))
            : job_start(app, target, &cfg, whb_param_int(req, "overwrite", 0), err, sizeof(err));
 
     if (rc == JOB_ERR_EXISTS) {
