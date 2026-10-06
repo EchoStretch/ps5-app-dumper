@@ -25,7 +25,6 @@ along with this program; see the file COPYING. If not, see
 #include <time.h>
 #include <fcntl.h>
 #include <sys/mman.h>
-#include <sys/aio.h>
 #include <errno.h>
 
 #include "utils.h"
@@ -243,126 +242,47 @@ int read_npwr_id(const char *npbind_path, char *npwr_out, size_t out_size)
 
 #define BUF_SIZE 0x800000
 
-typedef struct async_result {
-    int64_t ret;
-    uint32_t state;
-} async_result_t;
-
-typedef struct async_request {
-    off_t   off;
-    size_t  len;
-    void   *buf;
-    async_result_t *res;
-    int     fd;
-} async_request_t;
-
-static int fs_nread(int fd, void *buf, size_t n)
-{
-    ssize_t r = read(fd, buf, n);
-    if (r < 0) return -1;
-    if ((size_t)r != n) { errno = EIO; return -1; }
-    return 0;
-}
-
-static int fs_nwrite(int fd, const void *buf, size_t n)
-{
-    ssize_t r = write(fd, buf, n);
-    if (r < 0) return -1;
-    if ((size_t)r != n) { errno = EIO; return -1; }
-    return 0;
-}
-
+/* read() and write() may move fewer bytes than asked for; only an error or
+   the source ending before st_size fails the copy */
 static int fs_ncopy(int fd_in, int fd_out, size_t size)
 {
-    char buf[0x4000];
+    size_t cap = size < BUF_SIZE ? size : BUF_SIZE;
+    char *buf = malloc(cap ? cap : 1);
+    if (!buf) return -1;
+
     size_t copied = 0;
+    int ret = -1;
 
     while (copied < size) {
-        if (abort_requested()) { errno = ECANCELED; return -1; }
+        if (abort_requested()) { errno = ECANCELED; goto out; }
 
-        size_t n = size - copied;
-        if (n > sizeof(buf)) n = sizeof(buf);
+        size_t want = size - copied;
+        if (want > cap) want = cap;
 
-        if (fs_nread(fd_in, buf, n)) return -1;
-        if (fs_nwrite(fd_out, buf, n)) return -1;
+        ssize_t n = read(fd_in, buf, want);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            goto out;
+        }
+        if (n == 0) { errno = EIO; goto out; }
 
-        total_bytes_copied += n;
-        copied += n;
+        for (ssize_t off = 0; off < n; ) {
+            ssize_t w = write(fd_out, buf + off, (size_t)(n - off));
+            if (w < 0) {
+                if (errno == EINTR) continue;
+                goto out;
+            }
+            if (w == 0) { errno = EIO; goto out; }
+            off += w;
+        }
+
+        copied += (size_t)n;
+        total_bytes_copied += (size_t)n;
     }
-    return 0;
-}
-
-static int fs_ncopy_large(int src, int dst, size_t size)
-{
-  struct aiocb aior = {
-    .aio_fildes = src,
-    .aio_nbytes = BUF_SIZE,
-    .aio_offset = 0
-  };
-  struct aiocb aiow = {
-    .aio_fildes = dst,
-    .aio_nbytes = BUF_SIZE,
-    .aio_offset = 0
-  };
-  size_t copied = 0;
-  void* buf;
-  ssize_t n;
-
-  if(!(buf=malloc(BUF_SIZE))) {
-    return -1;
-  }
-
-  aior.aio_buf = buf;
-
-  while(copied < size) {
-    if(abort_requested()) {
-      free(buf);
-      errno = ECANCELED;
-      return -1;
-    }
-
-    if(copied + aior.aio_nbytes > size) {
-      aior.aio_nbytes = size - copied;
-    }
-
-    if(aio_read(&aior) < 0) {
-      free(buf);
-      return -1;
-    }
-
-    aio_suspend(&(const struct aiocb*){&aior}, 1, 0);
-    if((n=aio_return(&aior)) < 0) {
-      free(buf);
-      return -1;
-    }
-
-    if(n != aior.aio_nbytes) {
-      free(buf);
-      return -1;
-    }
-
-    aiow.aio_buf = aior.aio_buf;
-    aiow.aio_nbytes = n;
-
-    if(aio_write(&aiow) < 0) {
-      free(buf);
-      return -1;
-    }
-
-    aio_suspend(&(const struct aiocb*){&aiow}, 1, 0);
-    if(aio_return(&aiow) < 0) {
-      free(buf);
-      return -1;
-    }
-
-    aior.aio_offset += n;
-    aiow.aio_offset += n;
-	copied += n;
-    total_bytes_copied += n;
-  }
-
-  free(buf);
-  return 0;
+    ret = 0;
+out:
+    free(buf);
+    return ret;
 }
 
 int fs_copy_file(const char *src, const char *dst)
@@ -370,29 +290,33 @@ int fs_copy_file(const char *src, const char *dst)
     struct stat st;
     int src_fd = -1, dst_fd = -1;
     int ret = -1;
+    int err = 0;
 
     if (stat(src, &st) != 0 || !S_ISREG(st.st_mode))
-        goto cleanup;
+        return -1;
 
     src_fd = open(src, O_RDONLY);
-    if (src_fd < 0) goto cleanup;
+    if (src_fd < 0) return -1;
 
     dst_fd = open(dst, O_WRONLY | O_CREAT | O_TRUNC, st.st_mode | 0600);
-    if (dst_fd < 0) goto cleanup;
+    if (dst_fd < 0) { err = errno; goto cleanup; }
 
     /* update UI string */
     strncpy(current_copied, src, sizeof(current_copied)-1);
     current_copied[sizeof(current_copied)-1] = '\0';
 
-    if (st.st_size < 0x100000) {
-        ret = fs_ncopy(src_fd, dst_fd, st.st_size);
-    } else {
-        ret = fs_ncopy_large(src_fd, dst_fd, st.st_size);
-    }
+    ret = fs_ncopy(src_fd, dst_fd, (size_t)st.st_size);
+    if (ret) err = errno;
+
+    /* a USB drive can report a failed write-back only here */
+    if (close(dst_fd) != 0 && ret == 0) { ret = -1; err = errno; }
+    dst_fd = -1;
+    if (ret) unlink(dst);
 
 cleanup:
     if (dst_fd >= 0) close(dst_fd);
-    if (src_fd >= 0) close(src_fd);
+    close(src_fd);
+    if (ret) errno = err;
     return ret;
 }
 
@@ -402,16 +326,20 @@ int copy_file_track(const char *src, const char *dst)
     return fs_copy_file(src, dst);
 }
 
-void copy_dir_recursive_tracked(const char *src, const char *dst)
+int copy_dir_recursive_tracked(const char *src, const char *dst)
 {
     DIR *d = opendir(src);
-    if (!d) return;
+    if (!d) {
+        write_log(g_log_path, "ERROR: cannot open %s: %s", src, strerror(errno));
+        return 1;
+    }
 
     mkdirs(dst);
 
     struct dirent *dp;
     struct stat st;
     char src_path[1024], dst_path[1024];
+    int failed = 0;
 
     while ((dp = readdir(d)) != NULL)
     {
@@ -421,15 +349,19 @@ void copy_dir_recursive_tracked(const char *src, const char *dst)
         snprintf(src_path, sizeof(src_path), "%s/%s", src, dp->d_name);
         snprintf(dst_path, sizeof(dst_path), "%s/%s", dst, dp->d_name);
 
-        if (stat(src_path, &st) == 0)
-        {
-            if (S_ISDIR(st.st_mode))
-                copy_dir_recursive_tracked(src_path, dst_path);
-            else if (S_ISREG(st.st_mode))
-                copy_file_track(src_path, dst_path);
+        if (stat(src_path, &st) != 0) {
+            write_log(g_log_path, "ERROR: cannot stat %s: %s", src_path, strerror(errno));
+            failed++;
+        } else if (S_ISDIR(st.st_mode)) {
+            failed += copy_dir_recursive_tracked(src_path, dst_path);
+        } else if (S_ISREG(st.st_mode) && copy_file_track(src_path, dst_path) != 0) {
+            if (abort_requested()) break;
+            write_log(g_log_path, "ERROR: copy failed %s: %s", src_path, strerror(errno));
+            failed++;
         }
     }
     closedir(d);
+    return failed;
 }
 
 void size_walker(const char *path, size_t *acc)

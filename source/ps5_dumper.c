@@ -119,7 +119,7 @@ int dump_ps5_ppsa_app(
 
     /* ------------------- 5. COPY MAIN APP ------------------- */
     write_log(logpath, "Copying main app: %s -> %s", src_game, dst_game);
-    copy_dir_recursive_tracked(src_game, dst_game);
+    int failed = copy_dir_recursive_tracked(src_game, dst_game);
 
     /* ------------------- 6. STOP PROGRESS THREAD ------------------- */
     progress_thread_run = 0;
@@ -128,6 +128,11 @@ int dump_ps5_ppsa_app(
         progress_thread = 0;
     }
 
+    if (failed && !abort_requested()) {
+        write_log(logpath, "ERROR: %d file(s) failed to copy from %s", failed, src_game);
+        printf_notification("Dump failed: %d file(s) could not be copied", failed);
+        return -1;
+    }
     write_log(logpath, "Main app copy complete.");
     printf_notification("Main app copy complete.");
 
@@ -141,14 +146,14 @@ int dump_ps5_ppsa_app(
 
     if (dir_exists(src_user_meta)) {
         write_log(logpath, "Copying user appmeta (flat): %s -> %s", src_user_meta, dst_flat);
-        copy_dir_recursive_tracked(src_user_meta, dst_flat);
+        failed += copy_dir_recursive_tracked(src_user_meta, dst_flat);
     } else {
         write_log(logpath, "User appmeta not found: %s", src_user_meta);
     }
 
     if (dir_exists(src_sys_meta)) {
         write_log(logpath, "Copying system appmeta (flat): %s -> %s", src_sys_meta, dst_flat);
-        copy_dir_recursive_tracked(src_sys_meta, dst_flat);
+        failed += copy_dir_recursive_tracked(src_sys_meta, dst_flat);
     } else {
         write_log(logpath, "System appmeta not found: %s", src_sys_meta);
     }
@@ -183,7 +188,7 @@ int dump_ps5_ppsa_app(
 
             if (file_exists(src_t)) {
                 write_log(logpath, "Copying trophy: %s -> %s", src_t, dst_t);
-                copy_file_track(src_t, dst_t);
+                if (copy_file_track(src_t, dst_t) != 0) failed++;
             } else {
                 write_log(logpath, "Trophy file not found: %s", src_t);
             }
@@ -195,7 +200,7 @@ int dump_ps5_ppsa_app(
 
             if (file_exists(src_u)) {
                 write_log(logpath, "Copying UDS: %s -> %s", src_u, dst_u);
-                copy_file_track(src_u, dst_u);
+                if (copy_file_track(src_u, dst_u) != 0) failed++;
             } else {
                 write_log(logpath, "UDS file not found: %s", src_u);
             }
@@ -206,6 +211,11 @@ int dump_ps5_ppsa_app(
         write_log(logpath, "npbind.dat not found in either location.");
     }
 
+    if (failed && !abort_requested()) {
+        write_log(logpath, "ERROR: %d appmeta/trophy file(s) failed to copy", failed);
+        printf_notification("Dump failed: %d file(s) could not be copied", failed);
+        return -1;
+    }
     /* ------------------- 10. OPTIONAL DECRYPTION ------------------- */
     if (do_decrypt) {
         write_log(logpath, "Starting decryption (elf2fself=%d, backport=%d)...", do_elf2fself, do_backport);
@@ -229,7 +239,7 @@ int dump_ps5_ppsa_app(
 
 /* The mounted DLC's sce_sys holds little more than pfs-version.dat; param.json
    and the rest come out of the installed ac.pkg, the icon out of appmeta. */
-static void dump_dlc_metadata(const char *title_id, int label_len, const char *label, const char *dst)
+static int dump_dlc_metadata(const char *title_id, int label_len, const char *label, const char *dst)
 {
     static const char *pkg_paths[] = {
         "/user/addcont/%s/%.*s/ac.pkg",
@@ -259,8 +269,9 @@ static void dump_dlc_metadata(const char *title_id, int label_len, const char *l
     if (dir_exists(meta)) {
         mkdirs(sce_sys);
         write_log(g_log_path, "DLC: copying appmeta %s -> %s", meta, sce_sys);
-        copy_dir_recursive_tracked(meta, sce_sys);
+        return copy_dir_recursive_tracked(meta, sce_sys);
     }
+    return 0;
 }
 
 int dump_dlc_folder(const char *sandbox, const char *name, const char *title_id, const char *dest)
@@ -273,8 +284,12 @@ int dump_dlc_folder(const char *sandbox, const char *name, const char *title_id,
     printf_notification("Dumping DLC: %s", name);
     mkdirs(dst);
     size_t before = total_bytes_copied;
-    copy_dir_recursive_tracked(src, dst);
+    int failed = copy_dir_recursive_tracked(src, dst);
     if (abort_requested()) return -1;
+    if (failed) {
+        write_log(g_log_path, "DLC: %d file(s) failed to copy from %s", failed, src);
+        return -1;
+    }
     unsigned long long bytes = (unsigned long long)(total_bytes_copied - before);
 
     /* the label between _00- and -ac is what the content is called */
@@ -282,8 +297,12 @@ int dump_dlc_folder(const char *sandbox, const char *name, const char *title_id,
     label = label ? label + 4 : name;
     int label_len = (int)strlen(label) - 3;
 
-    dump_dlc_metadata(title_id, label_len, label, dst);
+    failed = dump_dlc_metadata(title_id, label_len, label, dst);
     if (abort_requested()) return -1;
+    if (failed) {
+        write_log(g_log_path, "DLC: %d appmeta file(s) failed to copy for %s", failed, name);
+        return -1;
+    }
     char info[1100];
     snprintf(info, sizeof(info), "%s/%s.dump-info.json", dest, name);
     FILE *f = fopen(info, "w");

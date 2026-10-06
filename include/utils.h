@@ -28,7 +28,8 @@ along with this program; see the file COPYING. If not, see
 int read_npwr_id(const char *npbind_path, char *npwr_out, size_t out_size);
 int fs_copy_file(const char *src, const char *dst);
 int copy_file_track(const char *src, const char *dst);
-void copy_dir_recursive_tracked(const char *src, const char *dst);
+/* returns the number of entries that failed to copy */
+int copy_dir_recursive_tracked(const char *src, const char *dst);
 void size_walker(const char *path, size_t *acc);
 void *progress_status_func(void *arg);
 
